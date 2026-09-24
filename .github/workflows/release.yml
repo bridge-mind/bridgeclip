@@ -85,7 +85,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 
@@ -302,7 +302,7 @@ jobs:
           RELEASE_SHA: ${{ needs.resolve-release.outputs.sha }}
         run: |
           [[ "$(git -C release-tag-check rev-parse HEAD)" = "$RELEASE_SHA" ]] || exit 1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -314,7 +314,7 @@ jobs:
       - name: Merge updater metadata for both architectures
         run: node scripts/merge-update-metadata.cjs release-artifacts
       - name: Publish complete draft
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.resolve-release.outputs.tag }}
           name: BridgeClip ${{ needs.resolve-release.outputs.tag }}
