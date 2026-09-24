@@ -104,6 +104,14 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install FFmpeg for generated test clips
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg gnome-keyring libsecret-tools dbus-user-session
       - name: Run isolated Electron posting and account flows
-        run: xvfb-run -a npm run test:e2e
+        env:
+          XDG_CURRENT_DESKTOP: GNOME
+        run: |
+          dbus-run-session -- sh -ec '
+            printf %s bridgeclip-e2e | gnome-keyring-daemon --unlock
+            printf %s bridgeclip-e2e-probe | timeout 15s secret-tool store --label=bridgeclip-e2e-ci bridgeclip ci
+            test "$(timeout 15s secret-tool lookup bridgeclip ci)" = bridgeclip-e2e-probe
+            xvfb-run -a npm run test:e2e
+          '
