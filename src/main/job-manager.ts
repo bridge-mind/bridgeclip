@@ -3,7 +3,7 @@ import { cancelJob as cancelRunningJob, startClipJob, type ClipJobConfig, type J
 import { finishRunRecord } from './run-history'
 import { logger } from './logger'
 import { parseJobOutput } from '../shared/job-output'
-import { isActiveJobStatus, MAX_PARALLEL_JOBS, type JobSnapshot, type JobStatus } from '../shared/jobs'
+import { isActiveJobStatus, MAX_FINISHED_JOBS, MAX_PARALLEL_JOBS, type JobSnapshot, type JobStatus } from '../shared/jobs'
 
 /**
  * Every clipping job in this app session: queued, running and finished. Up to
@@ -12,9 +12,6 @@ import { isActiveJobStatus, MAX_PARALLEL_JOBS, type JobSnapshot, type JobStatus 
  * snapshots, sent to whichever window is open at the time, so a reload or a
  * reopened window picks the jobs back up with `jobs:list`.
  */
-
-/** Finished jobs kept in memory for this session; older ones stay in run history on disk. */
-const MAX_FINISHED_JOBS = 50
 
 interface TrackedJob {
   snapshot: JobSnapshot
@@ -96,7 +93,7 @@ function pump(): void {
       webContents: { isDestroyed: () => false, send: (channel, payload) => onRunnerEvent(jobId, channel, payload) }
     }
     try {
-      startClipJob(jobId, job.config, sink, () => onExit(jobId))
+      startClipJob(jobId, job.config, sink, () => onExit(jobId), job.outputDirectory)
     } catch {
       running.delete(jobId)
       try { finishRunRecord(job.outputDirectory, jobId, 'failed', 'Could not start this run.') } catch { /* Output folder may be unavailable. */ }

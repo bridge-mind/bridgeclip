@@ -1,3 +1,4 @@
+import { normalizeVideoSource, twitchSourceError } from '../../shared/video-source'
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, ListVideo, Minus, Plus, Sparkles } from 'lucide-react'
 import { cn, MOD_KEY, parseTimecode, sourceLabel } from '../lib/utils'
@@ -32,7 +33,7 @@ const LAYOUT_STYLES = [
 const MAX_CLIPS = 100
 
 export const WIZARD_STEPS: { id: WizardStep; label: string; title: string; description: string }[] = [
-  { id: 'video', label: 'Video', title: 'Choose a video', description: 'A local file or a YouTube link. Optionally clip only part of it.' },
+  { id: 'video', label: 'Video', title: 'Choose a video', description: 'A local file, YouTube link or Twitch VOD link. Optionally clip only part of it.' },
   { id: 'format', label: 'Format', title: 'Format and framing', description: 'Where the clips will run and how each shot is framed.' },
   { id: 'clips', label: 'Clips', title: 'Clip length and count', description: 'Pick one or more lengths, or leave them all off for any length.' },
   { id: 'captions', label: 'Captions', title: 'Captions', description: 'Word-by-word captions burned into each clip. Silent videos are clipped without them.' },
@@ -55,7 +56,7 @@ export function parseTrimRange(enabled: boolean, startText: string, endText: str
 /** The run request for the current draft. */
 export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; end: number | null }): ClipJobRequest {
   return {
-    videoUrl: draft.source.trim(),
+    videoUrl: normalizeVideoSource(draft.source),
     clippingMode: draft.clippingMode,
     maxClips: draft.autoClipCount ? null : draft.maxClips,
     autoClipCount: draft.autoClipCount,
@@ -101,7 +102,8 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
 
   const index = WIZARD_STEPS.findIndex((s) => s.id === step)
   const meta = WIZARD_STEPS[index]
-  const hasSource = Boolean(draft.source)
+  const sourceError = twitchSourceError(draft.source)
+  const hasSource = Boolean(draft.source.trim()) && !sourceError
   const stepValid = step === 'video' ? hasSource && !trim.error : true
   const canSubmit = hasSource && !blockedReason && !trim.error && !submitting && !draft.started
 
@@ -141,6 +143,7 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
           <h2 className="text-sm font-semibold text-ink">{meta.title}</h2>
           <p className="mt-0.5 text-xs text-ink-muted">{meta.description}</p>
         </div>
+        {sourceError && <p role="alert" className="text-sm text-danger">{sourceError}</p>}
         {step === 'video' && <VideoStep draft={draft} update={update} trimError={trim.error} disabled={submitting} />}
         {step === 'format' && <FormatStep draft={draft} update={update} />}
         {step === 'clips' && <ClipsStep draft={draft} update={update} />}
@@ -377,7 +380,7 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
             </button>
           })}
         </div>
-        <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. If Whisper cannot provide timed words, transcription uses MAI Transcribe 2. Clip choices and captions may be less accurate.</p>
+        <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. Transcription retries temporary errors and can fall back to Whisper Large V3, then MAI Transcribe 2. Clip choices and captions may be less accurate.</p>
       </Group>
       <Group label="Clip length" aside={draft.durations.length === 0 ? 'Any length' : `${draft.durations.length} selected`}>
         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7" role="group" aria-label="Clip length options">

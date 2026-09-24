@@ -210,7 +210,7 @@ test('connect links are allowed only to Zernio or the platform’s own HTTPS OAu
     threads: ['https://threads.net/oauth/authorize?x', 'https://www.threads.com/oauth/authorize']
   }
   for (const [platform, urls] of Object.entries(allowed)) {
-    for (const url of [...urls, 'https://zernio.com/connect/x', 'https://app.zernio.com/connect/x']) {
+    for (const url of [...urls, 'https://zernio.com/connect/x', 'https://app.zernio.com/connect/x', 'https://connect.zernio.com/start']) {
       assert.equal(isTrustedConnectUrl(url, platform), true, `${platform} ${url}`)
     }
   }
@@ -224,6 +224,7 @@ test('connect links are allowed only to Zernio or the platform’s own HTTPS OAu
     ['tiktok', 'https://www.tiktok.com:8443/v2/auth/authorize/'],
     ['tiktok', 'https://user:pass@www.tiktok.com/v2/auth/authorize/'],
     ['linkedin', 'https://zernio.com.evil.test/start'],
+    ['linkedin', 'https://user-content.zernio.com/start'],
     ['linkedin', 'javascript:alert(1)'],
     ['linkedin', 'file:///etc/passwd'],
     ['linkedin', 'data:text/html,hi'],

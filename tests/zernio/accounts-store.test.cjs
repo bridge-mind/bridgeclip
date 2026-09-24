@@ -247,6 +247,27 @@ test('a disconnect result from an old workspace is discarded after a key change'
   assert.equal(s.state().disconnecting, null)
 })
 
+test('a sync started before disconnect cannot restore the removed account', async () => {
+  const s = load()
+  const old = overview([account('1', 'tiktok')])
+  s.queueSync({ overview: old, stale: false, error: null })
+  await s.state().load()
+
+  const staleSync = deferred()
+  s.queueSync(() => staleSync.promise)
+  const pendingSync = s.state().load()
+  s.zernio.disconnect = async () => {}
+  s.queueSync({ overview: overview([]), stale: false, error: null })
+  await s.state().disconnect(account('1', 'tiktok').id)
+  assert.equal(s.state().accounts.length, 0)
+
+  staleSync.resolve({ overview: old, stale: false, error: null })
+  await pendingSync
+  await flush()
+  assert.equal(s.state().accounts.length, 0)
+  assert.equal(s.calls.sync, 3, 'a fresh sync follows the stale in-flight request')
+})
+
 test('focus fallback: a new account on refresh completes the sign-in without the redirect', async () => {
   const s = load()
   s.queueSync({ overview: overview([account('1', 'instagram', { profileId: P2 })]), stale: false, error: null })

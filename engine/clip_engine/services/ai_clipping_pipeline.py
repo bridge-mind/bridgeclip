@@ -251,6 +251,10 @@ class AIClippingPipeline:
             current_stage = "transcription"
             self._update_progress(job_id, JobStatus.TRANSCRIBING, 15, "Transcribing audio...")
             stage_start = time.perf_counter()
+            previous_transcription_progress = getattr(self.transcription_service, "progress_callback", None)
+            self.transcription_service.progress_callback = lambda message: self._update_progress(
+                job_id, JobStatus.TRANSCRIBING, 15, message,
+            )
             try:
                 transcription_result = await self.transcription_service.transcribe(
                     video_path=download_result.video_path,
@@ -266,6 +270,8 @@ class AIClippingPipeline:
             else:
                 if not transcription_result.segments:
                     transcription_status = "no_speech"
+            finally:
+                self.transcription_service.progress_callback = previous_transcription_progress
             stage_timings["transcription"] = time.perf_counter() - stage_start
             logger.info(f"Transcription complete: {len(transcription_result.segments)} segments")
 
@@ -597,6 +603,7 @@ class AIClippingPipeline:
                     "model": tc.model,
                     "audio_duration_seconds": round(tc.audio_duration_seconds, 1),
                     "estimated_cost_usd": tc.estimated_cost_usd,
+                    "attempts": tc.attempts,
                 }
                 total_cost += tc.estimated_cost_usd
 

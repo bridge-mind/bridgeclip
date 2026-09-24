@@ -22,6 +22,8 @@ export interface ClipJobRequest {
 
 /** How many clipping runs the main process lets run at once; the rest wait in a queue. */
 export const MAX_PARALLEL_JOBS = 2
+/** Finished runs retained in the live session; older runs remain on disk. */
+export const MAX_FINISHED_JOBS = 50
 
 export type ActiveJobStatus = 'queued' | 'pending' | 'downloading' | 'transcribing' | 'planning' | 'rendering' | 'uploading'
 export type TerminalJobStatus = 'completed' | 'failed' | 'cancelled'

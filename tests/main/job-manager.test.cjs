@@ -25,7 +25,7 @@ function setup() {
   const cancelled = []
   const records = []
   const runner = {
-    startClipJob: (jobId, config, sink, onExit) => starts.push({ jobId, config, sink, onExit }),
+    startClipJob: (jobId, config, sink, onExit, outputDirectory) => starts.push({ jobId, config, sink, onExit, outputDirectory }),
     cancelJob: (jobId) => { cancelled.push(jobId); return true }
   }
   const manager = loadModule('main/job-manager.ts', {
@@ -38,7 +38,7 @@ function setup() {
   const sent = []
   let window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel, data) => sent.push({ channel, data }) } }
   manager.initJobManager(() => window)
-  const enqueue = (id) => manager.enqueueJob(id, { videoUrl: `/videos/${id}.mp4` }, '/clips')
+  const enqueue = (id, outputDirectory = '/clips') => manager.enqueueJob(id, { videoUrl: `/videos/${id}.mp4` }, outputDirectory)
   const status = (id) => manager.listJobs().find((job) => job.id === id)?.status
   return { manager, starts, cancelled, records, sent, enqueue, status, setWindow: (next) => { window = next } }
 }
@@ -63,6 +63,18 @@ test('runs at most MAX_PARALLEL_JOBS at once and starts queued jobs in order as 
   // A repeated exit callback cannot free a second slot.
   starts[1].onExit()
   assert.equal(starts.length, 4)
+})
+
+test('queued jobs start in the output folder captured when they were enqueued', () => {
+  const { starts, enqueue } = setup()
+  enqueue('a', '/original')
+  enqueue('b', '/original')
+  enqueue('c', '/original')
+  enqueue('d', '/new-selection')
+  starts[0].onExit()
+  starts[1].onExit()
+  assert.deepEqual(starts.map((start) => start.outputDirectory),
+    ['/original', '/original', '/original', '/new-selection'])
 })
 
 test('runner events become snapshots with rising revisions, sent to the window open at the time', () => {

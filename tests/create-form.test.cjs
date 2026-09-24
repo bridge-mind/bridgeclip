@@ -10,9 +10,10 @@ const bundled = buildSync({
     contents: `export { FormatStep, ClipsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
       export { SetupCard } from './src/renderer/components/SetupCard';
       export { useSettingsStore } from './src/renderer/store/use-settings-store';
-      export { isValidSourceLink } from './src/renderer/components/SourcePicker';
+      export { SourcePicker, isValidSourceLink } from './src/renderer/components/SourcePicker';
       export { framingProblem, sourceAnalysisNotice } from './src/renderer/components/ClipList';
-      export { parseJobOutput } from './src/shared/job-output';`,
+      export { parseJobOutput } from './src/shared/job-output';
+      export { twitchVodId, normalizeVideoSource } from './src/shared/video-source';`,
     resolveDir: path.resolve(__dirname, '..'),
     loader: 'ts'
   },
@@ -120,4 +121,20 @@ test('visual-only runs disclose unavailable captions and preserve analysis statu
   assert.equal(output.metrics.visual_frame_count, 12)
   assert.equal(output.metrics.captions_status, 'unavailable_without_transcript')
   assert.match(sourceAnalysisNotice(output), /No speech was detected/)
+})
+
+test('Twitch VOD links canonicalize while other Twitch pages are rejected', () => {
+  const { normalizeVideoSource, twitchVodId, SourcePicker } = form.exports
+  for (const host of ['twitch.tv', 'www.twitch.tv', 'm.twitch.tv', 'go.twitch.tv']) {
+    const source = `https://${host}/videos/12345/?t=1h&tracking=secret`
+    assert.equal(isValidSourceLink(source), true)
+    assert.equal(normalizeVideoSource(source), 'https://www.twitch.tv/videos/12345')
+    assert.equal(twitchVodId(source), '12345')
+  }
+  for (const source of ['https://twitch.tv/channel', 'https://clips.twitch.tv/Clip', 'https://player.twitch.tv/?video=123', 'https://twitch.tv/videos/nope', 'https://twitch.tv:8443/videos/123']) assert.equal(isValidSourceLink(source), false)
+  assert.equal(twitchVodId('https://twitch.tv.evil.test/videos/123'), null)
+  const html = renderToStaticMarkup(React.createElement(SourcePicker, { value: 'https://www.twitch.tv/videos/12345', onChange() {} }))
+  assert.match(html, /Twitch VOD/)
+  assert.match(html, /Public, completed videos only/)
+  assert.doesNotMatch(html, /<img/)
 })

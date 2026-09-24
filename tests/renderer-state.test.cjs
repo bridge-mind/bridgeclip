@@ -74,6 +74,22 @@ test('removing the focused job returns the jobs page to its list', () => {
   assert.equal(useJobStore.getState().jobs.one, undefined)
 })
 
+test('finished job snapshots stay bounded while active jobs remain visible', () => {
+  const { useJobStore } = load()
+  const state = useJobStore.getState()
+  state.upsert(snapshot('active', 1, { status: 'rendering' }))
+  for (let index = 0; index < 60; index++) {
+    state.upsert(snapshot(`done-${index}`, 1, {
+      status: 'completed', finishedAt: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString()
+    }))
+  }
+  const jobs = useJobStore.getState().jobs
+  assert.equal(Object.keys(jobs).length, 51)
+  assert.ok(jobs.active)
+  assert.equal(jobs['done-0'], undefined)
+  assert.ok(jobs['done-59'])
+})
+
 test('overlapping settings writes merge at dispatch and retain saving state', async () => {
   const first = deferred()
   const writes = []

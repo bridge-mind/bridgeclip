@@ -81,7 +81,7 @@ def test_no_audio_track_is_confirmed_before_visual_fallback(monkeypatch, tmp_pat
     assert calls == ["ffmpeg", "ffprobe"]
 
 
-@pytest.mark.parametrize("status, reason", [(401, "auth"), (429, "quota"), (None, "network")])
+@pytest.mark.parametrize("status, reason", [(401, "auth"), (429, "rate_limit"), (None, "network")])
 def test_provider_errors_are_classified_without_exposing_response(monkeypatch, tmp_path, status, reason):
     import httpx
 
@@ -190,7 +190,7 @@ def test_visual_fallback_completes_without_captions_and_discloses_status(monkeyp
 
 @pytest.mark.parametrize("reason, expected", [
     ("auth", "Transcription authentication failed"),
-    ("quota", "Transcription quota or rate limit reached"),
+    ("quota", "Transcription account credit limit reached"),
     ("network", "Transcription service unavailable"),
 ])
 def test_provider_failure_stops_before_visual_planning(monkeypatch, tmp_path, reason, expected):

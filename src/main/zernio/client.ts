@@ -220,13 +220,14 @@ const CONNECT_HOSTS: Record<ZernioPlatform, readonly string[]> = {
   linkedin: ['www.linkedin.com', 'linkedin.com'],
   threads: ['threads.net', 'www.threads.net', 'threads.com', 'www.threads.com', 'www.instagram.com', 'instagram.com']
 }
+const ZERNIO_CONNECT_HOSTS = new Set(['zernio.com', 'app.zernio.com', 'connect.zernio.com'])
 
 export function isTrustedConnectUrl(value: string, platform: ZernioPlatform): boolean {
   try {
     const url = new URL(value)
     if (url.protocol !== 'https:' || (url.port !== '' && url.port !== '443') || url.username || url.password) return false
     const host = url.hostname
-    return host === 'zernio.com' || host.endsWith('.zernio.com') || (CONNECT_HOSTS[platform] ?? []).includes(host)
+    return ZERNIO_CONNECT_HOSTS.has(host) || (CONNECT_HOSTS[platform] ?? []).includes(host)
   } catch { return false }
 }
 

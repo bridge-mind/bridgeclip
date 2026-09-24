@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
+import { basename, dirname, extname, join } from 'path'
 import { isZernioId } from '../../shared/zernio'
 import type { PostRecord, PostRecordTarget, PostStatus, PostTargetStatus } from '../../shared/zernio-posts'
 import { quarantineUnbound, readableCache } from './workspace-cache'
@@ -9,9 +10,10 @@ import { quarantineUnbound, readableCache } from './workspace-cache'
 // Holds ids, paths, titles and statuses: nothing secret.
 
 const VERSION = 1
-/** Oldest finished posts are dropped past this. */
+/** Oldest finished posts are dropped past this. Active posts are never discarded. */
 const MAX_RECORDS = 300
 const MAX_CACHE_BYTES = 2 * 1024 * 1024
+const MAX_LEGACY_BYTES = 16 * 1024 * 1024
 
 const STATUSES: PostStatus[] = ['draft', 'scheduled', 'publishing', 'published', 'partial', 'failed', 'cancelled', 'missing']
 const TARGET_STATUSES: PostTargetStatus[] = ['pending', 'processing', 'uploading', 'published', 'failed', 'cancelled']
@@ -62,34 +64,74 @@ export function parsePostRecord(value: unknown): PostRecord | null {
   }
 }
 
-function prune(records: PostRecord[]): PostRecord[] {
-  if (records.length <= MAX_RECORDS) return records
-  const keep = new Set(
-    [...records]
-      .sort((a, b) => Number(b.status === 'scheduled' || b.status === 'publishing') - Number(a.status === 'scheduled' || a.status === 'publishing') || b.createdAt.localeCompare(a.createdAt))
-      .slice(0, MAX_RECORDS)
-      .map((r) => r.id)
-  )
-  return records.filter((r) => keep.has(r.id))
-}
-
 export class PostsStore {
-  constructor(private readonly filePath: string, private readonly workspace: string | null = null) {}
+  private readonly path: string
+  private readonly reservations: PostRecord[] = []
+
+  constructor(private readonly filePath: string, private readonly workspace: string | null = null) {
+    if (workspace && !/^[A-Za-z0-9_-]+$/.test(workspace)) throw new Error('Invalid post workspace')
+    const extension = extname(filePath)
+    this.path = workspace ? join(dirname(filePath), `${basename(filePath, extension)}-${workspace}${extension}`) : filePath
+  }
+
+  private serialize(posts: PostRecord[]): string {
+    const active = posts.filter((post) => post.status === 'scheduled' || post.status === 'publishing')
+    const finished = posts.filter((post) => post.status !== 'scheduled' && post.status !== 'publishing')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    if (active.length > MAX_RECORDS) throw new Error('Post history is full of active posts. Finish or cancel a post before adding another.')
+    const encode = (finishedCount: number): string => JSON.stringify({
+      version: this.workspace ? 2 : VERSION,
+      ...(this.workspace ? { workspace: this.workspace } : {}),
+      posts: [...active, ...finished.slice(0, finishedCount)]
+    }, null, 2)
+    const limit = Math.min(finished.length, MAX_RECORDS - active.length)
+    let low = 0
+    let high = limit
+    let result: string | null = null
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2)
+      const payload = encode(middle)
+      if (Buffer.byteLength(payload) <= MAX_CACHE_BYTES) {
+        result = payload
+        low = middle + 1
+      } else high = middle - 1
+    }
+    if (result === null) throw new Error('Active post history exceeds the storage limit. Existing history was preserved.')
+    return result
+  }
+
+  /** Move a bound legacy file only when it belongs to this workspace. */
+  private migrateLegacy(): void {
+    if (!this.workspace || existsSync(this.path) || !existsSync(this.filePath)) return
+    if (!readableCache(this.filePath, MAX_LEGACY_BYTES)) throw new Error('Legacy post history could not be migrated. The file was preserved.')
+    let raw: { version?: unknown; workspace?: unknown; posts?: unknown }
+    try { raw = JSON.parse(readFileSync(this.filePath, 'utf-8')) }
+    catch { quarantineUnbound(this.filePath); return }
+    if (raw.version !== 2 || raw.workspace !== this.workspace) {
+      if (raw.version !== 2 || typeof raw.workspace !== 'string') quarantineUnbound(this.filePath)
+      return
+    }
+    const records = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((post): post is PostRecord => post !== null) : []
+    this.write(records)
+    try { renameSync(this.filePath, `${this.filePath}.migrated-${Date.now()}`) }
+    catch { /* The scoped copy is already durable; leave the old file for recovery. */ }
+  }
 
   /** Newest first. A damaged file is set aside so the next write can't erase it. */
   list(): PostRecord[] {
-    if (!existsSync(this.filePath)) return []
+    this.migrateLegacy()
+    if (!existsSync(this.path)) return []
     try {
-      if (!readableCache(this.filePath, MAX_CACHE_BYTES)) { quarantineUnbound(this.filePath); return [] }
-      const raw = JSON.parse(readFileSync(this.filePath, 'utf-8')) as { version?: unknown; workspace?: unknown; posts?: unknown }
+      if (!readableCache(this.path, MAX_CACHE_BYTES)) { quarantineUnbound(this.path); return [] }
+      const raw = JSON.parse(readFileSync(this.path, 'utf-8')) as { version?: unknown; workspace?: unknown; posts?: unknown }
       if (this.workspace && (raw.version !== 2 || raw.workspace !== this.workspace)) {
-        quarantineUnbound(this.filePath)
+        quarantineUnbound(this.path)
         return []
       }
       const posts = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((p): p is PostRecord => p !== null) : []
       return posts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     } catch {
-      try { renameSync(this.filePath, `${this.filePath}.damaged-${Date.now()}`) } catch { /* Keep going with an empty history. */ }
+      try { renameSync(this.path, `${this.path}.damaged-${Date.now()}`) } catch { /* Keep going with an empty history. */ }
       return []
     }
   }
@@ -98,10 +140,38 @@ export class PostsStore {
     return this.list().find((post) => post.id === id) ?? null
   }
 
+  /** Reserve enough room for the largest accepted provider response before creating a remote post. */
+  reserveActive(base: PostRecord): () => void {
+    const worst: PostRecord = {
+      ...base,
+      id: 'x'.repeat(64),
+      scheduledFor: '2026-09-25T10:00:00.000Z',
+      timezone: 'x'.repeat(64),
+      status: 'publishing',
+      // JSON can escape one UTF-16 code unit as six bytes. Reserve that
+      // upper bound for provider strings rather than their character count.
+      error: '\0'.repeat(300),
+      targets: base.targets.map((target) => ({
+        ...target,
+        error: '\0'.repeat(300),
+        url: '\0'.repeat(2048)
+      }))
+    }
+    this.serialize([...this.list(), ...this.reservations, worst])
+    this.reservations.push(worst)
+    return () => {
+      const index = this.reservations.indexOf(worst)
+      if (index !== -1) this.reservations.splice(index, 1)
+    }
+  }
+
   private write(posts: PostRecord[]): void {
-    const tempPath = `${this.filePath}.${randomUUID()}.tmp`
-    writeFileSync(tempPath, JSON.stringify({ version: this.workspace ? 2 : VERSION, ...(this.workspace ? { workspace: this.workspace } : {}), posts: prune(posts) }, null, 2), { encoding: 'utf-8', mode: 0o600, flag: 'wx' })
-    renameSync(tempPath, this.filePath)
+    const payload = this.serialize(posts)
+    const tempPath = `${this.path}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(tempPath, payload, { encoding: 'utf-8', mode: 0o600, flag: 'wx' })
+      renameSync(tempPath, this.path)
+    } finally { rmSync(tempPath, { force: true }) }
   }
 
   /** Insert or replace records by id. */

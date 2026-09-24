@@ -117,11 +117,21 @@ const INITIAL = {
 
 // A key change bumps `generation`, so answers for the old workspace are dropped.
 let generation = 0
+// A completed local change must not be replaced by a sync that started before it.
+let accountRevision = 0
 let inFlight: Promise<void> | null = null
 let hydrating: Promise<void> | null = null
 let subscribed = false
 
 export const useAccountsStore = create<AccountsState>((set, get) => {
+  const refreshAfterChange = (): void => {
+    const startedIn = generation
+    // A request already in flight may have read the pre-change account list.
+    // Let it finish, then fetch the completed provider state.
+    if (inFlight) void inFlight.then(() => { if (startedIn === generation) void get().load() })
+    else void get().load()
+  }
+
   const applyOverview = (overview: ZernioOverview): void => {
     set({
       profiles: overview.profiles,
@@ -166,11 +176,15 @@ export const useAccountsStore = create<AccountsState>((set, get) => {
           : { tone: 'danger', text: result.error ?? `Could not connect ${platformName(result.platform)}.`, action: result.billing ? 'billing' : undefined }
       })
     }
-    void get().load()
+    if (result.success) {
+      accountRevision += 1
+      refreshAfterChange()
+    } else void get().load()
   }
 
   const reset = ({ configured }: { configured: boolean }): void => {
     generation += 1
+    accountRevision += 1
     inFlight = null
     hydrating = null
     set({ ...INITIAL })
@@ -224,13 +238,14 @@ export const useAccountsStore = create<AccountsState>((set, get) => {
       ensureSubscribed()
       if (inFlight) return inFlight
       const startedIn = generation
+      const startedRevision = accountRevision
       set({ loading: true })
       const run = async (): Promise<void> => {
         try {
           const result = await getApi().zernio.sync()
           if (startedIn !== generation) return
           // A stale (cached) answer never replaces newer accounts already on screen.
-          if (result.overview && (!result.stale || (result.overview.syncedAt ?? 0) > get().syncedAt)) applyOverview(result.overview)
+          if (startedRevision === accountRevision && result.overview && (!result.stale || (result.overview.syncedAt ?? 0) > get().syncedAt)) applyOverview(result.overview)
           set({ error: result.error, loaded: true, lastAttemptAt: Date.now() })
           if (!result.stale) detectFinishedSignIn()
         } catch (err) {
@@ -312,7 +327,8 @@ export const useAccountsStore = create<AccountsState>((set, get) => {
           set({ connecting: { ...connecting, profileId: start.profileId } })
         } else if (start.status === 'connected') {
           set({ connecting: null, notice: { tone: 'success', text: `${name} is already connected${start.username ? ` as @${start.username}` : ''}.` } })
-          void get().load()
+          accountRevision += 1
+          refreshAfterChange()
         } else {
           set({ connecting: null, notice: noticeFor(start.error) })
         }
@@ -340,9 +356,10 @@ export const useAccountsStore = create<AccountsState>((set, get) => {
       try {
         await getApi().zernio.disconnect(accountId)
         if (startedIn !== generation) return
+        accountRevision += 1
         set((state) => ({ accounts: state.accounts.filter((a) => a.id !== accountId) }))
         set({ notice: { tone: 'success', text: `${platformName(account.platform)} disconnected.` } })
-        void get().load()
+        refreshAfterChange()
       } catch (err) {
         if (startedIn === generation) set({ notice: { tone: 'danger', text: errorMessage(err, 'Could not disconnect the account.') } })
       } finally {

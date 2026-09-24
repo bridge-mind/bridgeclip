@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
-import { isActiveJobStatus, type JobSnapshot } from '../../shared/jobs'
+import { isActiveJobStatus, MAX_FINISHED_JOBS, type JobSnapshot } from '../../shared/jobs'
 export type { ClipArtifact, JobOutput } from '../../shared/job-output'
 export type { JobSnapshot } from '../../shared/jobs'
 
@@ -9,6 +9,7 @@ export interface TranscriptionCost {
   model: string
   audio_duration_seconds: number
   estimated_cost_usd: number
+  attempts?: number
 }
 
 export interface PlanningCost {
@@ -53,19 +54,27 @@ function newer(current: Job | undefined, next: Job): boolean {
   return !current || next.revision >= current.revision
 }
 
+function bounded(jobs: Record<string, Job>, focusedJobId: string | null): Pick<JobState, 'jobs' | 'focusedJobId'> {
+  const finished = Object.values(jobs).filter((job) => !isActiveJobStatus(job.status))
+    .sort((a, b) => (b.finishedAt ?? b.queuedAt).localeCompare(a.finishedAt ?? a.queuedAt))
+  for (const job of finished.slice(MAX_FINISHED_JOBS)) delete jobs[job.id]
+  return { jobs, focusedJobId: focusedJobId && jobs[focusedJobId] ? focusedJobId : null }
+}
+
 export const useJobStore = create<JobState>((set) => ({
   jobs: {},
   focusedJobId: null,
 
   upsert: (job) => {
-    set((state) => (newer(state.jobs[job.id], job) ? { jobs: { ...state.jobs, [job.id]: job } } : state))
+    set((state) => (newer(state.jobs[job.id], job)
+      ? bounded({ ...state.jobs, [job.id]: job }, state.focusedJobId) : state))
   },
 
   hydrate: (list) => {
     set((state) => {
       const jobs = { ...state.jobs }
       for (const job of list) if (newer(jobs[job.id], job)) jobs[job.id] = job
-      return { jobs }
+      return bounded(jobs, state.focusedJobId)
     })
   },
 
