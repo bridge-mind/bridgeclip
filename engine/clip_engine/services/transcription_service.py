@@ -54,16 +54,21 @@ class TranscriptionApiCosts:
 
 
 TRANSCRIPTION_MODEL = "microsoft/mai-transcribe-2"
+BUDGET_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo"
 TRANSCRIPTION_CHUNK_SECONDS = 300
+# Context kept around a requested time range so sentence boundaries at its edges still resolve.
+TRANSCRIPTION_RANGE_PAD_SECONDS = 5.0
 MAX_TRANSCRIPTION_AUDIO_BYTES = 12 * 1024 * 1024
 MAX_TRANSCRIPTION_RESPONSE_BYTES = 4 * 1024 * 1024
 MAI_PRICE_PER_HOUR = 0.10
+WHISPER_TURBO_PRICE_PER_HOUR = 0.0108
 WAV_INPUT_OPTIONS = ["-protocol_whitelist", "file,pipe,fd", "-format_whitelist", "wav"]
 
 
-def _estimate_transcription_cost(duration_seconds: float) -> float:
+def _estimate_transcription_cost(duration_seconds: float, model: str = TRANSCRIPTION_MODEL) -> float:
     """Fallback estimate; prefer OpenRouter's actual usage.cost when returned."""
-    return round(duration_seconds / 3600.0 * MAI_PRICE_PER_HOUR, 8)
+    price = WHISPER_TURBO_PRICE_PER_HOUR if model == BUDGET_TRANSCRIPTION_MODEL else MAI_PRICE_PER_HOUR
+    return round(duration_seconds / 3600.0 * price, 8)
 
 
 @dataclass
@@ -405,7 +410,7 @@ def find_sentence_start_boundary(
 
 
 class TranscriptionService:
-    """MAI Transcribe 2 speech recognition with word timing and speaker turns."""
+    """OpenRouter speech recognition with word timing for captions."""
 
     def __init__(self):
         self.settings = get_settings()
@@ -417,6 +422,8 @@ class TranscriptionService:
         language: Optional[str] = None,
         translate_to_english: bool = False,
         keyterms: Optional[list[str]] = None,
+        start_seconds: Optional[float] = None,
+        end_seconds: Optional[float] = None,
     ) -> TranscriptionResult:
         """
         Transcribe a video file by extracting audio first.
@@ -428,6 +435,9 @@ class TranscriptionService:
             translate_to_english: Whether to translate to English
             keyterms: Optional vocabulary biasing list (e.g., brand names,
                 product names, jargon) forwarded as MAI phrase hints.
+            start_seconds, end_seconds: Optional source window. Only that part
+                of the audio (plus a little context) is extracted and sent to
+                the provider; timestamps still refer to the full source.
 
         Returns:
             TranscriptionResult with segments and word-level timing
@@ -435,9 +445,14 @@ class TranscriptionService:
         if not os.path.isfile(video_path):
             raise TranscriptionError("Video file not found", reason="source_missing")
 
+        window_start = 0.0
+        if start_seconds is not None and start_seconds > 0:
+            window_start = max(0.0, start_seconds - TRANSCRIPTION_RANGE_PAD_SECONDS)
+        window_end = None if end_seconds is None else max(window_start, end_seconds + TRANSCRIPTION_RANGE_PAD_SECONDS)
+
         # Extract audio from video
         audio_path = os.path.join(work_dir, "audio_extracted.wav")
-        await self._extract_audio_from_video(video_path, audio_path)
+        await self._extract_audio_from_video(video_path, audio_path, window_start, window_end)
 
         try:
             return await self.transcribe_audio(
@@ -445,6 +460,7 @@ class TranscriptionService:
                 language=language,
                 translate_to_english=translate_to_english,
                 keyterms=keyterms,
+                timeline_offset_seconds=window_start,
             )
         finally:
             # Cleanup extracted audio
@@ -454,18 +470,24 @@ class TranscriptionService:
                 except Exception:
                     pass
 
-    async def _extract_audio_from_video(self, video_path: str, audio_path: str) -> None:
+    async def _extract_audio_from_video(
+        self, video_path: str, audio_path: str, start_seconds: float = 0.0, end_seconds: Optional[float] = None,
+    ) -> None:
         """Extract 16 kHz PCM WAV, which MAI Transcribe 2 accepts through OpenRouter.
 
         OpenRouter's MAI provider rejects the AAC/M4A produced here with HTTP 400.
         Audio stays at its original speed so timestamps map directly to video.
+        A window trims the source before decoding; the output then starts at
+        `start_seconds` of the source and the caller shifts timestamps back.
         """
         logger.info(f"Extracting audio from video: {video_path}")
-        
+
         cmd = [
             "ffmpeg", "-nostdin", "-nostats", "-v", "error",
             "-y",
             "-protocol_whitelist", "file,pipe,fd", "-format_whitelist", "mov,matroska,webm,avi,flv,mpegts",
+            *(["-ss", f"{start_seconds:.3f}"] if start_seconds > 0 else []),
+            *(["-t", f"{end_seconds - start_seconds:.3f}"] if end_seconds is not None else []),
             "-i", video_path,
             "-map", "0:a:0",  # Match the track used by the render graph.
             "-vn",  # No video
@@ -477,14 +499,14 @@ class TranscriptionService:
             "-ac", "1",  # Mono
             audio_path,
         ]
-        
+
         # Use run_in_executor for Windows compatibility
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: run_media(cmd)
         )
-        
+
         if result.returncode != 0:
             # An audio-less video is a valid input for visual-only planning.
             # Confirm that case with ffprobe; other FFmpeg errors must fail.
@@ -500,10 +522,10 @@ class TranscriptionService:
                 pass
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
             raise TranscriptionError(f"Failed to extract audio from video: {error_msg}", reason="audio_extraction_failed")
-        
+
         if not os.path.exists(audio_path):
             raise TranscriptionError("Audio extraction produced no output file", reason="audio_extraction_empty")
-        
+
         logger.info(f"Audio extracted to: {audio_path}")
 
     async def transcribe_audio(
@@ -512,21 +534,28 @@ class TranscriptionService:
         language: Optional[str] = None,
         translate_to_english: bool = False,
         keyterms: Optional[list[str]] = None,
+        timeline_offset_seconds: float = 0.0,
     ) -> TranscriptionResult:
-        """Transcribe bounded chunks and retain timestamps on the source timeline."""
+        """Transcribe bounded chunks and retain timestamps on the source timeline.
+
+        `timeline_offset_seconds` is where the audio file starts within the
+        source video, so timestamps come back on the video's clock.
+        """
         if not os.path.isfile(audio_path):
             raise TranscriptionError("Audio file not found", reason="audio_missing")
         if not self.settings.openrouter_api_key:
             raise TranscriptionProviderError("auth")
         if translate_to_english:
-            raise TranscriptionError("MAI Transcribe 2 does not translate audio", reason="translation_unsupported")
+            raise TranscriptionError("Audio translation is not supported", reason="translation_unsupported")
         duration = await asyncio.to_thread(self._audio_duration, audio_path)
         segments: list[TranscriptSegment] = []
         total_cost = 0.0
         billed_seconds = 0.0
         detected_language = None
+        model = self.settings.transcription_model
+        used_models: list[str] = []
         chunk_count = max(1, math.ceil(duration / TRANSCRIPTION_CHUNK_SECONDS))
-        with tempfile.TemporaryDirectory(prefix="mai-transcribe-", dir=os.path.dirname(audio_path)) as work:
+        with tempfile.TemporaryDirectory(prefix="clip-transcribe-", dir=os.path.dirname(audio_path)) as work:
             for index in range(chunk_count):
                 core_start = index * TRANSCRIPTION_CHUNK_SECONDS
                 core_end = min(duration, core_start + TRANSCRIPTION_CHUNK_SECONDS)
@@ -538,8 +567,26 @@ class TranscriptionService:
                 if chunk_count > 1:
                     chunk_path = os.path.join(work, "chunk.wav")
                     await asyncio.to_thread(self._extract_chunk, audio_path, chunk_path, start, end - start)
-                response = await self._request_transcript(chunk_path, language, keyterms)
-                parsed = self._parse_openrouter_response(response, end - start)
+                try:
+                    response = await self._request_transcript(chunk_path, language, keyterms, model)
+                    parsed = self._parse_openrouter_response(response, end - start, model)
+                except (TranscriptionProviderError, TranscriptionError) as error:
+                    # OpenRouter cannot pin the transcription provider. Whisper
+                    # may route to one that rejects word timestamps, which are
+                    # required for clip timing and captions.
+                    unsupported = (
+                        isinstance(error, TranscriptionProviderError) and error.reason == "bad_request"
+                    ) or (
+                        isinstance(error, TranscriptionError) and error.reason == "missing_word_timestamps"
+                    )
+                    if model != BUDGET_TRANSCRIPTION_MODEL or not unsupported:
+                        raise
+                    logger.warning("Economy transcription could not provide word timestamps; retrying with MAI Transcribe 2")
+                    model = TRANSCRIPTION_MODEL
+                    response = await self._request_transcript(chunk_path, language, keyterms, model)
+                    parsed = self._parse_openrouter_response(response, end - start, model)
+                if model not in used_models:
+                    used_models.append(model)
                 detected_language = detected_language or parsed.language
                 if parsed.api_costs:
                     total_cost += parsed.api_costs.estimated_cost_usd
@@ -547,10 +594,10 @@ class TranscriptionService:
                 for segment in parsed.segments:
                     words = []
                     for word in segment.words:
-                        shifted = TranscriptWord(word.word, word.start_time_ms + round(start * 1000), word.end_time_ms + round(start * 1000))
-                        midpoint = (shifted.start_time_ms + shifted.end_time_ms) / 2000
+                        midpoint = (word.start_time_ms + word.end_time_ms) / 2000 + start
                         if core_start <= midpoint < core_end:
-                            words.append(shifted)
+                            shift_ms = round((start + timeline_offset_seconds) * 1000)
+                            words.append(TranscriptWord(word.word, word.start_time_ms + shift_ms, word.end_time_ms + shift_ms))
                     if words:
                         # Diarization IDs only identify speakers within one API
                         # request; don't imply the same identity across chunks.
@@ -559,10 +606,12 @@ class TranscriptionService:
                             label = f"C{index + 1}{label}"
                         segments.append(TranscriptSegment(words[0].start_time_ms, words[-1].end_time_ms,
                                                           " ".join(w.word for w in words), label, words))
+        reported_model = " + ".join(used_models)
         return TranscriptionResult(
             segments=segments, full_text=" ".join(segment.text for segment in segments),
             language=detected_language, duration_seconds=duration,
-            api_costs=TranscriptionApiCosts(audio_duration_seconds=billed_seconds,
+            model=reported_model,
+            api_costs=TranscriptionApiCosts(model=reported_model, audio_duration_seconds=billed_seconds,
                                              estimated_cost_usd=round(total_cost, 8)),
         )
 
@@ -593,21 +642,27 @@ class TranscriptionService:
         except (OSError, subprocess.SubprocessError):
             raise TranscriptionError("Could not prepare audio for transcription", reason="audio_chunk_failed") from None
 
-    async def _request_transcript(self, audio_path: str, language: Optional[str], keyterms: Optional[list[str]]) -> dict:
+    async def _request_transcript(self, audio_path: str, language: Optional[str], keyterms: Optional[list[str]], model: Optional[str] = None) -> dict:
         import httpx
         if os.path.getsize(audio_path) > MAX_TRANSCRIPTION_AUDIO_BYTES:
             raise TranscriptionError("Transcription audio chunk is too large", reason="audio_chunk_too_large")
         audio = await asyncio.to_thread(Path(audio_path).read_bytes)
-        azure: dict = {"diarization": {"enabled": self.settings.transcription_diarize}}
-        phrases = normalize_keyterms(keyterms)
-        if phrases:
-            azure["phraseList"] = {"phrases": phrases}
+        model = model or getattr(getattr(self, "settings", None), "transcription_model", TRANSCRIPTION_MODEL)
         payload = {
-            "model": TRANSCRIPTION_MODEL,
+            "model": model,
             "input_audio": {"data": base64.b64encode(audio).decode("ascii"), "format": Path(audio_path).suffix.lstrip(".").lower()},
             "response_format": "verbose_json", "timestamp_granularities": ["segment", "word"],
-            "provider": {"options": {"azure": azure}},
         }
+        phrases = normalize_keyterms(keyterms)
+        if model == TRANSCRIPTION_MODEL:
+            azure: dict = {"diarization": {"enabled": self.settings.transcription_diarize}}
+            if phrases:
+                azure["phraseList"] = {"phrases": phrases}
+            payload["provider"] = {"options": {"azure": azure}}
+        elif phrases:
+            # Groq accepts a prompt hint for Whisper. Other providers may
+            # ignore this option; word timings remain required either way.
+            payload["provider"] = {"options": {"groq": {"prompt": "Expected vocabulary: " + ", ".join(phrases)}}}
         if language and language != "auto":
             payload["language"] = language
         try:
@@ -642,8 +697,9 @@ class TranscriptionService:
         except httpx.HTTPError:
             raise TranscriptionProviderError("network") from None
 
-    def _parse_openrouter_response(self, response: dict, audio_duration: float) -> TranscriptionResult:
-        """Parse MAI word timings without changing playback speed or inventing timestamps."""
+    def _parse_openrouter_response(self, response: dict, audio_duration: float, model: Optional[str] = None) -> TranscriptionResult:
+        """Parse provider word timings without inventing timestamps."""
+        model = model or getattr(getattr(self, "settings", None), "transcription_model", TRANSCRIPTION_MODEL)
         text = response.get("text")
         if not isinstance(text, str):
             raise TranscriptionProviderError("invalid_response")
@@ -682,12 +738,13 @@ class TranscriptionService:
             billed = audio_duration
         cost = usage.get("cost")
         if not _nonnegative_number(cost):
-            cost = _estimate_transcription_cost(billed)
+            cost = _estimate_transcription_cost(billed, model)
         return TranscriptionResult(
             segments=segments, full_text=text.strip(),
             language=response.get("language") if isinstance(response.get("language"), str) else None,
             duration_seconds=audio_duration,
-            api_costs=TranscriptionApiCosts(audio_duration_seconds=billed, estimated_cost_usd=cost),
+            model=model,
+            api_costs=TranscriptionApiCosts(model=model, audio_duration_seconds=billed, estimated_cost_usd=cost),
         )
 
 

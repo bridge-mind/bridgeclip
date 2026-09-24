@@ -60,6 +60,26 @@ test('library clips can be copied to a bank only from their saved run', async ()
   } finally { cleanup() }
 })
 
+test('automation imports require prior media authorization for files outside the library', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-bank-authorization-')
+  try {
+    const library = path.join(dir, 'library')
+    const outside = path.join(dir, 'private.mp4')
+    fs.mkdirSync(library)
+    fs.writeFileSync(outside, 'private media')
+    const main = loadMain("export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'; export * as security from './src/main/security'", { electron: fakeElectron(dir).electron })
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3', customVocabulary: '' })
+    const [automation] = main.automations.createAutomation('Authorized imports')
+
+    await assert.rejects(main.automations.addAutomationContent(automation.id, [outside]), /outside the library/)
+    assert.equal(main.automations.listAutomations()[0].content.length, 0)
+    main.security.authorizeMedia(outside)
+    await main.automations.addAutomationContent(automation.id, [outside])
+    assert.equal(main.automations.listAutomations()[0].content.length, 1)
+  } finally { cleanup() }
+})
+
 test('an upload failure keeps an automation clip retryable without creating a post', async () => {
   const { dir, cleanup } = tempDir('bridgeclip-automation-upload-')
   const posting = createPostingMock()

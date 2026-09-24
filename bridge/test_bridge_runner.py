@@ -67,7 +67,7 @@ class BridgeTests(unittest.TestCase):
         self.assertIn('"type": "result"', output.getvalue())
 
     def test_rejects_invalid_config_without_importing_bridgeclip(self):
-        for value in ([], None, "config", self.config(contract_version=None), self.config(contract_version=2), self.config(layout_vision_enabled=None), self.config(job_id="../escape"), self.config(video_url="file:///etc/passwd"), self.config(max_clips=True), self.config(aspect_ratio="1:1"), self.config(layout_style="unknown"), self.config(pacing="unknown"), self.config(duration_ranges=["unknown"])):
+        for value in ([], None, "config", self.config(contract_version=None), self.config(contract_version=2), self.config(layout_vision_enabled=None), self.config(job_id="../escape"), self.config(video_url="file:///etc/passwd"), self.config(max_clips=True), self.config(aspect_ratio="1:1"), self.config(layout_style="unknown"), self.config(pacing="unknown"), self.config(clipping_mode="unknown"), self.config(duration_ranges=["unknown"])):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 bridge.validate_config(value)
 
@@ -93,6 +93,26 @@ class BridgeTests(unittest.TestCase):
         with patch.dict(sys.modules, modules), redirect_stdout(io.StringIO()):
             self.assertFalse(asyncio.run(bridge.run(self.config(layout_vision_enabled=False))))
         self.assertEqual(observed, ["false"])
+
+    def test_economy_models_are_selected_before_engine_settings_load(self):
+        observed = []
+        def get_settings():
+            observed.append({key: os.environ.get(key) for key in (
+                "CLIPPING_MODE", "PLANNER_MODEL", "PLANNER_FALLBACK_MODELS", "LAYOUT_VISION_ENABLED"
+            )})
+            return types.SimpleNamespace(openrouter_api_key=None)
+        modules = {
+            "clip_engine.config": types.SimpleNamespace(get_settings=get_settings, get_caption_preset=lambda name: None),
+            "clip_engine.bridge_contract": types.SimpleNamespace(BRIDGE_CONTRACT_VERSION=1),
+            "clip_engine.logging_safety": types.SimpleNamespace(install_safe_logging=lambda: None),
+            "clip_engine.services.ai_clipping_pipeline": types.SimpleNamespace(AIClippingPipeline=None, ClippingJobRequest=None, JobStatus=None),
+        }
+        with patch.dict(sys.modules, modules), patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()):
+            self.assertFalse(asyncio.run(bridge.run(self.config(clipping_mode="economy"))))
+        self.assertEqual(observed, [{
+            "CLIPPING_MODE": "economy", "PLANNER_MODEL": "z-ai/glm-5.3-flash",
+            "PLANNER_FALLBACK_MODELS": "", "LAYOUT_VISION_ENABLED": "false",
+        }])
 
     def test_malformed_json_has_structured_error_and_failure_exit(self):
         output = io.StringIO()

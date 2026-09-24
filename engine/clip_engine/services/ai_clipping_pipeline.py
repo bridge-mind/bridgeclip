@@ -256,6 +256,8 @@ class AIClippingPipeline:
                     video_path=download_result.video_path,
                     work_dir=work_dir,
                     keyterms=request.keyterms,
+                    start_seconds=request.start_time_seconds,
+                    end_seconds=effective_end_time,
                 )
             except NoAudioTrackError:
                 logger.info("Source has no audio track; trying visual-only planning")

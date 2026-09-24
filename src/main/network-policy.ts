@@ -2,6 +2,16 @@ import { lookup } from 'dns/promises'
 import { isIP } from 'net'
 import { isWebUrl } from './security'
 
+/** Expand an IPv6 literal to its eight 16-bit groups, or null for IPv4-mapped forms. */
+function ipv6Groups(address: string): number[] | null {
+  if (address.includes('.')) return null
+  const [head, tail = ''] = address.split('::')
+  const left = head ? head.split(':').map((group) => parseInt(group, 16)) : []
+  const right = tail ? tail.split(':').map((group) => parseInt(group, 16)) : []
+  if (left.length + right.length > 8) return null
+  return [...left, ...new Array<number>(8 - left.length - right.length).fill(0), ...right]
+}
+
 /** Only publicly routable destinations are valid download/banner sources. */
 export function isPublicAddress(address: string): boolean {
   if (isIP(address) === 4) {
@@ -13,9 +23,17 @@ export function isPublicAddress(address: string): boolean {
       (a === 203 && b === 0 && c === 113))
   }
   if (isIP(address) === 6) {
-    const normalized = address.toLowerCase()
-    // Global unicast only; exclude documentation and transition mechanisms.
-    return /^[23][0-9a-f]{3}:/.test(normalized) && !normalized.startsWith('2001:') && !normalized.startsWith('2002:')
+    const groups = ipv6Groups(address)
+    if (!groups) return false
+    const [g0, g1] = groups
+    // Global unicast (2000::/3) minus 6to4, IETF protocol assignments
+    // (2001::/23), and documentation (2001:db8::/32, 3fff::/20).
+    // Other 2001::/16 addresses include ordinary public space.
+    if (g0 < 0x2000 || g0 > 0x3fff || g0 === 0x2002 || (g0 === 0x3fff && g1 < 0x1000)) return false
+    if (g0 === 0x2001) {
+      return g1 >= 0x200 && g1 !== 0xdb8
+    }
+    return true
   }
   return false
 }
