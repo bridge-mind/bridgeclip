@@ -70,7 +70,7 @@ def test_one_failed_clip_does_not_fail_the_job(monkeypatch, tmp_path):
         meta = SimpleNamespace(title="Test", duration_seconds=300.0, width=1920, height=1080)
         return SimpleNamespace(video_path=str(tmp_path / "src.mp4"), metadata=meta, file_size_bytes=1)
 
-    async def transcribe(video_path, work_dir, keyterms=None):
+    async def transcribe(video_path, work_dir, keyterms=None, **_range):
         words = [TranscriptWord("hi", 0, 500)]
         return TranscriptionResult(segments=[TranscriptSegment(0, 500, "hi", words=words)], full_text="hi")
 
@@ -129,7 +129,7 @@ def test_saved_local_clips_complete_when_final_bookkeeping_fails(monkeypatch, tm
         meta = SimpleNamespace(title="Test", duration_seconds=30.0, width=1920, height=1080)
         return SimpleNamespace(video_path=str(tmp_path / "source.mp4"), metadata=meta, file_size_bytes=1)
 
-    async def transcribe(video_path, work_dir, keyterms=None):
+    async def transcribe(video_path, work_dir, keyterms=None, **_range):
         words = [TranscriptWord("hi", 0, 500)]
         return TranscriptionResult(segments=[TranscriptSegment(0, 500, "hi", words=words)], full_text="hi")
 

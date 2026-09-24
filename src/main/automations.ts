@@ -272,7 +272,9 @@ export async function addAutomationContent(id: unknown, paths: string[], titles?
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     for (const [index, path] of paths.entries()) {
       if (currentWorkspace() !== workspace || !cached.includes(automation)) throw new Error('Automation changed while adding content.')
-      authorizeMedia(path)
+      // A caller must already have selected this file in the native picker or
+      // proved that it belongs to the output library. Never grant access here.
+      assertMediaPath(path, loadSettings().outputDirectory)
       const source = await openAuthorizedMedia(path, loadSettings().outputDirectory)
       const extension = extname(source.canonical).toLowerCase()
       const itemId = randomUUID()
@@ -377,8 +379,10 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     const youtube = generated?.find((post) => post.platform === 'youtube')
     const facebook = generated?.find((post) => post.platform === 'facebook')
     const threads = generated?.find((post) => post.platform === 'threads')
+    // The attempt is keyed by the bank item, so a retry after a timeout or 5xx
+    // replays the stored request id instead of creating a second post.
     const request: PostClipRequest = {
-      attemptId: randomUUID(), clipPath: path, clipTitle: item.title, durationMs: null, caption: item.caption,
+      attemptId: item.id, clipPath: path, clipTitle: item.title, durationMs: null, caption: item.caption,
       targets: automation.accounts.map((account) => ({ ...account, ...(generated?.find((post) => post.platform === account.platform)?.caption
         ? { customContent: generated.find((post) => post.platform === account.platform)!.caption } : {}) })), timing: { mode: 'now' },
       options: {

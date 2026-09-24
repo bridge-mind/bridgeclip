@@ -56,12 +56,13 @@ export function parseTrimRange(enabled: boolean, startText: string, endText: str
 export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; end: number | null }): ClipJobRequest {
   return {
     videoUrl: draft.source.trim(),
+    clippingMode: draft.clippingMode,
     maxClips: draft.autoClipCount ? null : draft.maxClips,
     autoClipCount: draft.autoClipCount,
     durationRanges: draft.durations.length > 0 ? draft.durations : null,
     aspectRatio: draft.aspectRatio,
     layoutStyle: draft.layoutStyle,
-    layoutVision: draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
+    layoutVision: draft.clippingMode === 'quality' && draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
     pacing: draft.pacing,
     includeCaptions: draft.includeCaptions,
     captionPreset: draft.captionPreset,
@@ -328,7 +329,10 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
               )
             })}
           </div>
-          {draft.layoutStyle === 'auto' && (
+          {draft.layoutStyle === 'auto' && draft.clippingMode === 'economy' && (
+            <p className="mt-2 text-2xs text-ink-subtle">AI vision checks are off in Economy mode.</p>
+          )}
+          {draft.layoutStyle === 'auto' && draft.clippingMode === 'quality' && (
             <SettingRow
               className="mt-2"
               title="Check tricky shots with AI vision"
@@ -352,12 +356,29 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
   )
 }
 
-function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
+export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
   const toggleDuration = (id: string): void => {
     update({ durations: draft.durations.includes(id) ? draft.durations.filter((d) => d !== id) : [...draft.durations, id] })
   }
   return (
     <div className="space-y-4">
+      <Group label="Clipping mode">
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Clipping mode">
+          {([
+            { id: 'quality', label: 'Quality', hint: 'Opus 5.5 planning · MAI Transcribe 2' },
+            { id: 'economy', label: 'Economy', hint: 'GLM 5.3 Flash planning · Whisper Turbo' }
+          ] as const).map((mode) => {
+            const selected = draft.clippingMode === mode.id
+            return <button key={mode.id} type="button" role="radio" aria-checked={selected} tabIndex={selected ? 0 : -1}
+              onKeyDown={onRadioKeyDown} onClick={() => update({ clippingMode: mode.id })}
+              className={cn('glass-tile glass-tile-hover rounded-xl px-3 py-2.5 text-left', selected && 'glass-selected')}>
+              <span className="block text-sm font-medium text-ink">{mode.label}</span>
+              <span className="block text-2xs text-ink-subtle">{mode.hint}</span>
+            </button>
+          })}
+        </div>
+        <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. If Whisper cannot provide timed words, transcription uses MAI Transcribe 2. Clip choices and captions may be less accurate.</p>
+      </Group>
       <Group label="Clip length" aside={draft.durations.length === 0 ? 'Any length' : `${draft.durations.length} selected`}>
         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7" role="group" aria-label="Clip length options">
           {DURATIONS.map((d) => {
@@ -454,7 +475,7 @@ function ReviewStep({ draft, trim, onEdit }: {
     ? 'Any length'
     : DURATIONS.filter((d) => draft.durations.includes(d.id)).map((d) => d.range).join(', ')
   const framing = draft.aspectRatio === '9:16'
-    ? `${LAYOUT_STYLES.find((s) => s.id === draft.layoutStyle)?.label ?? 'Smart'} framing${draft.layoutStyle === 'auto' && draft.layoutVision ? ' · AI vision' : ''}`
+    ? `${LAYOUT_STYLES.find((s) => s.id === draft.layoutStyle)?.label ?? 'Smart'} framing${draft.clippingMode === 'quality' && draft.layoutStyle === 'auto' && draft.layoutVision ? ' · AI vision' : ''}`
     : 'Whole frame'
   const trimLabel = draft.trimOpen && (trim.start != null || trim.end != null)
     ? ` · ${trim.start != null ? formatSeconds(trim.start) : 'start'} to ${trim.end != null ? formatSeconds(trim.end) : 'end'}`
@@ -464,6 +485,7 @@ function ReviewStep({ draft, trim, onEdit }: {
     { step: 'video', label: 'Video', value: `${sourceLabel(draft.source)}${trimLabel}` },
     { step: 'format', label: 'Format', value: `${FORMATS.find((f) => f.id === draft.aspectRatio)?.label ?? draft.aspectRatio} ${draft.aspectRatio} · ${framing}` },
     { step: 'format', label: 'Pacing', value: draft.pacing === 'tight' ? 'Cut dead air' : 'Original timing' },
+    { step: 'clips', label: 'Mode', value: draft.clippingMode === 'economy' ? 'Economy · lower cost' : 'Quality · higher accuracy' },
     { step: 'clips', label: 'Clips', value: `${lengths} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
     { step: 'captions', label: 'Captions', value: draft.includeCaptions ? CAPTION_PRESET_NAMES[draft.captionPreset] ?? draft.captionPreset : 'Off' }
   ]

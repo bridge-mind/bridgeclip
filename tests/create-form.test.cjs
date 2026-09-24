@@ -7,7 +7,7 @@ const { renderToStaticMarkup } = require('react-dom/server')
 
 const bundled = buildSync({
   stdin: {
-    contents: `export { FormatStep, JobForm, parseTrimRange } from './src/renderer/components/JobForm';
+    contents: `export { FormatStep, ClipsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
       export { SetupCard } from './src/renderer/components/SetupCard';
       export { useSettingsStore } from './src/renderer/store/use-settings-store';
       export { isValidSourceLink } from './src/renderer/components/SourcePicker';
@@ -60,6 +60,22 @@ test('the wizard opens on the video step with the steps listed in order', () => 
   assert.ok(order.every((index, i) => index > -1 && (i === 0 || index > order[i - 1])))
   assert.match(html, /aria-current="step"[^>]*>.*?Video/s)
   assert.match(html, /Choose a video/)
+})
+
+test('clipping mode is selectable and economy disables paid vision in the submitted request', () => {
+  const { ClipsStep, buildJobRequest } = form.exports
+  const draft = {
+    source: 'https://example.com/video', clippingMode: 'economy', aspectRatio: '9:16', layoutStyle: 'auto',
+    layoutVision: true, pacing: 'tight', durations: ['short'], autoClipCount: true, maxClips: 5,
+    includeCaptions: true, captionPreset: 'pop'
+  }
+  const html = renderToStaticMarkup(React.createElement(ClipsStep, { draft, update() {} }))
+  assert.match(html, /aria-label="Clipping mode"/)
+  assert.match(html, /Economy/)
+  const request = buildJobRequest(draft, { start: null, end: null })
+  assert.equal(request.clippingMode, 'economy')
+  assert.equal(request.layoutVision, false)
+  assert.equal(buildJobRequest({ ...draft, clippingMode: 'quality' }, { start: null, end: null }).layoutVision, true)
 })
 
 test('format and framing radio groups each expose one keyboard tab stop', () => {
