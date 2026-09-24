@@ -105,6 +105,16 @@ nsis:
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
 
+linux:
+  target:
+    - AppImage
+    - pacman
+    - deb
+  category: Video
+  icon: build/icon.png
+  maintainer: BridgeMind
+  description: BridgeClip by BridgeMind. Turn long videos into captioned short-form clips, locally, with your own API keys.
+
 # Auto-updates come from GitHub Releases: electron-updater reads
 # latest-mac.yml / latest.yml from the newest published (non-draft) release.
 publish:
