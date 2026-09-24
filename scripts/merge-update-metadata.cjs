@@ -1,4 +1,5 @@
-const { readFileSync, writeFileSync, lstatSync, createReadStream } = require('node:fs')
+const { readFileSync, writeFileSync, constants } = require('node:fs')
+const { open } = require('node:fs/promises')
 const { join, basename } = require('node:path')
 const { createHash } = require('node:crypto')
 const yaml = require('js-yaml')
@@ -25,12 +26,19 @@ async function verifyArtifacts(document, directory) {
       throw new Error('Invalid update artifact name')
     }
     const artifact = join(directory, file.url)
-    const artifactStat = lstatSync(artifact)
-    if (!artifactStat.isFile() || artifactStat.size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
-    const hash = createHash('sha512')
-    for await (const chunk of createReadStream(artifact)) hash.update(chunk)
-    const digest = hash.digest('base64')
-    if (digest !== file.sha512) throw new Error(`Update artifact digest mismatch: ${file.url}`)
+    // Check and hash the same open inode. O_NOFOLLOW prevents a symlink swap
+    // between validation and opening from redirecting the stream.
+    const handle = await open(artifact, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const artifactStat = await handle.stat()
+      if (!artifactStat.isFile() || artifactStat.size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
+      const hash = createHash('sha512')
+      for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk)
+      const digest = hash.digest('base64')
+      if (digest !== file.sha512) throw new Error(`Update artifact digest mismatch: ${file.url}`)
+    } finally {
+      await handle.close()
+    }
   }
 }
 
