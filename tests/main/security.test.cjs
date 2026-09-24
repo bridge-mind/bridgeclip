@@ -31,7 +31,7 @@ const { validateJobConfig } = loadSource('validation.ts', { './security': securi
 
 test('development checks the staged FFmpeg that the clipping engine uses', async () => {
   const binDir = path.join(__dirname, '../../engine-bin')
-  const ffmpeg = path.join(binDir, 'ffmpeg')
+  const ffmpeg = path.join(binDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
   const invoked = []
   const execFile = () => {}
   execFile[require('node:util').promisify.custom] = async (command) => {
@@ -291,7 +291,9 @@ test('settings migration writes a private file', () => {
   })
   try {
     assert.equal(store.loadSettings().openrouterApiKey, 'old-key')
-    assert.equal(fs.statSync(path.join(userData, 'settings.json')).mode & 0o077, 0)
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(path.join(userData, 'settings.json')).mode & 0o077, 0)
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -308,10 +310,12 @@ test('library rejects parseable but incomplete job output', async () => {
     assert.equal((await manager.getJobHistory(root))[0].status, 'completed')
     const outside = path.join(root, 'outside.json')
     fs.writeFileSync(outside, JSON.stringify({ job_id: 'outside', clips: [] }))
-    fs.rmSync(path.join(run, 'job_output.json'))
-    fs.symlinkSync(outside, path.join(run, 'job_output.json'))
-    assert.equal(await manager.getJobOutput(run), null)
-    assert.equal((await manager.getJobHistory(root))[0].status, 'failed')
+    if (process.platform !== 'win32') {
+      fs.rmSync(path.join(run, 'job_output.json'))
+      fs.symlinkSync(outside, path.join(run, 'job_output.json'))
+      assert.equal(await manager.getJobOutput(run), null)
+      assert.equal((await manager.getJobHistory(root))[0].status, 'failed')
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -341,7 +345,9 @@ test('run history persists outcomes, identifies interrupted work, and omits sour
     const raw = fs.readFileSync(path.join(root, failedId, 'run-history.json'), 'utf8')
     assert.equal(raw.includes('private-query'), false)
     assert.equal(raw.includes('abc123def45'), true)
-    assert.equal(fs.statSync(path.join(root, failedId, 'run-history.json')).mode & 0o077, 0)
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(path.join(root, failedId, 'run-history.json')).mode & 0o077, 0)
+    }
     runHistory.finishRunRecord(root, failedId, 'failed', 'Audio transcription failed.')
     runHistory.createRunRecord(root, runningId, '/tmp/local-video.mp4')
     runHistory.createRunRecord(root, cancelledId, '/tmp/cancelled.mp4')
@@ -354,11 +360,13 @@ test('run history persists outcomes, identifies interrupted work, and omits sour
     assert.equal(active.find((entry) => entry.jobId === cancelledId).status, 'cancelled')
     assert.equal((await manager.getJobHistory(root)).find((entry) => entry.jobId === runningId).status, 'interrupted')
 
-    const outside = path.join(root, 'outside.json')
-    fs.writeFileSync(outside, raw)
-    fs.rmSync(path.join(root, failedId, 'run-history.json'))
-    fs.symlinkSync(outside, path.join(root, failedId, 'run-history.json'))
-    assert.equal(runHistory.readRunRecord(root, failedId), null)
+    if (process.platform !== 'win32') {
+      const outside = path.join(root, 'outside.json')
+      fs.writeFileSync(outside, raw)
+      fs.rmSync(path.join(root, failedId, 'run-history.json'))
+      fs.symlinkSync(outside, path.join(root, failedId, 'run-history.json'))
+      assert.equal(runHistory.readRunRecord(root, failedId), null)
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -377,7 +385,9 @@ test('diagnostic logs omit source URLs and use private file permissions', () => 
     assert.equal(log.includes('dummy'), false)
     assert.equal(JSON.parse(log).failureCode, 'transcription.bad_request')
     assert.equal(JSON.parse(log).httpStatus, 400)
-    assert.equal(fs.statSync(loggerModule.getLogFilePath()).mode & 0o077, 0)
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(loggerModule.getLogFilePath()).mode & 0o077, 0)
+    }
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 

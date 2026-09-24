@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openrouterApiKey: '',
   zernioApiKey: '',
   outputDirectory: join(app.getPath('home'), 'BridgeClip'),
-  pythonPath: 'python3',
+  pythonPath: process.platform === 'win32' ? 'python' : 'python3',
   customVocabulary: ''
 }
 

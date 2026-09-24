@@ -206,7 +206,7 @@ export function resolvePythonPath(enginePath: string, userPythonPath: string): s
     }
   }
 
-  return (!app.isPackaged && userPythonPath) || 'python3'
+  return (!app.isPackaged && userPythonPath) || (process.platform === 'win32' ? 'python' : 'python3')
 }
 
 /**
