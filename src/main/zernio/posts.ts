@@ -1,7 +1,7 @@
 import { app, shell } from 'electron'
 import { execFile } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { stat } from 'fs/promises'
 import { basename, join } from 'path'
 import { promisify } from 'util'
@@ -175,9 +175,14 @@ function loadAttempts(): void {
 }
 function saveAttempts(): void {
   const path = attemptPath()
-  const temp = `${path}.tmp`
-  writeFileSync(temp, JSON.stringify({ version: 1, workspace: currentWorkspace(), attempts: [...attempts].slice(-300) }), { mode: 0o600 })
-  renameSync(temp, path)
+  const temp = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temp, JSON.stringify({ version: 1, workspace: currentWorkspace(), attempts: [...attempts].slice(-300) }), { flag: 'wx', mode: 0o600 })
+    renameSync(temp, path)
+  } catch (error) {
+    rmSync(temp, { force: true })
+    throw error
+  }
 }
 const running = new Map<string, AbortController>()
 let workspaceGeneration = 0
