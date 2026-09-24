@@ -42,7 +42,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "electron-updater": "^6.8.9",
-    "undici": "^6.28.1"
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-ts": "^3.0.0",
