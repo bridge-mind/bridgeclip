@@ -2,6 +2,8 @@ import { isZernioId, isZernioPlatform, type ZernioAccount, type ZernioPlatform, 
 import { isIP } from 'net'
 import { readResponseText } from '../http-response'
 import { assertPublicWebUrl, isPublicAddress } from '../network-policy'
+import { randomUUID } from 'crypto'
+import { logger } from '../logger'
 
 const BASE_URL = 'https://zernio.com/api/v1'
 const REQUEST_TIMEOUT_MS = 30_000
@@ -176,11 +178,14 @@ function errorFor(status: number, body: JsonRecord, headers: Headers | string | 
   if (status === 401) return new ZernioApiError('Zernio rejected your API key. Check the key in Settings.', status, code ?? 'invalid_credentials')
   if (status === 402) return new ZernioApiError(paymentMessage(str(body.reason)), status, code ?? 'PAYMENT_REQUIRED')
   if (status === 403) {
+    if (/this api key does not have access to this profile/i.test(String(body.error ?? body.message ?? '')) || code === 'profile_access_denied') {
+      return new ZernioApiError("This Zernio API key cannot access this profile. In Zernio's API keys, use a key with access to this profile, or Full access for new profiles, and Read & Write permission. Update the key in BridgeClip Settings.", status, 'profile_access_denied')
+    }
     if (code === 'PLATFORM_BETA_RESTRICTED') return new ZernioApiError("This platform is in a closed beta on Zernio and isn't enabled for your workspace yet.", status, code)
     if (code === 'PLATFORM_DISABLED') return new ZernioApiError('Zernio has temporarily disabled this platform. Try again later.', status, code)
     if (code === 'PROFILE_OVER_LIMIT') return new ZernioApiError("This Zernio profile is over your plan's limit. Pick another profile or upgrade in Zernio.", status, code)
     if (code === 'ACCOUNT_DISCONNECTED') return new ZernioApiError('That account needs to sign in again. Reconnect it on the Accounts page.', status, code)
-    if (code === 'insufficient_permissions') return new ZernioApiError("This Zernio API key isn't allowed to do that. Check the key's access in Zernio.", status, code)
+    if (code === 'insufficient_permissions') return new ZernioApiError("This Zernio API key isn't allowed to do that. Check its profile access, Read & Write permission, and enabled resources in Zernio, then update the key in BridgeClip Settings.", status, code)
   }
   if (status === 400 && code === 'INVALID_REDIRECT_URL') {
     return new ZernioApiError("Zernio didn't accept BridgeClip's local sign-in return address. Please report this issue.", status, code)
@@ -282,7 +287,7 @@ function profileError(error: unknown, name: string): unknown {
   if (error.status === 409) {
     return new ZernioApiError(`A Zernio profile named “${cleanHandle(name, 80) ?? name}” already exists. Pick another name.`, 409, error.code ?? 'profile_name_conflict')
   }
-  if (error.status === 403 && !error.code) {
+  if (error.status === 403 && (error.code === 'profile_limit_exceeded' || (!error.code && /profile limit|maximum number of profiles/i.test(error.message)))) {
     return new ZernioApiError("Your Zernio plan's profile limit is reached. Delete an unused profile, or switch to usage-based billing in Zernio (it has no profile limit).", 403, 'profile_limit')
   }
   return error
@@ -293,11 +298,22 @@ function profileError(error: unknown, name: string): unknown {
  * key. Runs only in the main process: the key never reaches the renderer.
  */
 export class ZernioClient {
+  /** Correlates this client's requests without logging credentials or account identifiers. */
+  readonly traceId = randomUUID()
   /** `baseUrl` exists for tests against a local mock; production always uses Zernio. */
   constructor(private readonly apiKey: string, private readonly baseUrl: string = BASE_URL) {}
 
   private async request(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<unknown> {
-    throwIfRateLimited()
+    const startedAt = Date.now()
+    // Only static route labels; queries contain OAuth state and profile IDs.
+    const labels = new Set(['profiles', 'accounts', 'connect', 'health', 'tiktok', 'youtube', 'instagram', 'facebook', 'twitter', 'linkedin', 'threads'])
+    const operation = path.split('?')[0].split('/').filter(Boolean).map((part) => labels.has(part) ? part : 'item').join('.')
+    const context = { traceId: this.traceId, requestId: randomUUID(), method, operation }
+    logger.info('zernio.request.start', context)
+    try { throwIfRateLimited() } catch (error) {
+      logger.warn('zernio.request.blocked', { ...context, status: 429 })
+      throw error
+    }
     let response: Response
     let raw: string
     try {
@@ -314,11 +330,19 @@ export class ZernioClient {
       })
       raw = await readResponseText(response, 2 * 1024 * 1024)
     } catch {
+      logger.warn('zernio.request.failed', { ...context, status: 0, category: 'network', durationMs: Date.now() - startedAt })
       throw new ZernioApiError('Could not reach Zernio. Check your internet connection and try again.', 0, 'network_error')
     }
     noteRateLimit(response.headers)
     const parsed = raw ? safeJson(raw) : {}
-    if (!response.ok) throw errorFor(response.status, asRecord(parsed), response.headers)
+    if (!response.ok) {
+      const error = errorFor(response.status, asRecord(parsed), response.headers)
+      const category = error.code === 'profile_access_denied' ? 'profile_access_denied'
+        : error.code === 'insufficient_permissions' ? 'insufficient_permissions' : 'provider_failure'
+      logger.warn('zernio.request.failed', { ...context, status: response.status, category, durationMs: Date.now() - startedAt })
+      throw error
+    }
+    logger.info('zernio.request.completed', { ...context, status: response.status, durationMs: Date.now() - startedAt })
     return parsed
   }
 

@@ -299,11 +299,11 @@ export const useAccountsStore = create<AccountsState>((set, get) => {
           if (start.status === 'pending' && !get().connecting) getApi().zernio.cancelConnect().catch(() => {})
           return
         }
-        if (start.status !== 'failed' && start.createdProfile) {
+        if (start.createdProfile) {
           const createdProfile = start.createdProfile
           set((state) => ({ profiles: [...state.profiles.filter((p) => p.id !== createdProfile.id), createdProfile] }))
         }
-        if (start.status !== 'failed' && start.profileId && start.profileId !== get().profileId) {
+        if ((start.status !== 'failed' || start.createdProfile) && start.profileId && start.profileId !== get().profileId) {
           // The workspace had no profile, or a new one was created for this sign-in.
           saveProfile(start.profileId)
           set({ profileId: start.profileId })

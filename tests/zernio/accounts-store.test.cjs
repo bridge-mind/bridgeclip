@@ -83,6 +83,19 @@ test('hydrate shows cached accounts at once and restores a pending sign-in', asy
   assert.equal(s.state().error.kind, 'offline')
 })
 
+test('a profile left behind after an access denial stays selected for recovery', async () => {
+  const s = load({ cached: overview([]) })
+  await s.state().hydrate()
+  const id = 'c'.repeat(24)
+  s.zernio.nextConnect = { status: 'failed', platform: 'youtube', profileId: id, createdProfile: { id, name: 'New brand' }, error: { kind: 'auth', message: 'Update the key in Settings.' } }
+  await s.state().connect('youtube', { newProfileName: 'New brand' })
+  assert.equal(s.state().profileId, id)
+  assert.equal(s.state().profiles.filter((p) => p.id === id).length, 1)
+  assert.equal(s.state().notice.action, 'settings')
+  assert.equal(s.state().notice.tone, 'danger')
+  assert.equal(s.state().connecting, null)
+})
+
 test('concurrent loads share one request', async () => {
   const s = load()
   const gate = deferred()

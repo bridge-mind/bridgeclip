@@ -49,10 +49,12 @@ export default function App(): React.JSX.Element {
         return
       }
       const item = NAV_ITEMS.find((n) => n.shortcut === e.key)
-      if (item) {
-        e.preventDefault()
-        setPage(item.id)
-      }
+      if (!item) return
+      e.preventDefault()
+      // Switching pages unmounts the page's dialogs. A post in flight would lose
+      // its progress and cancel controls while the main process keeps uploading.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      setPage(item.id)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)

@@ -6,7 +6,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { createMenu } from './menu'
 import { registerIpcHandlers } from './ipc-handlers'
 import { initAutoUpdater } from './auto-updater'
-import { logger, getLogFilePath } from './logger'
+import { logger, getLogFilePath, errorSummary } from './logger'
 import { authorizeMedia, isTrustedExternalUrl, openAuthorizedMedia } from './security'
 import { loadSettings } from './settings-store'
 import { cleanStaleWorkspaces, stopAllJobsForQuit } from './pipeline-runner'
@@ -18,16 +18,10 @@ import { isAutomationMedia, startAutomationScheduler } from './automations'
 // of a silent exit. Without these, an unhandled rejection in an IPC handler
 // would disappear into the void in a packaged build.
 process.on('uncaughtException', (err) => {
-  logger.error('main.uncaughtException', {
-    message: err.message,
-    stack: err.stack,
-    name: err.name
-  })
+  logger.error('main.uncaughtException', errorSummary(err))
 })
 process.on('unhandledRejection', (reason) => {
-  logger.error('main.unhandledRejection', {
-    reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : String(reason)
-  })
+  logger.error('main.unhandledRejection', errorSummary(reason))
 })
 
 let mainWindow: BrowserWindow | null = null
@@ -90,10 +84,16 @@ function createWindow(): void {
     show: false,
     title: 'BridgeClip',
     icon: is.dev ? devIcon : undefined,
-    titleBarStyle: 'hiddenInset',
-    // Vertically centred in the renderer's 40px title-bar strip, inside the
-    // sidebar (72px icon rail or 200px full width).
-    trafficLightPosition: { x: 16, y: 12 },
+    // macOS-only window chrome: 'hiddenInset' and trafficLightPosition are
+    // ignored on other platforms, so only pass them on darwin.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          // Vertically centred in the renderer's 40px title-bar strip, inside the
+          // sidebar (72px icon rail or 200px full width).
+          trafficLightPosition: { x: 16, y: 12 }
+        }
+      : {}),
     // macOS: a native vibrancy material under the renderer's translucent
     // backdrop (html.vibrant in globals.css). Elsewhere, a solid base.
     ...(process.platform === 'darwin'

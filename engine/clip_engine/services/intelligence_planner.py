@@ -83,6 +83,7 @@ class PlanningApiCosts:
 # missing, so it only needs to be roughly right.
 MODEL_PRICING: dict[str, dict[str, float]] = {
     "anthropic/claude-opus-5.5": {"input": 4.00e-6, "output": 20.0e-6},
+    "z-ai/glm-5.3-flash": {"input": 0.075e-6, "output": 0.25e-6},
     "google/gemini-3.8-flash": {"input": 0.75e-6, "output": 3.75e-6},
     "openai/gpt-6-sol": {"input": 2.00e-6, "output": 10.0e-6},
 }

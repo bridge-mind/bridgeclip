@@ -168,6 +168,20 @@ def test_transcription_chunk_seek_preserves_timing(tmp_path, start):
     assert first_beep == pytest.approx(expected, abs=0.015)
 
 
+def test_transcription_range_extracts_only_the_window_on_the_source_clock(tmp_path):
+    path = source(tmp_path, duration=20)
+    service = TranscriptionService.__new__(TranscriptionService)
+    out = tmp_path / "transcription.wav"
+    asyncio.run(service._extract_audio_from_video(str(path), str(out), 7.0, 11.0))
+    samples = np.frombuffer(run(FFMPEG, "-v", "error", "-i", out, "-ac", "1", "-ar", "16000",
+                               "-f", "f32le", "-"), np.float32)
+    assert len(samples) / 16000 == pytest.approx(4.0, abs=0.05)
+    loud = np.flatnonzero(np.abs(samples) > 0.1) / 16000
+    # Beeps at 7.5, 8.5, 9.5 and 10.5 of the source land at 0.5, 1.5, 2.5 and 3.5 of the window.
+    assert loud[0] == pytest.approx(0.5, abs=0.015)
+    assert loud[-1] == pytest.approx(3.7, abs=0.015)
+
+
 @pytest.mark.parametrize("fps", ["24", "25", "30", "30000/1001", "60", "60000/1001"])
 def test_many_cuts_and_seek_share_caption_timeline(tmp_path, fps):
     path = source(tmp_path, rate=fps, duration=24, audio_delay=0.3)
