@@ -76,7 +76,7 @@ npm run dev
 
 BridgeClip finds its in-repo engine and virtual environment automatically. **Settings → System check** shows the Python, yt-dlp, FFmpeg, and engine checks; set **Python path** in development if you use another interpreter.
 
-On Linux, use the system FFmpeg with the libass-backed `ass` filter (`ffmpeg -hide_banner -filters | grep -E '(^|\s)ass\s'`) and skip `scripts/prepare-resources.sh` in development — it is macOS-only. Arch: `sudo pacman -S ffmpeg`. Python 3.12 is recommended, but 3.14 works best-effort (verified via `uv venv --python 3.14 engine/.venv` plus a hashed-lock install). For local packaging, run `npm run dist:linux` (AppImage + pacman + deb); no prepared `engine-bin/` is required for a dev build.
+On Linux, use system FFmpeg with the libass-backed `ass` filter (`ffmpeg -hide_banner -filters | grep -E '[[:space:]]ass[[:space:]]'`) and Python 3.12. Arch: `sudo pacman -S ffmpeg`. Skip `scripts/prepare-resources.sh` during development; it prepares macOS release resources. Linux development and tests are supported, but a self-contained Linux package is not yet available.
 
 The release workflow packages the in-repo engine and media tools into signed macOS builds. For local packaging, first run `bash scripts/prepare-resources.sh arm64` (or `x64` on Intel), then follow [the release guide](docs/RELEASING.md). Signing credentials are still required for a distributable build.
 
@@ -100,7 +100,6 @@ The release workflow packages the in-repo engine and media tools into signed mac
 | `npm run test:main` | Check desktop security and pipeline regressions |
 | `npm run test:zernio` | Check social account, upload and posting flows against local mocks |
 | `npm run dist:mac` | Package the current Mac architecture into `dist/` after preparing matching resources (signing needs a Developer ID) |
-| `npm run dist:linux` | Package AppImage + pacman + deb into `dist/` (Linux; uses the system FFmpeg, no prepared `engine-bin/` required) |
 | `npm run icons` | Regenerate the app icon from `scripts/icon/` (macOS) |
 
 ### Project layout
