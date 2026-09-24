@@ -553,6 +553,7 @@ class TranscriptionService:
         billed_seconds = 0.0
         detected_language = None
         model = self.settings.transcription_model
+        used_models: list[str] = []
         chunk_count = max(1, math.ceil(duration / TRANSCRIPTION_CHUNK_SECONDS))
         with tempfile.TemporaryDirectory(prefix="clip-transcribe-", dir=os.path.dirname(audio_path)) as work:
             for index in range(chunk_count):
@@ -584,6 +585,8 @@ class TranscriptionService:
                     model = TRANSCRIPTION_MODEL
                     response = await self._request_transcript(chunk_path, language, keyterms, model)
                     parsed = self._parse_openrouter_response(response, end - start, model)
+                if model not in used_models:
+                    used_models.append(model)
                 detected_language = detected_language or parsed.language
                 if parsed.api_costs:
                     total_cost += parsed.api_costs.estimated_cost_usd
@@ -603,11 +606,12 @@ class TranscriptionService:
                             label = f"C{index + 1}{label}"
                         segments.append(TranscriptSegment(words[0].start_time_ms, words[-1].end_time_ms,
                                                           " ".join(w.word for w in words), label, words))
+        reported_model = " + ".join(used_models)
         return TranscriptionResult(
             segments=segments, full_text=" ".join(segment.text for segment in segments),
             language=detected_language, duration_seconds=duration,
-            model=model,
-            api_costs=TranscriptionApiCosts(model=model, audio_duration_seconds=billed_seconds,
+            model=reported_model,
+            api_costs=TranscriptionApiCosts(model=reported_model, audio_duration_seconds=billed_seconds,
                                              estimated_cost_usd=round(total_cost, 8)),
         )
 
