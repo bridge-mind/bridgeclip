@@ -15,11 +15,15 @@ no text measurement is needed. Words keep their advance widths on every layer,
 which keeps the stack aligned while words change color.
 """
 
+import glob
 import logging
+import math
 import os
 import re
+import struct
 from dataclasses import dataclass
-from typing import Callable, Optional
+from functools import lru_cache
+from typing import Any, Callable, Optional
 
 from clip_engine.config import CaptionStyle, get_settings
 from clip_engine.services.transcription_service import TranscriptSegment, TranscriptWord
@@ -48,6 +52,75 @@ SRT_LINGER_MS = 400
 def _norm(word: str) -> str:
     """Comparison key for emphasis matching ("$14,500" -> "14500")."""
     return re.sub(r"[^a-z0-9]", "", word.lower())
+
+# Side margins of the base style; libass wraps lines wider than the rest.
+SIDE_MARGIN = 60
+# Advance width per character (share of the font size) when the preset's font
+# file can't be measured. Heavy caps run up to ~0.9; erring wide is safe.
+FALLBACK_CHAR_EM = 0.75
+
+# Pixel-placed caption blocks: (start_ms, end_ms, block_w, block_h) -> (alignment, y).
+Placer = Callable[[int, int, int, int], tuple[int, int]]
+
+FONTS_DIRS = (
+    os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts"),
+    os.path.join("/app", "assets", "fonts"),
+)
+
+
+@dataclass(frozen=True)
+class _FontMetrics:
+    """A caption face at PIL size 100 and the line libass lays it out on."""
+
+    font: Any  # PIL FreeTypeFont
+    ascent: float  # baseline below the line top, px at size 100
+    height: float  # line height, px at size 100
+
+
+def _win_metrics(path: str) -> Optional[tuple[float, float]]:
+    """OS/2 (winAscent, winDescent) as shares of the em, or None."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        tables = {}
+        for i in range(struct.unpack(">H", data[4:6])[0]):
+            tag, _, offset, _ = struct.unpack(">4sIII", data[12 + 16 * i: 28 + 16 * i])
+            tables[tag] = offset
+        head, os2 = tables[b"head"], tables[b"OS/2"]
+        units = struct.unpack(">H", data[head + 18: head + 20])[0]
+        ascent, descent = struct.unpack(">HH", data[os2 + 74: os2 + 78])
+    except (OSError, KeyError, struct.error):
+        return None
+    return (ascent / units, descent / units) if units and ascent + descent else None
+
+
+@lru_cache(maxsize=16)
+def _caption_font(font_name: str) -> Optional[_FontMetrics]:
+    """Metrics of a bundled caption face ("Montserrat Black", "Anton"), or None.
+
+    libass (like VSFilter) sizes a font so its OS/2 winAscent + winDescent
+    equals the font size, which draws it smaller than the same size elsewhere.
+    """
+    try:
+        from PIL import ImageFont
+    except ImportError:  # pragma: no cover - Pillow ships with the engine
+        return None
+    wanted = font_name.lower()
+    for directory in FONTS_DIRS:
+        for path in sorted(glob.glob(os.path.join(os.path.abspath(directory), "*.[ot]tf"))):
+            try:
+                font = ImageFont.truetype(path, 100)
+            except OSError:
+                continue
+            family, face = font.getname()
+            if wanted not in (f"{family} {face}".lower(), family.lower() if face == "Regular" else None):
+                continue
+            win = _win_metrics(path)
+            ascent, descent = (win[0] * 100, win[1] * 100) if win else font.getmetrics()
+            if ascent + descent > 0:
+                return _FontMetrics(font, ascent, ascent + descent)
+    return None
+
 
 ALIGNMENT_MAP = {
     "left": {"top": 7, "center": 4, "bottom": 1},
@@ -96,6 +169,7 @@ class CaptionGeneratorService:
         video_region_height: Optional[int] = None,
         anchors: Optional[list[tuple[int, int, int]]] = None,
         emphasis_words: Optional[list[str]] = None,
+        placer: Optional[Placer] = None,
     ) -> Optional[str]:
         """Generate ASS captions for a clip.
 
@@ -109,6 +183,10 @@ class CaptionGeneratorService:
                 an/pos override tags to the anchor active at its start, so captions move
                 with mid-clip layout changes.
             emphasis_words: Punch words to render in the style's emphasis color.
+            placer: Optional per-group placement (see layout_renderer.CaptionPlacer),
+                called with each word group's (start_ms, end_ms, width, height)
+                in clip time. Every event of a group gets the same an/pos, so
+                captions never jump mid-phrase. Replaces `anchors`.
         """
         style = caption_style or self.settings.get_caption_style()
         self._emphasis = {
@@ -132,13 +210,25 @@ class CaptionGeneratorService:
         header = self._generate_ass_header(
             style, output_width, output_height, video_region_y, video_region_height,
         )
+        place = None
+        if placer is not None:
+            def place(events: list[str], words: list[str]) -> list[str]:
+                if not events:
+                    return events
+                times = [line[len("Dialogue: "):].split(",", 3)[1:3] for line in events]
+                start = min(self._parse_ass_time(t[0]) for t in times)
+                end = max(self._parse_ass_time(t[1]) for t in times)
+                width, height = self._block_size(words, style, output_width)
+                alignment, y = placer(start, end, width, height)
+                return [self._pin(line, alignment, output_width // 2, y) for line in events]
+
         if has_word_timing and style.word_by_word_highlight:
-            events = self._word_by_word_events(relevant_segments, clip_start_ms, clip_end_ms, style)
+            events = self._word_by_word_events(relevant_segments, clip_start_ms, clip_end_ms, style, place)
         else:
-            events = self._segment_events(relevant_segments, clip_start_ms, clip_end_ms, style)
+            events = self._segment_events(relevant_segments, clip_start_ms, clip_end_ms, style, place)
         ass_content = header + self._events_header() + "\n".join(events)
 
-        if anchors:
+        if anchors and placer is None:
             ass_content = self._apply_anchors(ass_content, anchors, output_width)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -240,6 +330,7 @@ class CaptionGeneratorService:
         clip_start_ms: int,
         clip_end_ms: int,
         style: CaptionStyle,
+        place: Optional[Callable[[list[str], list[str]], list[str]]] = None,
     ) -> list[str]:
         all_words: list[TranscriptWord] = []
         for segment in segments:
@@ -260,9 +351,10 @@ class CaptionGeneratorService:
                 next_group_start_ms = word_groups[group_idx + 1].words[0].start_time_ms
             else:
                 next_group_start_ms = None
-            events.extend(self._generate_word_group_events(
+            group_events = self._generate_word_group_events(
                 group, clip_start_ms, style, next_group_start_ms
-            ))
+            )
+            events.extend(place(group_events, [w.word for w in group.words]) if place else group_events)
         return events
 
     def _segment_events(
@@ -271,6 +363,7 @@ class CaptionGeneratorService:
         clip_start_ms: int,
         clip_end_ms: int,
         style: CaptionStyle,
+        place: Optional[Callable[[list[str], list[str]], list[str]]] = None,
     ) -> list[str]:
         """Whole segments without word timing: every word drawn as already spoken."""
         events: list[str] = []
@@ -283,7 +376,8 @@ class CaptionGeneratorService:
                 _Token(self._display_word(w, style), PAST, self._is_emphasis(w))
                 for w in segment.text.split()
             ]
-            events.extend(self._layered_events(tokens, start_ms, end_ms, style, entrance=False))
+            segment_events = self._layered_events(tokens, start_ms, end_ms, style, entrance=False)
+            events.extend(place(segment_events, segment.text.split()) if place else segment_events)
         return events
 
     def _apply_anchors(
@@ -297,17 +391,69 @@ class CaptionGeneratorService:
         prefix = "Dialogue: "
         for line in ass_content.split("\n"):
             if line.startswith(prefix):
-                fields = line[len(prefix):].split(",", 9)
-                start_ms = self._parse_ass_time(fields[1])
+                start_ms = self._parse_ass_time(line[len(prefix):].split(",", 2)[1])
                 alignment, y = anchors[-1][1], anchors[-1][2]
                 for until_ms, a, ay in anchors:
                     if start_ms < until_ms:
                         alignment, y = a, ay
                         break
-                fields[9] = f"{{\\an{alignment}\\pos({output_width // 2},{y})}}" + fields[9]
-                line = prefix + ",".join(fields)
+                line = self._pin(line, alignment, output_width // 2, y)
             lines.append(line)
         return "\n".join(lines)
+
+    @staticmethod
+    def _pin(line: str, alignment: int, x: int, y: int) -> str:
+        r"""A Dialogue line with an \an/\pos override in front of its text."""
+        prefix = "Dialogue: "
+        fields = line[len(prefix):].split(",", 9)
+        fields[9] = f"{{\\an{alignment}\\pos({x},{y})}}" + fields[9]
+        return prefix + ",".join(fields)
+
+    def _block_size(self, words: list[str], style: CaptionStyle, output_width: int) -> tuple[int, int]:
+        r"""Approximate drawn (width, height) of one caption group, in output px.
+
+        Follows how libass lays the events out: explicit lines of
+        max_words_per_line words, wrapped again past the side margins, with
+        the block centered on its \pos. Measured to the glyphs actually drawn,
+        then grown by the widest effect around them and the pop-in overshoot.
+        The height is symmetric about the \pos (twice the larger half).
+        """
+        wrap_w = max(1, output_width - 2 * SIDE_MARGIN)
+        pill = bool(style.highlight_box_color and not style.karaoke_fill)
+        gap = "  " if pill else " "
+        per_line = max(1, style.max_words_per_line)
+        shown = [self._display_word(w, style) for w in words if w.strip()] or [""]
+        texts = [gap.join(shown[i:i + per_line]) for i in range(0, len(shown), per_line)]
+        size = style.font_size
+
+        metrics = _caption_font(style.font_name)
+        if metrics is not None:
+            scale = size / metrics.height
+            widths = [metrics.font.getlength(t) * scale + style.letter_spacing * len(t) for t in texts]
+            _, ink_top, _, ink_bottom = metrics.font.getbbox(" ".join(texts), anchor="ls")
+            baseline, ink_top, ink_bottom = metrics.ascent * scale, ink_top * scale, ink_bottom * scale
+        else:
+            widths = [len(t) * (size * FALLBACK_CHAR_EM + style.letter_spacing) for t in texts]
+            baseline, ink_top, ink_bottom = size, -size, 0  # the whole line box
+        lines = sum(max(1, math.ceil(w / wrap_w)) for w in widths)
+
+        # From the \pos (block center) to the first line's glyph tops and the
+        # last line's glyph bottoms; each line is font_size tall.
+        block_top = -lines * size / 2
+        top = block_top + baseline + ink_top
+        bottom = block_top + (lines - 1) * size + baseline + ink_bottom
+        # Soft shadows and glows reach about their blur past their border.
+        pad = max(
+            style.outline_width,
+            style.outline_width + style.shadow_spread + style.shadow_blur if style.shadow_opacity > 0 else 0,
+            style.line_box_padding + 1 if style.line_box_color else 0,
+            style.glow_radius + style.glow_blur if style.glow_color else 0,
+            style.highlight_box_padding + 1 if pill else 0,
+        )
+        shadow = style.shadow_offset if style.shadow_opacity > 0 else 0
+        grow = 1.06 if style.entrance_pop else 1.0
+        half = max(pad - top, bottom + pad + shadow) * grow
+        return round((min(max(widths), wrap_w) + 2 * pad) * grow), round(2 * half)
 
     @staticmethod
     def _parse_ass_time(value: str) -> int:

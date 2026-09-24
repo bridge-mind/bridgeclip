@@ -84,6 +84,27 @@ class TranscriptionTests(unittest.TestCase):
             self.assertEqual(extract.call_count, 3)
             self.assertEqual(list(Path(work).iterdir()), [source])
 
+    def test_range_window_is_extracted_once_and_shifted_onto_the_source_clock(self):
+        response = {"text": "mid word", "words": [{"word": "mid", "start": .5, "end": .9, "speaker": 0},
+                                                  {"word": "word", "start": 1.0, "end": 1.4, "speaker": 0}]}
+        with tempfile.TemporaryDirectory() as work:
+            video = Path(work) / "source.mp4"
+            video.write_bytes(b"video")
+            extracted = []
+
+            async def extract(video_path, audio_path, start_seconds=0.0, end_seconds=None):
+                extracted.append((start_seconds, end_seconds))
+                Path(audio_path).write_bytes(b"audio")
+
+            with patch.object(self.service, "_extract_audio_from_video", new=extract), \
+                 patch.object(self.service, "_audio_duration", return_value=70), \
+                 patch.object(self.service, "_request_transcript", new=AsyncMock(return_value=response)):
+                result = asyncio.run(self.service.transcribe(str(video), work, start_seconds=600, end_seconds=660))
+            self.assertEqual(extracted, [(595.0, 665.0)])
+            self.assertEqual(result.segments[0].words[0].start_time_ms, 595500)
+            self.assertEqual(result.segments[0].end_time_ms, 596400)
+            self.assertEqual(list(Path(work).iterdir()), [video])
+
     def test_request_shape_and_sanitized_http_failures(self):
         calls = []
 

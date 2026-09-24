@@ -221,6 +221,7 @@ bridgeclip/engine/requirements.txt
 bridgeclip/engine/tests/__init__.py
 bridgeclip/engine/tests/conftest.py
 bridgeclip/engine/tests/test_av_sync.py
+bridgeclip/engine/tests/test_caption_placement.py
 bridgeclip/engine/tests/test_captions.py
 bridgeclip/engine/tests/test_clip_editor.py
 bridgeclip/engine/tests/test_framing_quality.py

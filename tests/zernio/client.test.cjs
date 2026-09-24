@@ -5,7 +5,10 @@ const { createMockZernio } = require('./support/mock-zernio.cjs')
 const { loadMain } = require('./support/load-main.cjs')
 
 const KEY = 'test-zernio-key'
-const load = () => loadMain("export * from './src/main/zernio/client'", { electron: {} })
+const load = () => loadMain("export * from './src/main/zernio/client'", {
+  electron: {},
+  '../logger': { logger: { info() {}, warn() {}, error() {} } }
+})
 
 async function withMock(fn, options) {
   const mock = await createMockZernio({ apiKey: KEY, ...options })
@@ -53,6 +56,23 @@ test('accepts bare-array and wrapped list responses', () => withMock(async ({ mo
   mock.route({ method: 'GET', path: '/api/v1/accounts', handler: (ctx) => ctx.json(200, { data: [{ id: 'e'.repeat(24), platform: 'linkedin', profileId: 'd'.repeat(24) }] }) })
   assert.deepEqual(await api.listProfiles(), [{ id: 'd'.repeat(24), name: 'Bare' }])
   assert.equal((await api.listAccounts())[0].platform, 'linkedin')
+}))
+
+test('profile access denials explain key scope and are never mistaken for a plan limit', () => withMock(async ({ mock, api }) => {
+  for (const code of [undefined, 'access_denied', 'profile_access_denied']) {
+    mock.failNext('POST', '/api/v1/profiles', 403, { error: 'This API key does not have access to this profile', code })
+    await assert.rejects(api.createProfile('New brand'), (error) => {
+      assert.equal(error.code, 'profile_access_denied')
+      assert.match(error.message, /Full access/)
+      assert.match(error.message, /Settings/)
+      assert.doesNotMatch(error.message, /plan.*limit/)
+      return true
+    })
+  }
+  mock.failNext('POST', '/api/v1/profiles', 403, { error: 'Forbidden' })
+  await assert.rejects(api.createProfile('New brand'), (error) => !/plan.*limit/.test(error.message))
+  mock.failNext('POST', '/api/v1/profiles', 403, { error: 'Profile limit reached' })
+  await assert.rejects(api.createProfile('New brand'), (error) => error.code === 'profile_limit')
 }))
 
 test('only a documented content conflict is treated as a duplicate post', () => withMock(async ({ mock, client, api }) => {

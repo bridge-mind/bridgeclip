@@ -123,7 +123,7 @@ export type ZernioConnectStart =
   | { status: 'pending'; platform: ZernioPlatform; profileId: string; createdProfile?: ZernioProfile }
   /** Zernio finished without a browser (already connected, or a disconnected account re-enabled). */
   | { status: 'connected'; platform: ZernioPlatform; profileId: string; accountId: string | null; username: string | null; createdProfile?: ZernioProfile }
-  | { status: 'failed'; platform: ZernioPlatform; profileId: string | null; error: ZernioErrorInfo }
+  | { status: 'failed'; platform: ZernioPlatform; profileId: string | null; error: ZernioErrorInfo; createdProfile?: ZernioProfile }
 
 /** A sign-in waiting for its browser redirect; survives a renderer reload. */
 export interface ZernioPendingConnect {

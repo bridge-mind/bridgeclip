@@ -37,6 +37,7 @@ extraResources:
     filter:
       - "**/*.py"
       - "**/*.txt"
+      - "!**/test_*.py"
   - from: engine
     to: engine
     filter:

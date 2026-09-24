@@ -152,7 +152,7 @@ def test_visual_fallback_completes_without_captions_and_discloses_status(monkeyp
             metadata=SimpleNamespace(title="Silent demo", duration_seconds=60, width=1920, height=1080),
         )
 
-    async def transcribe(video_path, work_dir, keyterms=None):
+    async def transcribe(video_path, work_dir, keyterms=None, **_range):
         if no_audio:
             raise NoAudioTrackError("no audio stream")
         return TranscriptionResult(segments=[], full_text="")
