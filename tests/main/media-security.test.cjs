@@ -74,6 +74,25 @@ test('oversized provider streams are cancelled before the full body is buffered'
   } finally { global.fetch = oldFetch; cleanup() }
 })
 
+test('a bad OpenRouter request is not reported as a credit failure', async () => {
+  const { dir, cleanup } = tempDir()
+  const oldFetch = global.fetch
+  try {
+    const file = path.join(dir, 'valid.mp4'); clip(file)
+    global.fetch = async () => new Response('{}', { status: 400 })
+    await assert.rejects(main(dir).transcribeAutomationClip(file), (error) => {
+      assert.match(error.message, /transcription request \(400\)/)
+      assert.doesNotMatch(error.message, /credits|key/i)
+      return true
+    })
+    await assert.rejects(main(dir).generateAutomationMetadata('Transcript', '', '', ['instagram']), (error) => {
+      assert.match(error.message, /metadata request \(400\)/)
+      assert.doesNotMatch(error.message, /credits|key/i)
+      return true
+    })
+  } finally { global.fetch = oldFetch; cleanup() }
+})
+
 test('post cache writes do not follow predictable temporary-file symlinks', () => {
   const { dir, cleanup } = tempDir()
   try {

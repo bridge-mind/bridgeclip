@@ -288,8 +288,11 @@ test('AI automation transcribes the bank clip and sends distinct grounded metada
       assert.equal(ctx.req.headers.authorization, 'Bearer test-openrouter-key')
       assert.equal(ctx.req.headers['xi-api-key'], undefined)
       assert.equal(ctx.body.model, 'microsoft/mai-transcribe-2')
-      assert.equal(ctx.body.input_audio.format, 'm4a')
-      assert.ok(Buffer.from(ctx.body.input_audio.data, 'base64').length > 0)
+      assert.equal(ctx.body.response_format, 'verbose_json')
+      assert.equal(ctx.body.input_audio.format, 'wav')
+      const audio = Buffer.from(ctx.body.input_audio.data, 'base64')
+      assert.equal(audio.toString('ascii', 0, 4), 'RIFF')
+      assert.equal(audio.toString('ascii', 8, 12), 'WAVE')
       ctx.json(200, { text: transcript })
     } },
     { method: 'POST', path: '/chat/completions', auth: false, handler: (ctx) => ctx.json(200, { choices: [{ message: { content: JSON.stringify(metadata) } }] }) }

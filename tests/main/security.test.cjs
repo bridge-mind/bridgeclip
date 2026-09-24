@@ -53,6 +53,7 @@ test('Zernio sign-in links stay on its HTTPS origin and provider errors are sani
   const provider = loadSource('zernio/client.ts', {
     '../../shared/zernio': loadShared('zernio.ts'),
     '../http-response': loadSource('http-response.ts'),
+    '../logger': { logger: { info() {}, warn() {}, error() {} } },
     '../network-policy': { assertPublicWebUrl: async () => {}, isPublicAddress: security.isPublicAddress ?? (() => false) }
   }, {
     AbortSignal,
