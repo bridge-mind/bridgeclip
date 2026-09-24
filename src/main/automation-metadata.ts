@@ -36,14 +36,21 @@ function endpoint(name: 'BRIDGECLIP_E2E_TRANSCRIPTION_URL' | 'BRIDGECLIP_E2E_OPE
   return app.isPackaged ? production : process.env[name] || production
 }
 
-async function providerResponse(response: Response, provider: string, maxBytes = 100_000): Promise<Record<string, unknown>> {
-  if (!response.ok) throw new Error(`${provider} could not prepare this clip (${response.status}). Check its key and credits in Settings.`)
-  const raw = await readResponseText(response, maxBytes, `${provider} returned too much metadata.`)
+async function providerResponse(response: Response, operation: 'transcription' | 'metadata', maxBytes = 100_000): Promise<Record<string, unknown>> {
+  if (!response.ok) {
+    const status = response.status
+    if (status === 401 || status === 403) throw new Error('OpenRouter rejected the API key. Check it in Settings.')
+    if (status === 402) throw new Error('OpenRouter reports insufficient credits. Check your OpenRouter account.')
+    if (status === 429) throw new Error('OpenRouter is rate limiting requests. Try again shortly.')
+    if (status === 400) throw new Error(`OpenRouter rejected the ${operation} request (400). ${operation === 'transcription' ? 'The clip audio or request format may be unsupported.' : 'Try again or use manual metadata.'}`)
+    throw new Error(`OpenRouter ${operation} failed (${status}). Try again later.`)
+  }
+  const raw = await readResponseText(response, maxBytes, 'OpenRouter returned too much metadata.')
   try {
     const parsed: unknown = JSON.parse(raw)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
   } catch { /* Safe fixed error below. */ }
-  throw new Error(`${provider} returned an invalid response. Try again.`)
+  throw new Error('OpenRouter returned an invalid response. Try again.')
 }
 
 /** Use the same OpenRouter account for speech recognition and metadata writing. */
@@ -56,11 +63,12 @@ export async function transcribeAutomationClip(path: string): Promise<string> {
     // Bound each request rather than sending an entire long recording to STT.
     await execFileAsync(resolveBinary('ffmpeg'), [
       '-v', 'error', '-nostdin', '-y', '-protocol_whitelist', 'file,pipe,fd',
-      '-format_whitelist', 'mov,matroska,webm,avi,flv', '-i', path, '-vn',
-      '-acodec', 'aac', '-ab', '64k', '-ar', '16000', '-ac', '1',
-      '-f', 'segment', '-segment_time', '300', '-reset_timestamps', '1', join(directory, 'speech-%04d.m4a')
+      '-format_whitelist', 'mov,matroska,webm,avi,flv', '-i', path, '-map', '0:a:0', '-vn',
+      '-af', 'aresample=16000:async=1:first_pts=0:min_hard_comp=0.001',
+      '-acodec', 'pcm_s16le', '-ar', '16000', '-ac', '1',
+      '-f', 'segment', '-segment_format', 'wav', '-segment_time', '300', '-reset_timestamps', '1', join(directory, 'speech-%04d.wav')
     ], { timeout: 120_000, maxBuffer: 100_000 })
-    const files = (await readdir(directory)).filter((file) => /^speech-\d{4}\.m4a$/.test(file)).sort()
+    const files = (await readdir(directory)).filter((file) => /^speech-\d{4}\.wav$/.test(file)).sort()
     let totalBytes = 0
     for (const file of files) totalBytes += (await stat(join(directory, file))).size
     if (totalBytes > 50 * 1024 * 1024) throw new Error('The clip audio is too long for automatic metadata. Use manual metadata.')
@@ -72,12 +80,12 @@ export async function transcribeAutomationClip(path: string): Promise<string> {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'microsoft/mai-transcribe-2', input_audio: { data: bytes.toString('base64'), format: 'm4a' },
-          response_format: 'json',
+          model: 'microsoft/mai-transcribe-2', input_audio: { data: bytes.toString('base64'), format: 'wav' },
+          response_format: 'verbose_json',
           ...(phrases.length ? { provider: { options: { azure: { phraseList: { phrases } } } } } : {})
         }),
         redirect: 'error', signal: AbortSignal.timeout(90_000)
-      }), 'OpenRouter', 2_000_000)
+      }), 'transcription', 2_000_000)
       if (typeof result.text !== 'string') throw new Error('OpenRouter returned an invalid transcript. Try again.')
       const text = [...result.text].map((character) => {
         const code = character.charCodeAt(0)
@@ -194,7 +202,7 @@ export async function generateAutomationMetadata(transcript: string, title: stri
         { role: 'user', content: JSON.stringify(input) },
         ...(validationFeedback ? [{ role: 'user', content: `Regenerate all posts. The previous result failed validation: ${validationFeedback} Check every platform's required fields and caption rules. Copy each evidence phrase as a contiguous excerpt of the transcript. Remove any claim that cannot be supported by that excerpt. Use a Threads topic only when it appears verbatim in the transcript.` }] : [])
       ], response_format: { type: 'json_schema', json_schema: { name: 'automation_metadata', strict: true, schema } }, provider: { require_parameters: true }, max_tokens: 4000 })
-    }), 'OpenRouter') } catch (error) {
+    }), 'metadata') } catch (error) {
       if (error instanceof Error && error.message.startsWith('OpenRouter')) throw error
       throw new Error('OpenRouter could not be reached. The clip was not posted; try again later.')
     }

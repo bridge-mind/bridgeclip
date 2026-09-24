@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, BookA, Check, ChevronDown, Cpu, FolderOpen, Github, Info, KeyRound, Loader2, RefreshCw, ScrollText } from 'lucide-react'
 import { useSettingsStore } from '../store/use-settings-store'
 import { useApiKeyDrafts } from '../hooks/use-api-key-drafts'
@@ -58,8 +58,7 @@ export function SettingsPage(): React.JSX.Element {
     { id: 'system', label: 'System check', icon: <Cpu />, tone: !toolsChecked ? 'idle' : toolsMissing ? 'danger' : 'success' },
     { id: 'about', label: 'About', icon: <Info />, tone: 'idle' }
   ]
-  const active = useActiveSection(sections.map((section) => section.id))
-  const jump = (id: SectionId): void => document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const [active, jump] = useActiveSection(sections.map((section) => section.id))
 
   const checks: { label: string; ok: boolean | null; detail: string; section: SectionId; optional?: boolean; tone?: 'danger' }[] = [
     { label: 'OpenRouter', ok: openrouterConfigured, detail: openrouterConfigured ? 'Key saved' : 'Needed to transcribe and pick clips', section: 'keys' },
@@ -268,29 +267,51 @@ function Section({ id, className, children }: { id: SectionId; className?: strin
   )
 }
 
-/** The section nearest the top of the scroll area, for the side nav. */
-function useActiveSection(ids: SectionId[]): SectionId {
+/** How far below the top of the scroll area a section counts as reached. */
+const ACTIVE_OFFSET = 72
+
+/** The section nearest the top of the scroll area, for the side nav, and a jump that selects it. */
+function useActiveSection(ids: SectionId[]): [SectionId, (id: SectionId) => void] {
   const [active, setActive] = useState<SectionId>(ids[0])
+  // A jumped-to section stays selected through its smooth scroll, even if it
+  // can't reach the top, until the user scrolls on their own.
+  const pinned = useRef(false)
   const key = ids.join(',')
   useEffect(() => {
     const root = document.getElementById('page-scroll')
     if (!root) return
     const update = (): void => {
-      const top = root.getBoundingClientRect().top + 72
+      if (pinned.current) return
+      // Sections near the end can't scroll up to the offset line, so over the
+      // last stretch the line slides down to the bottom edge. Every section
+      // takes its turn, and the last is selected at the bottom.
+      const max = root.scrollHeight - root.clientHeight
+      const tail = Math.min(max, root.clientHeight - ACTIVE_OFFSET)
+      const progress = tail > 0 ? Math.min(1, Math.max(0, root.scrollTop - (max - tail)) / tail) : 0
+      const line = root.getBoundingClientRect().top + ACTIVE_OFFSET + progress * (root.clientHeight - ACTIVE_OFFSET)
       let current = ids[0]
       for (const id of ids) {
         const el = document.getElementById(`settings-${id}`)
-        if (el && el.getBoundingClientRect().top <= top) current = id
+        if (el && el.getBoundingClientRect().top <= line) current = id
       }
-      // At the bottom, the last short section can't reach the top: select it anyway.
-      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 4) current = ids[ids.length - 1]
       setActive(current)
     }
+    const release = (): void => { pinned.current = false }
+    const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
     update()
     root.addEventListener('scroll', update, { passive: true })
-    return () => root.removeEventListener('scroll', update)
+    for (const type of inputs) window.addEventListener(type, release, { passive: true })
+    return () => {
+      root.removeEventListener('scroll', update)
+      for (const type of inputs) window.removeEventListener(type, release)
+    }
   }, [key])
-  return active
+  const jump = (id: SectionId): void => {
+    pinned.current = true
+    setActive(id)
+    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  return [active, jump]
 }
 
 function KeyRow({ children }: { children: ReactNode }): React.JSX.Element {

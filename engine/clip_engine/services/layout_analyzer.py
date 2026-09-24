@@ -210,6 +210,9 @@ class ClipLayoutPlan:
     source_width: int
     source_height: int
     vision_cost_usd: float = 0.0
+    # Every analyzed frame's faces as (t_ms in window time, boxes), including
+    # frames without any. Captions use them to stay off faces.
+    face_samples: list[tuple[int, list[Box]]] = field(default_factory=list)
 
     @property
     def dominant_layout(self) -> str:
@@ -783,7 +786,10 @@ class LayoutAnalyzer:
             shots.extend(apply_style(sub, style, src_w, src_h) for sub in sub_shots)
 
         shots = self._merge_adjacent(shots)
-        plan = ClipLayoutPlan(shots=shots, source_width=src_w, source_height=src_h, vision_cost_usd=vision_cost)
+        plan = ClipLayoutPlan(
+            shots=shots, source_width=src_w, source_height=src_h, vision_cost_usd=vision_cost,
+            face_samples=[(f.t_ms, f.faces) for f in frames],
+        )
         logger.info(
             "Layout plan: " + ", ".join(
                 f"{s.layout}[{s.start_ms / 1000:.1f}-{s.end_ms / 1000:.1f}s,{s.source}]" for s in shots

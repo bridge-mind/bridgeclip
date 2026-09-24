@@ -1,4 +1,5 @@
-const { readFileSync, writeFileSync, statSync } = require('node:fs')
+const { readFileSync, writeFileSync, constants } = require('node:fs')
+const { open } = require('node:fs/promises')
 const { join, basename } = require('node:path')
 const { createHash } = require('node:crypto')
 const yaml = require('js-yaml')
@@ -18,25 +19,40 @@ function mergeMetadata(documents) {
   return { ...first, files: [...files.values()] }
 }
 
-function verifyArtifacts(document, directory) {
+async function verifyArtifacts(document, directory) {
   for (const file of document.files) {
-    if (typeof file.url !== 'string' || basename(file.url) !== file.url || !file.url.endsWith('.zip')) throw new Error('Invalid update artifact name')
+    if (typeof file.url !== 'string' || basename(file.url) !== file.url ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:zip|dmg)$/.test(file.url)) {
+      throw new Error('Invalid update artifact name')
+    }
     const artifact = join(directory, file.url)
-    if (statSync(artifact).size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
-    const digest = createHash('sha512').update(readFileSync(artifact)).digest('base64')
-    if (digest !== file.sha512) throw new Error(`Update artifact digest mismatch: ${file.url}`)
+    // Check and hash the same open inode. O_NOFOLLOW prevents a symlink swap
+    // between validation and opening from redirecting the stream.
+    const handle = await open(artifact, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const artifactStat = await handle.stat()
+      if (!artifactStat.isFile() || artifactStat.size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
+      const hash = createHash('sha512')
+      for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk)
+      const digest = hash.digest('base64')
+      if (digest !== file.sha512) throw new Error(`Update artifact digest mismatch: ${file.url}`)
+    } finally {
+      await handle.close()
+    }
   }
 }
 
-if (require.main === module) {
+async function main() {
   const root = process.argv[2]
   if (!root) throw new Error('Artifact directory required')
-  const documents = ['arm64', 'x64'].map(arch => {
+  const documents = []
+  for (const arch of ['arm64', 'x64']) {
     const directory = join(root, `mac-${arch}`)
     const document = yaml.load(readFileSync(join(directory, 'latest-mac.yml'), 'utf8'))
-    verifyArtifacts(document, directory)
-    return document
-  })
+    await verifyArtifacts(document, directory)
+    documents.push(document)
+  }
   writeFileSync(join(root, 'latest-mac.yml'), yaml.dump(mergeMetadata(documents)))
 }
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
 module.exports = { mergeMetadata, verifyArtifacts }

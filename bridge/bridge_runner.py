@@ -148,6 +148,13 @@ async def run(config: dict) -> bool:
     os.environ["YTDLP_PROXIES"] = ""
     os.environ["YTDLP_PROXY"] = ""
     os.environ["LAYOUT_VISION_ENABLED"] = "true" if config["layout_vision_enabled"] else "false"
+    os.environ["CLIPPING_MODE"] = config.get("clipping_mode", "quality")
+    if config.get("clipping_mode", "quality") == "economy":
+        # Each job has its own bridge process, so model choices cannot leak to
+        # another queued or concurrent run. Never fall back to paid planners.
+        os.environ["PLANNER_MODEL"] = "z-ai/glm-5.3-flash"
+        os.environ["PLANNER_FALLBACK_MODELS"] = ""
+        os.environ["LAYOUT_VISION_ENABLED"] = "false"
 
     from network_guard import install as install_network_guard
     install_network_guard()
@@ -286,6 +293,8 @@ def validate_config(config: object) -> dict:
         raise ValueError("Invalid layout style")
     if config.get("pacing", "tight") not in ("tight", "natural"):
         raise ValueError("Invalid pacing")
+    if config.get("clipping_mode", "quality") not in ("quality", "economy"):
+        raise ValueError("Invalid clipping mode")
     keyterms = config.get("keyterms")
     if keyterms is not None and (
         not isinstance(keyterms, list) or len(keyterms) > 1000 or

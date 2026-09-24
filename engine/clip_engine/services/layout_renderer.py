@@ -16,6 +16,8 @@ Everything here is pure string/number math so it can be unit tested without
 FFmpeg.
 """
 
+from bisect import bisect_left
+from dataclasses import dataclass
 from fractions import Fraction
 from typing import Optional
 
@@ -70,12 +72,10 @@ def step_expr(boundaries: list[float], values: list[float]) -> str:
 # ------------------------------------------------------------------
 
 
-def fill_crop(shot: ShotLayout, src_w: int, src_h: int, out_w: int, out_h: int) -> tuple[int, int, str, str]:
-    """9:16 crop that follows the shot's focus path. Returns (w, h, x_expr, y_expr).
-
-    Expressions are in window time (`t` before the piece's timestamps are
-    reset), so the path is offset by the shot's start.
-    """
+def _fill_crop_path(
+    shot: ShotLayout, src_w: int, src_h: int, out_w: int, out_h: int,
+) -> tuple[int, int, list[tuple[float, float]], list[tuple[float, float]]]:
+    """Crop size and its (t_sec, x) / (t_sec, y) keyframes in window time."""
     target = out_w / out_h
     if src_w / src_h > target:
         crop_h = even(src_h)
@@ -90,9 +90,30 @@ def fill_crop(shot: ShotLayout, src_w: int, src_h: int, out_w: int, out_h: int) 
         t = (shot.start_ms + t_ms) / 1000
         xs.append((t, _clamp(cx * src_w - crop_w / 2, 0, src_w - crop_w)))
         ys.append((t, _clamp(cy * src_h - crop_h * PERSON_FACE_Y, 0, src_h - crop_h)))
+    return crop_w, crop_h, xs, ys
+
+
+def fill_crop(shot: ShotLayout, src_w: int, src_h: int, out_w: int, out_h: int) -> tuple[int, int, str, str]:
+    """9:16 crop that follows the shot's focus path. Returns (w, h, x_expr, y_expr).
+
+    Expressions are in window time (`t` before the piece's timestamps are
+    reset), so the path is offset by the shot's start.
+    """
+    crop_w, crop_h, xs, ys = _fill_crop_path(shot, src_w, src_h, out_w, out_h)
     x_expr = piecewise_expr(xs) if crop_w < src_w else "0"
     y_expr = piecewise_expr(ys) if crop_h < src_h else "0"
     return crop_w, crop_h, x_expr, y_expr
+
+
+def path_value_at(points: list[tuple[float, float]], t: float) -> float:
+    """Value of piecewise_expr(points) at time t (held flat past either end)."""
+    points = sorted(points)
+    if t <= points[0][0]:
+        return points[0][1]
+    for (t0, v0), (t1, v1) in zip(points, points[1:]):
+        if t < t1:
+            return v0 + (v1 - v0) * (t - t0) / max(t1 - t0, 1e-3)
+    return points[-1][1]
 
 
 def _fit_rect(cx: float, cy: float, w: float, h: float, bounds: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
@@ -566,3 +587,207 @@ def per_shot_expr(plan: ClipLayoutPlan, values: list[float]) -> str:
         return f"{values[0]:.0f}"
     boundaries = [s.end_ms / 1000 for s in plan.shots[:-1]]
     return step_expr(boundaries, values)
+
+
+# ------------------------------------------------------------------
+# Faces on the output frame, for caption placement
+# ------------------------------------------------------------------
+
+# (x0, y0, x1, y1) in output pixels.
+Rect = tuple[int, int, int, int]
+
+# Detections are 1/ANALYSIS_FPS (250 ms) apart. Each one covers this long on
+# either side, so a missed frame doesn't open a gap a caption could drop into.
+FACE_HOLD_MS = 375
+# Faces shorter than this on the output are background (posters, crowds).
+MIN_ZONE_FACE_PX = 48
+
+
+@dataclass(frozen=True)
+class FaceZone:
+    """Faces visible on the output frame during [start_ms, end_ms) of output time."""
+
+    start_ms: int
+    end_ms: int
+    rects: tuple[Rect, ...]
+
+
+def shot_views(
+    shot: ShotLayout, t_ms: int, src_w: int, src_h: int, out_w: int, out_h: int,
+) -> list[tuple[tuple[float, float, float, float], tuple[int, int, int, int]]]:
+    """Where the source lands on the output at window time t_ms.
+
+    One (source crop, output rect) pair per panel, both as (x, y, w, h). Mirrors
+    the 9:16 branches of shot_chain.
+    """
+    if shot.layout == LayoutType.TALKING_HEAD:
+        crop_w, crop_h, xs, ys = _fill_crop_path(shot, src_w, src_h, out_w, out_h)
+        t = t_ms / 1000
+        x = path_value_at(xs, t) if crop_w < src_w else 0
+        y = path_value_at(ys, t) if crop_h < src_h else 0
+        return [((x, y, crop_w, crop_h), (0, 0, out_w, out_h))]
+
+    top_h, bottom_h = stacked_panel_heights(shot, src_h, out_h)
+    if shot.layout == LayoutType.TWO_SHOT and len(shot.people) >= 2:
+        left, right = shot.people[0], shot.people[1]
+        mid = (left.cx + right.cx) / 2 * src_w
+        top = person_crop(left, src_w, src_h, out_w, top_h, (0, mid))
+        bottom = person_crop(right, src_w, src_h, out_w, bottom_h, (mid, src_w))
+        return [
+            ((top[2], top[3], top[0], top[1]), (0, 0, out_w, top_h)),
+            ((bottom[2], bottom[3], bottom[0], bottom[1]), (0, top_h, out_w, bottom_h)),
+        ]
+    if shot.layout == LayoutType.SCREEN_CAM and shot.cam_box is not None:
+        screen = screen_crop(shot.screen_box, shot.screen_focus, src_w, src_h, out_w, top_h, shot.cam_box)
+        cam = cam_crop(shot.cam_box, shot.cam_face, src_w, src_h, out_w, bottom_h)
+        fit = panel_fit(cam, out_w, bottom_h)
+        if fit is None:
+            cam_dest = (0, top_h, out_w, bottom_h)
+        else:
+            cam_dest = ((out_w - fit[0]) // 2, top_h + (bottom_h - fit[1]) // 2, fit[0], fit[1])
+        return [
+            ((screen[2], screen[3], screen[0], screen[1]), (0, 0, out_w, top_h)),
+            ((cam[2], cam[3], cam[0], cam[1]), cam_dest),
+        ]
+
+    scaled_h, overlay_y = letterbox_geometry(src_w, src_h, out_w, out_h)
+    return [((0, 0, src_w, src_h), (0, overlay_y, out_w, scaled_h))]
+
+
+def face_rects(
+    shot: ShotLayout, faces: list[Box], t_ms: int, src_w: int, src_h: int, out_w: int, out_h: int,
+) -> list[Rect]:
+    """Output-pixel rects of the faces (normalized source boxes) visible at t_ms."""
+    rects: list[Rect] = []
+    for (cx, cy, cw, ch), (dx, dy, dw, dh) in shot_views(shot, t_ms, src_w, src_h, out_w, out_h):
+        sx, sy = dw / cw, dh / ch
+        for face in faces:
+            x0 = max(dx + (face.x * src_w - cx) * sx, dx)
+            y0 = max(dy + (face.y * src_h - cy) * sy, dy)
+            x1 = min(dx + ((face.x + face.w) * src_w - cx) * sx, dx + dw)
+            y1 = min(dy + ((face.y + face.h) * src_h - cy) * sy, dy + dh)
+            # Faces cut off by the crop still count by their visible part, but
+            # not a sliver at the panel edge or a face in the background.
+            if x1 - x0 >= MIN_ZONE_FACE_PX / 2 and (face.h * src_h * sy) >= MIN_ZONE_FACE_PX and y1 > y0:
+                rects.append((round(x0), round(y0), round(x1), round(y1)))
+    return rects
+
+
+def _shot_faces(shot: ShotLayout) -> list[Box]:
+    """The shot's summary face boxes, for shots the detector never saw a face in."""
+    if shot.layout in (LayoutType.TALKING_HEAD, LayoutType.TWO_SHOT):
+        return list(shot.people)
+    if shot.layout == LayoutType.SCREEN_CAM and shot.cam_face is not None:
+        return [shot.cam_face]
+    return []
+
+
+def face_zones(plan: ClipLayoutPlan, time_map, out_w: int, out_h: int) -> list[FaceZone]:
+    """Faces on the output frame over the edited timeline (9:16 only).
+
+    `plan` is in window time (not remapped); `time_map` moves each detection
+    onto the output timeline and drops time the edit cut. A shot where the
+    detector saw no face (e.g. a vision-refined shot) falls back to its
+    summary boxes for its whole length.
+    """
+    src_w, src_h = plan.source_width, plan.source_height
+    samples = sorted(plan.face_samples, key=lambda s: s[0])
+    zones: list[FaceZone] = []
+    for shot in plan.shots:
+        in_shot = [(t, faces) for t, faces in samples if shot.start_ms <= t < shot.end_ms]
+        hold = FACE_HOLD_MS
+        if not any(faces for _, faces in in_shot):
+            in_shot = [((shot.start_ms + shot.end_ms) // 2, _shot_faces(shot))]
+            hold = shot.end_ms - shot.start_ms
+        for t, faces in in_shot:
+            rects = tuple(face_rects(shot, faces, t, src_w, src_h, out_w, out_h)) if faces else ()
+            if not rects:
+                continue
+            for keep_start, keep_end in time_map.pieces_within(shot.start_ms, shot.end_ms):
+                lo, hi = max(keep_start, t - hold), min(keep_end, t + hold)
+                if hi > lo:
+                    zones.append(FaceZone(time_map.to_output(lo), time_map.to_output(hi), rects))
+    return sorted(zones, key=lambda z: z.start_ms)
+
+
+# Band a moved caption stays in (share of the height): below the title card
+# (y 110, up to ~140 px tall) and above the channel banner / platform UI.
+CAPTION_TOP_LIMIT = 0.15
+CAPTION_BOTTOM_LIMIT = 0.80
+# Room kept around a face (share of its size). Detector boxes run from the
+# brows to the chin: hair needs more room above than the chin below, and a
+# close-up's chin needs no more than a fixed margin.
+FACE_PAD_X = 0.15
+FACE_PAD_TOP = 0.25
+FACE_PAD_BOTTOM = 0.12
+MAX_FACE_PAD_BOTTOM_PX = 40
+CAPTION_FACE_GAP = 12
+
+
+class CaptionPlacer:
+    """Picks each caption group's position so it doesn't cover a face.
+
+    A group starts at its shot's anchor (caption_anchor). If that would cover
+    a face visible at any time while the group is up, it moves just below or
+    above the faces, whichever is nearer the anchor, inside the band clear of
+    the title and banner. Later groups in the same shot keep a moved position
+    while it stays clear, so captions don't hop between phrases. If no spot
+    is clear, the one covering the least face wins.
+    """
+
+    def __init__(self, anchors: list[tuple[int, int, int]], zones: list[FaceZone], out_w: int, out_h: int):
+        self.anchors = anchors  # (until_ms, alignment, y), as for CaptionGeneratorService._apply_anchors
+        self.zones = sorted(zones, key=lambda z: z.start_ms)
+        self._starts = [z.start_ms for z in self.zones]
+        self._longest = max((z.end_ms - z.start_ms for z in self.zones), default=0)
+        self.out_w, self.out_h = out_w, out_h
+        self._last: Optional[tuple[int, float]] = None  # (anchor index, center y)
+
+    def faces_during(self, start_ms: int, end_ms: int) -> list[Rect]:
+        first = bisect_left(self._starts, start_ms - self._longest)
+        last = bisect_left(self._starts, end_ms)
+        return [r for z in self.zones[first:last] if z.end_ms > start_ms for r in z.rects]
+
+    def __call__(self, start_ms: int, end_ms: int, block_w: int, block_h: int) -> tuple[int, int]:
+        """(ASS alignment, y) for a caption block on screen during [start_ms, end_ms)."""
+        index = next((i for i, (until, _, _) in enumerate(self.anchors) if start_ms < until), len(self.anchors) - 1)
+        _, alignment, anchor_y = self.anchors[index]
+        half = block_h / 2
+        default = anchor_y - half if alignment in (1, 2, 3) else anchor_y + half if alignment in (7, 8, 9) else anchor_y
+
+        left, right = (self.out_w - block_w) / 2, (self.out_w + block_w) / 2
+        faces, keep_clear = [], []
+        for x0, y0, x1, y1 in self.faces_during(start_ms, end_ms):
+            w, h = x1 - x0, y1 - y0
+            if x1 + w * FACE_PAD_X > left and x0 - w * FACE_PAD_X < right:
+                faces.append((y0, y1))
+                keep_clear.append((
+                    y0 - h * FACE_PAD_TOP - CAPTION_FACE_GAP,
+                    y1 + min(h * FACE_PAD_BOTTOM, MAX_FACE_PAD_BOTTOM_PX) + CAPTION_FACE_GAP,
+                ))
+
+        top, bottom = self.out_h * CAPTION_TOP_LIMIT + half, self.out_h * CAPTION_BOTTOM_LIMIT - half
+        if top > bottom:
+            top = bottom = self.out_h / 2
+
+        def in_band(c: float) -> float:
+            return min(max(c, top), bottom)
+
+        def overlap(c: float, spans: list[tuple[float, float]]) -> float:
+            return sum(max(0.0, min(c + half, b) - max(c - half, a)) for a, b in spans)
+
+        # (center, tier): the previous spot beats the anchor, which beats the rest.
+        candidates = [(default, 1)]
+        if self._last is not None and self._last[0] == index:
+            candidates.append((self._last[1], 0))
+        for a, b in keep_clear:
+            candidates += [(in_band(b + half), 2), (in_band(a - half), 2)]
+        candidates += [(top, 2), (bottom, 2)]
+
+        center, _ = min(candidates, key=lambda c: (
+            4 * overlap(c[0], faces) + overlap(c[0], keep_clear), c[1], abs(c[0] - default),
+        ))
+        self._last = (index, center)
+        if center == default:
+            return alignment, anchor_y
+        return 5, round(center)

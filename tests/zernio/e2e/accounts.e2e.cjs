@@ -169,6 +169,31 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
     await expectRowState('tiktok', 'connected')
   })
 
+  await t.test('create a profile first, then connect an account only inside it', async () => {
+    const browserCount = mock.state.opened.length
+    await click('New profile')
+    await page.getByLabel('Profile name', { exact: true }).fill('Launch team')
+    mock.failNext('POST', '/api/v1/profiles', 409, { error: 'Name already taken' })
+    await click('Create profile')
+    await page.getByRole('alert').filter({ hasText: 'already exists' }).waitFor()
+    assert.equal(await page.getByLabel('Profile name', { exact: true }).inputValue(), 'Launch team')
+    assert.equal(await page.getByLabel('Zernio profile', { exact: true }).inputValue(), profile._id)
+    await shot('11-profile-form-error')
+
+    await click('Create profile')
+    await page.getByRole('heading', { name: 'Accounts in Launch team', exact: true }).waitFor()
+    assert.equal(mock.state.opened.length, browserCount, 'creating a profile does not also open platform sign-in')
+    assert.equal(await page.locator('li[data-state="connected"]').count(), 0)
+    await shot('12-empty-profile')
+    await click('Connect LinkedIn')
+    await expectRowState('linkedin', 'connected')
+    const created = mock.state.profiles.find((p) => p.name === 'Launch team')
+    assert.ok(mock.state.accounts.some((a) => a.platform === 'linkedin' && a.profileId._id === created._id))
+    await page.getByLabel('Zernio profile', { exact: true }).selectOption(profile._id)
+    await expectRowState('linkedin', 'disconnected')
+    await expectRowState('tiktok', 'connected')
+  })
+
   await t.test('a 429 keeps the accounts on screen and says when to retry', async () => {
     mock.failNext('GET', '/api/v1/profiles', 429, { error: 'Rate limit exceeded. Please retry after 2 seconds.', details: { retryAfterSeconds: 2 } }, { 'Retry-After': '2' })
     await click('Refresh accounts')

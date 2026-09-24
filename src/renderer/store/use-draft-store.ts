@@ -17,6 +17,7 @@ export interface StartedJob {
  */
 export interface ClipDraft {
   source: string
+  clippingMode: 'quality' | 'economy'
   aspectRatio: '9:16' | '16:9'
   /** 9:16 framing: smart per-shot layouts, always full frame, or letterbox. */
   layoutStyle: 'auto' | 'fill' | 'fit'
@@ -48,6 +49,7 @@ interface DraftState extends ClipDraft {
 
 export const useDraftStore = create<DraftState>((set) => ({
   source: '',
+  clippingMode: 'quality',
   aspectRatio: '9:16',
   layoutStyle: 'auto',
   layoutVision: true,
