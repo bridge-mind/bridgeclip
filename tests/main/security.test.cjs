@@ -226,7 +226,7 @@ test('saved provider keys remain in main and migrate away from legacy encoding',
   const settingsStore = loadSource('settings-store.ts', {
     electron: {
       app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
+      safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
     }
   })
   try {
@@ -257,7 +257,7 @@ test('settings migration retires ElevenLabs without decrypting it and preserves 
   }))
   const store = loadSource('settings-store.ts', { electron: {
     app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-    safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value),
+    safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value),
       decryptString: (value) => { assert.notEqual(value.toString(), 'retired-key'); return value.toString() } }
   } })
   try {
@@ -280,7 +280,7 @@ test('settings migration writes a private file', () => {
   const store = loadSource('settings-store.ts', {
     electron: {
       app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
+      safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
     }
   })
   try {
