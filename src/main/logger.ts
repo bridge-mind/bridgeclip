@@ -61,27 +61,21 @@ function sanitizeContext(context?: Record<string, unknown>): Record<string, unkn
   return safe
 }
 
-/**
- * A crash line the sanitizer will keep: error name, the message with paths and
- * URLs replaced, and the first stack frame reduced to `function file:line`.
- * Raw messages and stacks are dropped by `sanitizeContext` because they can
- * carry local paths and provider URLs.
- */
-export function errorSummary(error: unknown): { name: string; summary: string; frame: string } {
-  const err = error && typeof error === 'object' && 'message' in error
-    ? error as { name?: unknown; message?: unknown; stack?: unknown }
-    : { name: 'Error', message: String(error), stack: '' }
-  const summary = String(err.message ?? '')
-    .replace(/https?:\/\/[^\s)]+/g, '<url>')
-    .replace(/(?:[A-Za-z]:)?[\\/](?:[^\s\\/:()]+[\\/])*[^\s\\/:()]*/g, '<path>')
-    .replace(/[\r\n]+/g, ' ')
-    .trim()
-  const frameLine = String(err.stack ?? '').split('\n').find((line) => /^\s+at\s/.test(line)) ?? ''
-  const match = /^\s+at\s+(?:(.+?)\s+\()?(?:.*[\\/])?([^\\/():]+):(\d+)(?::\d+)?\)?$/.exec(frameLine)
+/** Keep useful crash metadata without copying untrusted error text into logs. */
+export function errorSummary(error: unknown): { name: string; code: string; frame: string } {
+  const err = error && typeof error === 'object'
+    ? error as { name?: unknown; code?: unknown; stack?: unknown }
+    : null
+  const safeNames = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError'])
+  const safeCodes = new Set(['ENOENT', 'EACCES', 'EPERM', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'ENOSPC', 'EPIPE'])
+  // Stack paths, filenames and function names can themselves contain secrets.
+  // Report a line only for a known, bundled application entry point.
+  const frameLine = typeof err?.stack === 'string' ? err.stack.split('\n').find((line) => /^\s+at\s/.test(line)) ?? '' : ''
+  const match = /(?:^|[\\/])out[\\/](main|preload)[\\/]index\.js:(\d+)(?::\d+)?\)?$/.exec(frameLine)
   return {
-    name: typeof err.name === 'string' ? err.name : 'Error',
-    summary: summary.slice(0, 160),
-    frame: match ? `${match[1] ?? '<anonymous>'} ${match[2]}:${match[3]}` : ''
+    name: typeof err?.name === 'string' && safeNames.has(err.name) ? err.name : 'Error',
+    code: typeof err?.code === 'string' && safeCodes.has(err.code) ? err.code : '',
+    frame: match ? `${match[1]}.index.js:${match[2]}` : ''
   }
 }
 

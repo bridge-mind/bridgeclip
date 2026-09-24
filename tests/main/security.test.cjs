@@ -554,20 +554,30 @@ test('cancellation retains a live process group after the leader closes and forc
   assert.equal(sent.length, 0)
 })
 
-test('crash logs keep a redacted message and first frame instead of omitting everything', () => {
+test('crash logs keep safe diagnostics without leaking credentials from errors', () => {
   const lines = []
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-log-test-'))
   const { logger, errorSummary } = loadSource('logger.ts', {
     electron: { app: { getPath: () => logDir } },
     fs: { ...fs, appendFileSync: (_file, line) => lines.push(JSON.parse(line)) }
   }, { console: { log() {}, warn() {}, error() {} } })
-  const error = new Error('ENOENT: no such file, open /Users/dev/Library/clip.mp4 (see https://example.test/help?token=abc)')
-  error.stack = `Error: ${error.message}\n    at loadRun (/Users/dev/app/out/main/index.js:42:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)`
+  const error = new Error('Authorization: Bearer sk-or-v1-secretcredential on /Users/dev/Library/clip.mp4')
+  error.code = 'ENOENT'
+  error.stack = `Error: ${error.message}\n    at sk-or-v1-secretcredential (/Users/dev/app/out/main/index.js:42:13)`
   logger.error('main.uncaughtException', errorSummary(error))
   const entry = lines[0]
   assert.equal(entry.name, 'Error')
-  assert.equal(entry.summary, 'ENOENT: no such file, open <path> (see <url>)')
-  assert.equal(entry.frame, 'loadRun index.js:42')
-  assert.equal(errorSummary('plain rejection').summary, 'plain rejection')
+  assert.equal(entry.code, 'ENOENT')
+  assert.equal(entry.frame, 'main.index.js:42')
+  assert.equal(errorSummary('plain rejection').name, 'Error')
+  const malicious = new Error('API key sk-or-v1-secretcredential')
+  malicious.name = 'sk-or-v1-secretcredential'
+  malicious.code = 'sk-or-v1-secretcredential'
+  malicious.stack = 'Error\n    at sk-or-v1-secretcredential (/Users/sk-or-v1-secretcredential/secrets.js:1:2)'
+  logger.error('main.unhandledRejection', errorSummary(malicious))
+  assert.equal(lines[1].name, 'Error')
+  assert.equal(lines[1].code, '')
+  assert.equal(lines[1].frame, '')
+  assert.doesNotMatch(JSON.stringify(lines), /sk-or-v1-secretcredential|\/Users\/dev/)
   fs.rmSync(logDir, { recursive: true, force: true })
 })
