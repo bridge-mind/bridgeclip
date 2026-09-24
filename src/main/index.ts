@@ -84,10 +84,16 @@ function createWindow(): void {
     show: false,
     title: 'BridgeClip',
     icon: is.dev ? devIcon : undefined,
-    titleBarStyle: 'hiddenInset',
-    // Vertically centred in the renderer's 40px title-bar strip, inside the
-    // sidebar (72px icon rail or 200px full width).
-    trafficLightPosition: { x: 16, y: 12 },
+    // macOS-only window chrome: 'hiddenInset' and trafficLightPosition are
+    // ignored on other platforms, so only pass them on darwin.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          // Vertically centred in the renderer's 40px title-bar strip, inside the
+          // sidebar (72px icon rail or 200px full width).
+          trafficLightPosition: { x: 16, y: 12 }
+        }
+      : {}),
     // macOS: a native vibrancy material under the renderer's translucent
     // backdrop (html.vibrant in globals.css). Elsewhere, a solid base.
     ...(process.platform === 'darwin'

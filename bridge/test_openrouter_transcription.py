@@ -125,6 +125,29 @@ class TranscriptionTests(unittest.TestCase):
                 self.assertIn(stt.BUDGET_FALLBACK_MODEL, result.api_costs.model)
                 self.assertEqual(result.full_text, "Hello")
 
+    def test_mixed_economy_fallback_reports_both_models_and_combined_cost(self):
+        whisper = {"text": "first", "words": [{"word": "first", "start": 0.1, "end": 0.5}],
+                   "usage": {"seconds": 300, "cost": 0.0009}}
+        mai = {"text": "last", "words": [{"word": "last", "start": 1.1, "end": 1.5}],
+               "usage": {"seconds": 3, "cost": 0.000083}}
+        with tempfile.TemporaryDirectory() as work:
+            source = Path(work) / "source.wav"
+            source.write_bytes(b"audio")
+            self.service.settings.transcription_model = stt.BUDGET_TRANSCRIPTION_MODEL
+            request = AsyncMock(side_effect=[whisper, {"text": "last", "usage": {"seconds": 3, "cost": 0.000009}}, mai])
+            with patch.object(self.service, "_audio_duration", return_value=302), \
+                 patch.object(self.service, "_extract_chunk"), \
+                 patch.object(self.service, "_request_transcript", new=request):
+                result = asyncio.run(self.service.transcribe_audio(str(source)))
+        expected = f"{stt.BUDGET_TRANSCRIPTION_MODEL} + {stt.BUDGET_FALLBACK_MODEL}"
+        self.assertEqual(result.model, expected)
+        self.assertEqual(result.api_costs.model, expected)
+        # The response discarded for missing timestamps was billed too.
+        self.assertEqual(result.api_costs.estimated_cost_usd, 0.000992)
+        self.assertEqual(result.api_costs.audio_duration_seconds, 306)
+        self.assertEqual([call.args[3] for call in request.call_args_list],
+                         [stt.BUDGET_TRANSCRIPTION_MODEL, stt.BUDGET_TRANSCRIPTION_MODEL, stt.BUDGET_FALLBACK_MODEL])
+
     def test_request_shape_and_sanitized_http_failures(self):
         calls = []
 
