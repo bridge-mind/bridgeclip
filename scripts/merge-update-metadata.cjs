@@ -1,4 +1,4 @@
-const { readFileSync, writeFileSync, statSync } = require('node:fs')
+const { readFileSync, writeFileSync, lstatSync, createReadStream } = require('node:fs')
 const { join, basename } = require('node:path')
 const { createHash } = require('node:crypto')
 const yaml = require('js-yaml')
@@ -18,25 +18,33 @@ function mergeMetadata(documents) {
   return { ...first, files: [...files.values()] }
 }
 
-function verifyArtifacts(document, directory) {
+async function verifyArtifacts(document, directory) {
   for (const file of document.files) {
-    if (typeof file.url !== 'string' || basename(file.url) !== file.url || !file.url.endsWith('.zip')) throw new Error('Invalid update artifact name')
+    if (typeof file.url !== 'string' || basename(file.url) !== file.url ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:zip|dmg)$/.test(file.url)) {
+      throw new Error('Invalid update artifact name')
+    }
     const artifact = join(directory, file.url)
-    if (statSync(artifact).size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
-    const digest = createHash('sha512').update(readFileSync(artifact)).digest('base64')
+    const artifactStat = lstatSync(artifact)
+    if (!artifactStat.isFile() || artifactStat.size !== file.size) throw new Error(`Update artifact size mismatch: ${file.url}`)
+    const hash = createHash('sha512')
+    for await (const chunk of createReadStream(artifact)) hash.update(chunk)
+    const digest = hash.digest('base64')
     if (digest !== file.sha512) throw new Error(`Update artifact digest mismatch: ${file.url}`)
   }
 }
 
-if (require.main === module) {
+async function main() {
   const root = process.argv[2]
   if (!root) throw new Error('Artifact directory required')
-  const documents = ['arm64', 'x64'].map(arch => {
+  const documents = []
+  for (const arch of ['arm64', 'x64']) {
     const directory = join(root, `mac-${arch}`)
     const document = yaml.load(readFileSync(join(directory, 'latest-mac.yml'), 'utf8'))
-    verifyArtifacts(document, directory)
-    return document
-  })
+    await verifyArtifacts(document, directory)
+    documents.push(document)
+  }
   writeFileSync(join(root, 'latest-mac.yml'), yaml.dump(mergeMetadata(documents)))
 }
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1 })
 module.exports = { mergeMetadata, verifyArtifacts }

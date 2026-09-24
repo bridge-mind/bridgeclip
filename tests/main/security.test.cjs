@@ -214,8 +214,10 @@ test('external URLs reject executable schemes and embedded credentials', () => {
 test('job validation rejects malformed options and invalid trim intervals', () => {
   const job = { videoUrl: 'https://example.com/video', maxClips: 5, autoClipCount: true, includeCaptions: true, aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'tight', captionPreset: 'pop', durationRanges: ['short'], startTimeSeconds: null, endTimeSeconds: null, bannerPlatform: null, bannerChannelUrl: null }
   assert.doesNotThrow(() => validateJobConfig(job))
+  assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'economy' }))
+  assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'quality' }))
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
-  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
+  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
 })
 
 test('saved provider keys remain in main and migrate away from legacy encoding', () => {

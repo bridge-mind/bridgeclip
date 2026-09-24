@@ -18,7 +18,8 @@ stt = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = stt
 with patch.dict(sys.modules, {
     "clip_engine.config": types.SimpleNamespace(get_settings=lambda: types.SimpleNamespace(
-        openrouter_api_key="test-openrouter", transcription_diarize=True)),
+        openrouter_api_key="test-openrouter", transcription_diarize=True,
+        transcription_model="microsoft/mai-transcribe-2")),
     "clip_engine.services.media_process": types.SimpleNamespace(
         MEDIA_INPUT_OPTIONS=[], run_media=lambda *args, **kwargs: None),
 }):
@@ -61,6 +62,7 @@ class TranscriptionTests(unittest.TestCase):
         result = self.service._parse_openrouter_response({"text": "", "usage": {"cost": 0, "seconds": 2}}, 2)
         self.assertEqual(result.api_costs.estimated_cost_usd, 0)
         self.assertEqual(stt._estimate_transcription_cost(3600), 0.1)
+        self.assertEqual(stt._estimate_transcription_cost(3600, stt.BUDGET_TRANSCRIPTION_MODEL), 0.0108)
 
     def test_chunk_overlap_offsets_and_speaker_scope(self):
         responses = [
@@ -104,6 +106,22 @@ class TranscriptionTests(unittest.TestCase):
             self.assertEqual(result.segments[0].words[0].start_time_ms, 595500)
             self.assertEqual(result.segments[0].end_time_ms, 596400)
             self.assertEqual(list(Path(work).iterdir()), [video])
+    def test_economy_retries_with_mai_when_word_timestamps_are_unavailable(self):
+        fallback = {"text": "Hello", "words": [{"word": "Hello", "start": 0.1, "end": 0.5}]}
+        for first in (stt.TranscriptionProviderError("bad_request", 400), {"text": "Hello"}):
+            with self.subTest(first=type(first).__name__), tempfile.TemporaryDirectory() as work:
+                source = Path(work) / "source.wav"
+                source.write_bytes(b"audio")
+                self.service.settings.transcription_model = stt.BUDGET_TRANSCRIPTION_MODEL
+                request = AsyncMock(side_effect=[first, fallback])
+                with patch.object(self.service, "_audio_duration", return_value=2), \
+                     patch.object(self.service, "_request_transcript", new=request):
+                    result = asyncio.run(self.service.transcribe_audio(str(source)))
+                self.assertEqual([call.args[3] for call in request.call_args_list],
+                                 [stt.BUDGET_TRANSCRIPTION_MODEL, stt.TRANSCRIPTION_MODEL])
+                self.assertEqual(result.model, stt.TRANSCRIPTION_MODEL)
+                self.assertEqual(result.api_costs.model, stt.TRANSCRIPTION_MODEL)
+                self.assertEqual(result.full_text, "Hello")
 
     def test_request_shape_and_sanitized_http_failures(self):
         calls = []
@@ -143,6 +161,13 @@ class TranscriptionTests(unittest.TestCase):
             self.assertEqual(payload["provider"]["options"]["azure"], {
                 "diarization": {"enabled": True}, "phraseList": {"phrases": ["BridgeClip"]},
             })
+            self.service.settings.transcription_model = stt.BUDGET_TRANSCRIPTION_MODEL
+            asyncio.run(self.service._request_transcript(str(audio), "en", ["BridgeClip"]))
+            budget_payload = calls[-1][1]["json"]
+            self.assertEqual(budget_payload["model"], stt.BUDGET_TRANSCRIPTION_MODEL)
+            self.assertNotIn("azure", budget_payload.get("provider", {}).get("options", {}))
+            self.assertEqual(budget_payload["provider"]["options"]["groq"]["prompt"], "Expected vocabulary: BridgeClip")
+            self.assertEqual(self.service._parse_openrouter_response({"text": ""}, 3600).api_costs.model, stt.BUDGET_TRANSCRIPTION_MODEL)
             for status, reason in [(400, "bad_request"), (401, "auth"), (403, "auth"), (402, "quota"), (429, "quota"), (503, "network"), (307, "rejected")]:
                 response.status_code = status
                 with self.subTest(status=status), self.assertRaises(stt.TranscriptionProviderError) as caught:

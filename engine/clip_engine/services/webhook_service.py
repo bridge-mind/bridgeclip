@@ -268,21 +268,24 @@ class WebhookService:
                         headers={**default_headers, "Host": destination.host_header},
                         extensions={"sni_hostname": destination.hostname},
                     )
-                    response = await client.send(request, follow_redirects=False)
-
-                    if response.status_code < 300:
-                        logger.info(
-                            f"Webhook delivered: {payload.event} for job {payload.job_id} "
-                            f"(attempt {attempt}, status {response.status_code})"
-                        )
-                        return WebhookResult(
-                            success=True,
-                            status_code=response.status_code,
-                            attempts=attempt,
-                        )
-                    else:
+                    # A callback controls its response body. Only the status is
+                    # needed, so do not buffer an unbounded reply into memory.
+                    response = await client.send(request, stream=True, follow_redirects=False)
+                    try:
+                        if response.status_code < 300:
+                            logger.info(
+                                f"Webhook delivered: {payload.event} for job {payload.job_id} "
+                                f"(attempt {attempt}, status {response.status_code})"
+                            )
+                            return WebhookResult(
+                                success=True,
+                                status_code=response.status_code,
+                                attempts=attempt,
+                            )
                         last_error = f"HTTP {response.status_code}"
                         logger.warning("Webhook failed (attempt %s, status %s)", attempt, response.status_code)
+                    finally:
+                        await response.aclose()
 
                 except ValueError:
                     return WebhookResult(success=False, error="Callback destination is not public", attempts=attempt)
