@@ -14,8 +14,15 @@ export function isPublicAddress(address: string): boolean {
   }
   if (isIP(address) === 6) {
     const normalized = address.toLowerCase()
-    // Global unicast only; exclude documentation and transition mechanisms.
-    return /^[23][0-9a-f]{3}:/.test(normalized) && !normalized.startsWith('2001:') && !normalized.startsWith('2002:')
+    // Global unicast only; exclude IETF special-purpose (2001::/23, incl. Teredo),
+    // documentation (2001:db8::/32) and 6to4 (2002::/16). The rest of 2001::/16
+    // is ordinary public space (e.g. Google's 2001:4860::/32).
+    if (!/^[23][0-9a-f]{3}:/.test(normalized) || normalized.startsWith('2002:')) return false
+    if (normalized.startsWith('2001:')) {
+      const second = parseInt(normalized.split(':')[1] || '0', 16)
+      return second >= 0x200 && second !== 0xdb8
+    }
+    return true
   }
   return false
 }
