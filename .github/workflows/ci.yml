@@ -36,6 +36,7 @@ jobs:
       - run: brew install ffmpeg-full
       - run: echo "$(brew --prefix ffmpeg-full)/bin" >> "$GITHUB_PATH"
       - run: ffmpeg -hide_banner -filters | grep -E '[[:space:]]ass[[:space:]]'
+      - run: node scripts/check-lockfile-integrity.cjs
       - run: npm ci
       - run: python3 -m pip install --require-hashes -r engine/requirements.lock
       - run: python3 -m pip install pytest pip-audit==2.10.1
