@@ -55,6 +55,8 @@ class TranscriptionApiCosts:
 
 TRANSCRIPTION_MODEL = "microsoft/mai-transcribe-2"
 TRANSCRIPTION_CHUNK_SECONDS = 300
+# Context kept around a requested time range so sentence boundaries at its edges still resolve.
+TRANSCRIPTION_RANGE_PAD_SECONDS = 5.0
 MAX_TRANSCRIPTION_AUDIO_BYTES = 12 * 1024 * 1024
 MAX_TRANSCRIPTION_RESPONSE_BYTES = 4 * 1024 * 1024
 MAI_PRICE_PER_HOUR = 0.10
@@ -417,6 +419,8 @@ class TranscriptionService:
         language: Optional[str] = None,
         translate_to_english: bool = False,
         keyterms: Optional[list[str]] = None,
+        start_seconds: Optional[float] = None,
+        end_seconds: Optional[float] = None,
     ) -> TranscriptionResult:
         """
         Transcribe a video file by extracting audio first.
@@ -428,6 +432,9 @@ class TranscriptionService:
             translate_to_english: Whether to translate to English
             keyterms: Optional vocabulary biasing list (e.g., brand names,
                 product names, jargon) forwarded as MAI phrase hints.
+            start_seconds, end_seconds: Optional source window. Only that part
+                of the audio (plus a little context) is extracted and sent to
+                the provider; timestamps still refer to the full source.
 
         Returns:
             TranscriptionResult with segments and word-level timing
@@ -435,9 +442,14 @@ class TranscriptionService:
         if not os.path.isfile(video_path):
             raise TranscriptionError("Video file not found", reason="source_missing")
 
+        window_start = 0.0
+        if start_seconds is not None and start_seconds > 0:
+            window_start = max(0.0, start_seconds - TRANSCRIPTION_RANGE_PAD_SECONDS)
+        window_end = None if end_seconds is None else max(window_start, end_seconds + TRANSCRIPTION_RANGE_PAD_SECONDS)
+
         # Extract audio from video
         audio_path = os.path.join(work_dir, "audio_extracted.wav")
-        await self._extract_audio_from_video(video_path, audio_path)
+        await self._extract_audio_from_video(video_path, audio_path, window_start, window_end)
 
         try:
             return await self.transcribe_audio(
@@ -445,6 +457,7 @@ class TranscriptionService:
                 language=language,
                 translate_to_english=translate_to_english,
                 keyterms=keyterms,
+                timeline_offset_seconds=window_start,
             )
         finally:
             # Cleanup extracted audio
@@ -454,18 +467,24 @@ class TranscriptionService:
                 except Exception:
                     pass
 
-    async def _extract_audio_from_video(self, video_path: str, audio_path: str) -> None:
+    async def _extract_audio_from_video(
+        self, video_path: str, audio_path: str, start_seconds: float = 0.0, end_seconds: Optional[float] = None,
+    ) -> None:
         """Extract 16 kHz PCM WAV, which MAI Transcribe 2 accepts through OpenRouter.
 
         OpenRouter's MAI provider rejects the AAC/M4A produced here with HTTP 400.
         Audio stays at its original speed so timestamps map directly to video.
+        A window trims the source before decoding; the output then starts at
+        `start_seconds` of the source and the caller shifts timestamps back.
         """
         logger.info(f"Extracting audio from video: {video_path}")
-        
+
         cmd = [
             "ffmpeg", "-nostdin", "-nostats", "-v", "error",
             "-y",
             "-protocol_whitelist", "file,pipe,fd", "-format_whitelist", "mov,matroska,webm,avi,flv,mpegts",
+            *(["-ss", f"{start_seconds:.3f}"] if start_seconds > 0 else []),
+            *(["-t", f"{end_seconds - start_seconds:.3f}"] if end_seconds is not None else []),
             "-i", video_path,
             "-map", "0:a:0",  # Match the track used by the render graph.
             "-vn",  # No video
@@ -477,14 +496,14 @@ class TranscriptionService:
             "-ac", "1",  # Mono
             audio_path,
         ]
-        
+
         # Use run_in_executor for Windows compatibility
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: run_media(cmd)
         )
-        
+
         if result.returncode != 0:
             # An audio-less video is a valid input for visual-only planning.
             # Confirm that case with ffprobe; other FFmpeg errors must fail.
@@ -500,10 +519,10 @@ class TranscriptionService:
                 pass
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
             raise TranscriptionError(f"Failed to extract audio from video: {error_msg}", reason="audio_extraction_failed")
-        
+
         if not os.path.exists(audio_path):
             raise TranscriptionError("Audio extraction produced no output file", reason="audio_extraction_empty")
-        
+
         logger.info(f"Audio extracted to: {audio_path}")
 
     async def transcribe_audio(
@@ -512,8 +531,13 @@ class TranscriptionService:
         language: Optional[str] = None,
         translate_to_english: bool = False,
         keyterms: Optional[list[str]] = None,
+        timeline_offset_seconds: float = 0.0,
     ) -> TranscriptionResult:
-        """Transcribe bounded chunks and retain timestamps on the source timeline."""
+        """Transcribe bounded chunks and retain timestamps on the source timeline.
+
+        `timeline_offset_seconds` is where the audio file starts within the
+        source video, so timestamps come back on the video's clock.
+        """
         if not os.path.isfile(audio_path):
             raise TranscriptionError("Audio file not found", reason="audio_missing")
         if not self.settings.openrouter_api_key:
@@ -547,10 +571,10 @@ class TranscriptionService:
                 for segment in parsed.segments:
                     words = []
                     for word in segment.words:
-                        shifted = TranscriptWord(word.word, word.start_time_ms + round(start * 1000), word.end_time_ms + round(start * 1000))
-                        midpoint = (shifted.start_time_ms + shifted.end_time_ms) / 2000
+                        midpoint = (word.start_time_ms + word.end_time_ms) / 2000 + start
                         if core_start <= midpoint < core_end:
-                            words.append(shifted)
+                            shift_ms = round((start + timeline_offset_seconds) * 1000)
+                            words.append(TranscriptWord(word.word, word.start_time_ms + shift_ms, word.end_time_ms + shift_ms))
                     if words:
                         # Diarization IDs only identify speakers within one API
                         # request; don't imply the same identity across chunks.

@@ -226,7 +226,7 @@ test('saved provider keys remain in main and migrate away from legacy encoding',
   const settingsStore = loadSource('settings-store.ts', {
     electron: {
       app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
+      safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
     }
   })
   try {
@@ -257,7 +257,7 @@ test('settings migration retires ElevenLabs without decrypting it and preserves 
   }))
   const store = loadSource('settings-store.ts', { electron: {
     app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-    safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value),
+    safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value),
       decryptString: (value) => { assert.notEqual(value.toString(), 'retired-key'); return value.toString() } }
   } })
   try {
@@ -280,7 +280,7 @@ test('settings migration writes a private file', () => {
   const store = loadSource('settings-store.ts', {
     electron: {
       app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
-      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
+      safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
     }
   })
   try {
@@ -496,9 +496,11 @@ test('network policy rejects private literals and private DNS results', async ()
     './security': security,
     'dns/promises': { lookup: async (host) => [{ address: host === 'public.example' ? '93.184.216.34' : '10.0.0.1' }] }
   })
-  for (const address of ['127.0.0.1', '10.1.2.3', '169.254.169.254', '192.168.1.1', '::1', '::ffff:127.0.0.1', 'fc00::1']) assert.equal(policy.isPublicAddress(address), false)
-  assert.equal(policy.isPublicAddress('8.8.8.8'), true)
-  assert.equal(policy.isPublicAddress('2606:4700::1111'), true)
+  for (const address of ['127.0.0.1', '10.1.2.3', '169.254.169.254', '192.168.1.1', '::1', '::ffff:127.0.0.1', 'fc00::1',
+    '2002:c000:0204::1', '2001::1', '2001:2::1', '2001:10::1', '2001:2f::1', '2001:db8::1']) assert.equal(policy.isPublicAddress(address), false, address)
+  for (const address of ['8.8.8.8', '2606:4700::1111', '2001:4860:4860::8888', '2001:470:1f0b::1', '2001:0db9:0000:0000:0000:0000:0000:0001']) {
+    assert.equal(policy.isPublicAddress(address), true, address)
+  }
   for (const url of ['http://localhost', 'http://127.0.0.1', 'http://[::1]', 'http://internal.example']) await assert.rejects(() => policy.assertPublicWebUrl(url))
   await policy.assertPublicWebUrl('https://public.example/video')
 })
@@ -550,4 +552,22 @@ test('cancellation retains a live process group after the leader closes and forc
   assert.deepEqual(signals, [{ pid: -12345, signal: 'SIGTERM' }, { pid: -12345, signal: 'SIGKILL' }])
   assert.equal(runner.hasActiveJobs(), false)
   assert.equal(sent.length, 0)
+})
+
+test('crash logs keep a redacted message and first frame instead of omitting everything', () => {
+  const lines = []
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-log-test-'))
+  const { logger, errorSummary } = loadSource('logger.ts', {
+    electron: { app: { getPath: () => logDir } },
+    fs: { ...fs, appendFileSync: (_file, line) => lines.push(JSON.parse(line)) }
+  }, { console: { log() {}, warn() {}, error() {} } })
+  const error = new Error('ENOENT: no such file, open /Users/dev/Library/clip.mp4 (see https://example.test/help?token=abc)')
+  error.stack = `Error: ${error.message}\n    at loadRun (/Users/dev/app/out/main/index.js:42:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)`
+  logger.error('main.uncaughtException', errorSummary(error))
+  const entry = lines[0]
+  assert.equal(entry.name, 'Error')
+  assert.equal(entry.summary, 'ENOENT: no such file, open <path> (see <url>)')
+  assert.equal(entry.frame, 'loadRun index.js:42')
+  assert.equal(errorSummary('plain rejection').summary, 'plain rejection')
+  fs.rmSync(logDir, { recursive: true, force: true })
 })

@@ -225,7 +225,7 @@ class TestEmptyPlan:
             meta = SimpleNamespace(title="T", duration_seconds=300.0, width=1920, height=1080)
             return SimpleNamespace(video_path="x.mp4", metadata=meta, file_size_bytes=1)
 
-        async def transcribe(video_path, work_dir, keyterms=None):
+        async def transcribe(video_path, work_dir, keyterms=None, **_range):
             return TranscriptionResult(segments=[], full_text="")  # silent demo / music-only
 
         monkeypatch.setattr(pipeline.video_downloader, "download_video", download)
