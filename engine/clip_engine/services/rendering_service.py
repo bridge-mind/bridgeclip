@@ -40,9 +40,11 @@ from clip_engine.services.media_process import MEDIA_INPUT_OPTIONS, PROBE_TIMEOU
 from clip_engine.services.layout_renderer import (
     AUDIO_FORMAT,
     AUDIO_SYNC,
+    CaptionPlacer,
     banner_y,
     build_layout_graph,
     caption_anchor,
+    face_zones,
     measured_loudness_filter,
     per_shot_expr,
     title_y,
@@ -248,10 +250,13 @@ class RenderingService:
         pacing_plan = plan
         if pacing_plan is None and (is_landscape or request.layout_style == LayoutStyle.FIT) and self._paces(request):
             pacing_plan = await self._content_plan(request, source_w, source_h, window_start_ms, window_ms)
+        # Faces seen while analyzing, kept by every fallback so captions still
+        # stay off them.
+        face_samples = pacing_plan.face_samples if pacing_plan is not None else []
         if plan is None:
             plan = ClipLayoutPlan(
                 shots=[ShotLayout(0, window_ms, LayoutType.SCREEN, source="style")],
-                source_width=source_w, source_height=source_h,
+                source_width=source_w, source_height=source_h, face_samples=face_samples,
             )
 
         skips = self._window_skips(request, window_start_ms, window_ms)
@@ -273,7 +278,7 @@ class RenderingService:
         # timing (a pacing edge case can be what failed, so cuts go last).
         letterbox = ClipLayoutPlan(
             shots=[ShotLayout(0, window_ms, LayoutType.SCREEN, source="fallback")],
-            source_width=source_w, source_height=source_h,
+            source_width=source_w, source_height=source_h, face_samples=face_samples,
         )
         ladder: list[tuple[ClipLayoutPlan, TimeMap, Optional[str]]] = [(plan, time_map, None)]
         if smart:
@@ -393,7 +398,7 @@ class RenderingService:
         )
         out_plan = remap_plan(plan, time_map)
         caption_path = await self._generate_captions(
-            request, target_width, target_height, window_start_ms, time_map, out_plan, is_landscape,
+            request, target_width, target_height, window_start_ms, time_map, out_plan, is_landscape, plan,
         )
         graph += f";[base]{self._caption_filter(caption_path)}[captioned]"
         overlays = self._overlays(request, out_plan, target_width, target_height, is_landscape)
@@ -574,8 +579,13 @@ class RenderingService:
         time_map: TimeMap,
         out_plan: ClipLayoutPlan,
         is_landscape: bool,
+        plan: Optional[ClipLayoutPlan] = None,
     ) -> Optional[str]:
-        """ASS captions on the edited timeline, positioned per shot (9:16)."""
+        """ASS captions on the edited timeline, positioned per shot (9:16).
+
+        With the window-time `plan`, each caption group also moves off any
+        face it would cover (see CaptionPlacer).
+        """
         if not (request.include_captions and request.transcript_segments):
             return None
         segments = remap_segments(request.transcript_segments, window_start_ms, time_map)
@@ -590,6 +600,12 @@ class RenderingService:
                 alignment, y = caption_anchor(shot, src_w, src_h, target_width, target_height)
                 anchors.append((shot.end_ms, alignment, y))
             anchors[-1] = (10**9, anchors[-1][1], anchors[-1][2])
+
+        placer = None
+        if anchors and plan is not None:
+            zones = face_zones(plan, time_map, target_width, target_height)
+            if zones:
+                placer = CaptionPlacer(anchors, zones, target_width, target_height)
 
         caption_path = os.path.join(
             os.path.dirname(request.output_path),
@@ -608,6 +624,7 @@ class RenderingService:
             output_height=target_height,
             anchors=anchors,
             emphasis_words=request.emphasis_words,
+            placer=placer,
         )
 
     # Pixel-sized caption style fields, scaled together for landscape output.

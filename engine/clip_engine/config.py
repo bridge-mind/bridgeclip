@@ -659,7 +659,8 @@ class Settings(BaseSettings):
     layout_vision_fallback_models: str = "anthropic/claude-opus-5.5"
     layout_vision_reasoning_effort: str = "low"
 
-    # Transcription through OpenRouter (MAI Transcribe 2)
+    # Selected by the desktop bridge per process before settings are loaded.
+    clipping_mode: Literal["quality", "economy"] = "quality"
     transcription_diarize: bool = True
 
     @field_validator("planner_reasoning_effort", "layout_vision_reasoning_effort")
@@ -796,7 +797,7 @@ class Settings(BaseSettings):
 
     @property
     def transcription_model(self) -> str:
-        return "microsoft/mai-transcribe-2"
+        return "openai/whisper-large-v3-turbo" if self.clipping_mode == "economy" else "microsoft/mai-transcribe-2"
 
     # OpenRouter / LLM Configuration
     @property

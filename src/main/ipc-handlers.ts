@@ -119,7 +119,9 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
       title: 'Add clips to automation',
       filters: [{ name: 'Postable videos', extensions: ['mp4', 'mov', 'm4v', 'webm'] }]
     })
-    return result.canceled ? listAutomations() : addAutomationContent(id, result.filePaths)
+    if (result.canceled) return listAutomations()
+    for (const path of result.filePaths) authorizeMedia(path)
+    return addAutomationContent(id, result.filePaths)
   })
 
   handle('settings:selectOutputDir', async () => {

@@ -50,7 +50,7 @@ export function getClient(): ZernioClient {
 /** Renderer-safe description of any failure from this module. */
 export function describeZernioError(error: unknown): ZernioErrorInfo {
   if (error instanceof ZernioApiError) {
-    const kind = error.status === 401 ? 'auth'
+    const kind = error.status === 401 || error.code === 'profile_access_denied' || error.code === 'insufficient_permissions' ? 'auth'
       : error.status === 0 ? 'offline'
         : error.status === 429 ? 'rate_limit'
           : error.status === 402 ? 'payment'
@@ -394,6 +394,8 @@ export async function connectZernioAccount(
   let targetProfileId: string | null = profileId
   let client: ZernioClient | null = null
   let createdProfile: ZernioProfile | null = null
+  let profileRemoved = false
+  let stage = 'prepare'
   let cleanupPromise: Promise<void> | null = null
   const cleanupCreatedProfile = (): Promise<void> => {
     if (!createdProfile || !client) return Promise.resolve()
@@ -403,24 +405,31 @@ export async function connectZernioAccount(
         // redirect was lost. Never remove a profile that now has an account.
         if ((await client!.listAccounts({ profileId: createdProfile!.id })).length === 0) {
           await client!.deleteProfile(createdProfile!.id)
+          profileRemoved = true
         }
+        logger.info('zernio.connect.profileCleanup', { traceId: client!.traceId, outcome: profileRemoved ? 'removed' : 'has_accounts' })
       } catch (error) {
-        logger.warn('zernio.connect.profileCleanupFailed', { status: error instanceof ZernioApiError ? error.status : null })
+        logger.warn('zernio.connect.profileCleanupFailed', { traceId: client!.traceId, status: error instanceof ZernioApiError ? error.status : null })
       }
     })()
     return cleanupPromise
   }
   try {
     client = getClient()
+    logger.info('zernio.connect.requested', { traceId: client.traceId, platform, reconnect, newProfile: Boolean(newProfileName) })
     if (newProfileName) {
+      stage = 'create_profile'
       createdProfile = await client.createProfile(newProfileName)
       targetProfileId = createdProfile.id
+      logger.info('zernio.connect.profileCreated', { traceId: client.traceId, platform })
     } else {
+      stage = 'resolve_profile'
       targetProfileId ??= await ensureProfile(client)
     }
     if (!isCurrent()) throw new Error('This sign-in was cancelled.')
 
     const connect: ZernioPendingConnect = { platform, profileId: targetProfileId, reconnect, startedAt: Date.now(), ...(createdProfile ? { createdProfile: true } : {}) }
+    stage = 'callback_server'
     const nonce = randomBytes(16).toString('hex')
     const redirectUrl = await startCallbackServer(`/zernio/connected/${nonce}`, {
       onCallback: (params) => {
@@ -449,6 +458,7 @@ export async function connectZernioAccount(
     })
     if (!isCurrent()) throw new Error('This sign-in was cancelled.')
 
+    stage = 'authorize_platform'
     const start = await client.startConnect(platform, targetProfileId, redirectUrl, { force: reconnect })
     if (!isCurrent()) throw new Error('This sign-in was cancelled.')
     if (start.kind === 'connected') {
@@ -464,6 +474,7 @@ export async function connectZernioAccount(
 
     pending = connect
     pendingCleanup = cleanupCreatedProfile
+    stage = 'open_browser'
     await openInBrowser(start.authUrl).catch(() => {
       throw new Error("BridgeClip couldn't open your web browser. Check that a default browser is set, then try again.")
     })
@@ -471,11 +482,20 @@ export async function connectZernioAccount(
     logger.info('zernio.connect.start', { platform, reconnect })
     return { status: 'pending', platform, profileId: targetProfileId, ...(createdProfile ? { createdProfile } : {}) }
   } catch (error) {
+    const wasCurrent = isCurrent()
+    const workspaceGeneration = generation
     if (isCurrent()) cancelZernioConnect()
     await cleanupCreatedProfile()
     const info = describeZernioError(error)
-    logger.warn('zernio.connect.failed', { platform, kind: info.kind, status: error instanceof ZernioApiError ? error.status : null })
-    return { status: 'failed', platform, profileId: targetProfileId, error: info }
+    // Creation can succeed even when a scoped key cannot connect or clean up.
+    // Keep the known profile visible so retries don't silently create another.
+    const retainedProfile = wasCurrent && workspaceGeneration === generation && createdProfile && !profileRemoved ? createdProfile : null
+    if (retainedProfile) {
+      updateCache((overview) => ({ ...overview, profiles: [...overview.profiles.filter((profile) => profile.id !== retainedProfile.id), retainedProfile] }))
+      info.message = `The profile was created, but connecting ${ZERNIO_PLATFORM_NAMES[platform]} failed. ${info.message} BridgeClip could not remove the new profile; check it in Zernio before creating another.`
+    }
+    logger.warn('zernio.connect.failed', { traceId: client?.traceId ?? null, platform, stage, profileCreated: Boolean(createdProfile), profileRemoved, kind: info.kind, status: error instanceof ZernioApiError ? error.status : null })
+    return { status: 'failed', platform, profileId: targetProfileId, error: info, ...(retainedProfile ? { createdProfile: retainedProfile } : {}) }
   }
 }
 

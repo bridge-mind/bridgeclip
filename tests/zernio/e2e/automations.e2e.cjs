@@ -58,7 +58,7 @@ test('add selected library clips to an automation and run the next one', { timeo
   await page.getByText('Profile “Another profile” created.').waitFor()
   await page.getByLabel('Zernio profile').selectOption(profile._id)
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
-  await page.getByRole('heading', { name: 'Accounts' }).waitFor()
+  await page.getByRole('heading', { name: 'Accounts', exact: true }).waitFor()
   await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /Automations/ }).click()
   await page.getByRole('heading', { name: 'Content bank' }).waitFor()
   assert.equal(await page.getByLabel('Zernio profile').inputValue(), profile._id)
