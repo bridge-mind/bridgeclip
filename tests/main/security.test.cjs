@@ -497,7 +497,7 @@ test('network policy rejects private literals and private DNS results', async ()
     'dns/promises': { lookup: async (host) => [{ address: host === 'public.example' ? '93.184.216.34' : '10.0.0.1' }] }
   })
   for (const address of ['127.0.0.1', '10.1.2.3', '169.254.169.254', '192.168.1.1', '::1', '::ffff:127.0.0.1', 'fc00::1',
-    '2002:c000:0204::1', '2001::1', '2001:2::1', '2001:10::1', '2001:2f::1', '2001:db8::1']) assert.equal(policy.isPublicAddress(address), false, address)
+    '2002:c000:0204::1', '2001::1', '2001:1::1', '2001:2::1', '2001:10::1', '2001:2f::1', '2001:db8::1', '3fff::1']) assert.equal(policy.isPublicAddress(address), false, address)
   for (const address of ['8.8.8.8', '2606:4700::1111', '2001:4860:4860::8888', '2001:470:1f0b::1', '2001:0db9:0000:0000:0000:0000:0000:0001']) {
     assert.equal(policy.isPublicAddress(address), true, address)
   }

@@ -25,14 +25,13 @@ export function isPublicAddress(address: string): boolean {
   if (isIP(address) === 6) {
     const groups = ipv6Groups(address)
     if (!groups) return false
-    const [g0, g1, g2] = groups
-    // Global unicast (2000::/3) minus 6to4 and the reserved blocks inside 2001::/16:
-    // Teredo 2001::/32, benchmarking 2001:2::/48, ORCHID 2001:10::/28 and
-    // 2001:20::/28, documentation 2001:db8::/32. The rest of 2001::/16 is
-    // ordinary allocated space (Google, Hurricane Electric, most RIR blocks).
-    if (g0 < 0x2000 || g0 > 0x3fff || g0 === 0x2002) return false
+    const [g0, g1] = groups
+    // Global unicast (2000::/3) minus 6to4, IETF protocol assignments
+    // (2001::/23), and documentation (2001:db8::/32, 3fff::/20).
+    // Other 2001::/16 addresses include ordinary public space.
+    if (g0 < 0x2000 || g0 > 0x3fff || g0 === 0x2002 || (g0 === 0x3fff && g1 < 0x1000)) return false
     if (g0 === 0x2001) {
-      return !(g1 === 0 || (g1 === 2 && g2 === 0) || (g1 >= 0x10 && g1 <= 0x2f) || g1 === 0xdb8)
+      return g1 >= 0x200 && g1 !== 0xdb8
     }
     return true
   }
