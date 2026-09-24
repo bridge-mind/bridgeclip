@@ -1,3 +1,4 @@
+import { normalizeVideoSource, twitchSourceError } from '../shared/video-source'
 import { isAbsolute } from 'path'
 import type { ClipJobConfig } from './pipeline-runner'
 import { isWebUrl } from './security'
@@ -7,6 +8,8 @@ export function validateJobConfig(value: unknown): ClipJobConfig {
   if (!value || typeof value !== 'object') throw new Error('Invalid job options')
   const v = value as ClipJobConfig
   if (typeof v.videoUrl !== 'string' || v.videoUrl.length > 8192 || !(isWebUrl(v.videoUrl) || isAbsolute(v.videoUrl))) throw new Error('Choose a video file or an HTTP(S) URL')
+  const sourceError = twitchSourceError(v.videoUrl)
+  if (sourceError) throw new Error(sourceError)
   if (typeof v.autoClipCount !== 'boolean' || typeof v.includeCaptions !== 'boolean') throw new Error('Invalid job options')
   if (typeof v.layoutVision !== 'boolean') throw new Error('Invalid vision option')
   if (v.clippingMode !== undefined && v.clippingMode !== 'quality' && v.clippingMode !== 'economy') throw new Error('Invalid clipping mode')
@@ -22,5 +25,5 @@ export function validateJobConfig(value: unknown): ClipJobConfig {
   if (v.endTimeSeconds !== null && v.endTimeSeconds <= (v.startTimeSeconds ?? 0)) throw new Error('Trim end must follow trim start')
   if (v.bannerPlatform !== null && (typeof v.bannerPlatform !== 'string' || !/^[a-z0-9_-]{1,64}$/i.test(v.bannerPlatform))) throw new Error('Invalid banner platform')
   if (v.bannerChannelUrl !== null && (!isWebUrl(v.bannerChannelUrl) || v.bannerChannelUrl.length > 8192)) throw new Error('Invalid banner URL')
-  return v
+  return { ...v, videoUrl: normalizeVideoSource(v.videoUrl) }
 }

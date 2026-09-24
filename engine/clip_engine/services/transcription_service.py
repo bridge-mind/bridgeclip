@@ -1,5 +1,5 @@
 """
-Transcription Service - Audio transcription using MAI Transcribe 2 through OpenRouter.
+Transcription Service - Word-timed audio transcription with OpenRouter model recovery.
 """
 
 import asyncio
@@ -9,10 +9,13 @@ import math
 import tempfile
 import logging
 import os
+import random
 import subprocess
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from clip_engine.config import get_settings
 from clip_engine.services.media_process import MEDIA_INPUT_OPTIONS, run_media
@@ -51,10 +54,19 @@ class TranscriptionApiCosts:
     model: str = "microsoft/mai-transcribe-2"
     audio_duration_seconds: float = 0.0
     estimated_cost_usd: float = 0.0
+    attempts: int = 0
 
 
 TRANSCRIPTION_MODEL = "microsoft/mai-transcribe-2"
 BUDGET_TRANSCRIPTION_MODEL = "openai/whisper-large-v3-turbo"
+BUDGET_FALLBACK_MODEL = "openai/whisper-large-v3"
+TRANSCRIPTION_ATTEMPTS_PER_MODEL = 2
+MAX_TRANSCRIPTION_RETRY_WAIT = 15.0
+TRANSCRIPTION_MODEL_NAMES = {
+    BUDGET_TRANSCRIPTION_MODEL: "Whisper Turbo",
+    BUDGET_FALLBACK_MODEL: "Whisper Large V3",
+    TRANSCRIPTION_MODEL: "MAI Transcribe 2",
+}
 TRANSCRIPTION_CHUNK_SECONDS = 300
 # Context kept around a requested time range so sentence boundaries at its edges still resolve.
 TRANSCRIPTION_RANGE_PAD_SECONDS = 5.0
@@ -62,12 +74,16 @@ MAX_TRANSCRIPTION_AUDIO_BYTES = 12 * 1024 * 1024
 MAX_TRANSCRIPTION_RESPONSE_BYTES = 4 * 1024 * 1024
 MAI_PRICE_PER_HOUR = 0.10
 WHISPER_TURBO_PRICE_PER_HOUR = 0.0108
+WHISPER_V3_PRICE_PER_HOUR = 0.0288
 WAV_INPUT_OPTIONS = ["-protocol_whitelist", "file,pipe,fd", "-format_whitelist", "wav"]
 
 
 def _estimate_transcription_cost(duration_seconds: float, model: str = TRANSCRIPTION_MODEL) -> float:
     """Fallback estimate; prefer OpenRouter's actual usage.cost when returned."""
-    price = WHISPER_TURBO_PRICE_PER_HOUR if model == BUDGET_TRANSCRIPTION_MODEL else MAI_PRICE_PER_HOUR
+    price = {
+        BUDGET_TRANSCRIPTION_MODEL: WHISPER_TURBO_PRICE_PER_HOUR,
+        BUDGET_FALLBACK_MODEL: WHISPER_V3_PRICE_PER_HOUR,
+    }.get(model, MAI_PRICE_PER_HOUR)
     return round(duration_seconds / 3600.0 * price, 8)
 
 
@@ -414,6 +430,15 @@ class TranscriptionService:
 
     def __init__(self):
         self.settings = get_settings()
+        self.progress_callback: Optional[Callable[[str], None]] = None
+
+    def _progress(self, message: str) -> None:
+        callback = getattr(self, "progress_callback", None)
+        if callback:
+            try:
+                callback(message)
+            except Exception:
+                logger.warning("Could not report transcription progress")
 
     async def transcribe(
         self,
@@ -492,7 +517,7 @@ class TranscriptionService:
             "-map", "0:a:0",  # Match the track used by the render graph.
             "-vn",  # No video
             # Materialize silence at delayed starts/packet gaps so word times
-            # remain on the video's clock after AAC is decoded by the API.
+            # remain on the video's clock in the PCM sent to the API.
             "-af", "aresample=16000:async=1:first_pts=0:min_hard_comp=0.001",
             "-acodec", "pcm_s16le",
             "-ar", "16000",  # 16kHz sample rate
@@ -549,11 +574,12 @@ class TranscriptionService:
             raise TranscriptionError("Audio translation is not supported", reason="translation_unsupported")
         duration = await asyncio.to_thread(self._audio_duration, audio_path)
         segments: list[TranscriptSegment] = []
-        total_cost = 0.0
-        billed_seconds = 0.0
+        costs = TranscriptionApiCosts(model="")
         detected_language = None
-        model = self.settings.transcription_model
-        used_models: list[str] = []
+        primary = self.settings.transcription_model
+        # Keep the recovered model for the rest of this run. Retrying an
+        # unavailable model for each chunk causes repeated failures and costs.
+        models = list(dict.fromkeys((primary, BUDGET_FALLBACK_MODEL, TRANSCRIPTION_MODEL, BUDGET_TRANSCRIPTION_MODEL)))
         chunk_count = max(1, math.ceil(duration / TRANSCRIPTION_CHUNK_SECONDS))
         with tempfile.TemporaryDirectory(prefix="clip-transcribe-", dir=os.path.dirname(audio_path)) as work:
             for index in range(chunk_count):
@@ -567,30 +593,9 @@ class TranscriptionService:
                 if chunk_count > 1:
                     chunk_path = os.path.join(work, "chunk.wav")
                     await asyncio.to_thread(self._extract_chunk, audio_path, chunk_path, start, end - start)
-                try:
-                    response = await self._request_transcript(chunk_path, language, keyterms, model)
-                    parsed = self._parse_openrouter_response(response, end - start, model)
-                except (TranscriptionProviderError, TranscriptionError) as error:
-                    # OpenRouter cannot pin the transcription provider. Whisper
-                    # may route to one that rejects word timestamps, which are
-                    # required for clip timing and captions.
-                    unsupported = (
-                        isinstance(error, TranscriptionProviderError) and error.reason == "bad_request"
-                    ) or (
-                        isinstance(error, TranscriptionError) and error.reason == "missing_word_timestamps"
-                    )
-                    if model != BUDGET_TRANSCRIPTION_MODEL or not unsupported:
-                        raise
-                    logger.warning("Economy transcription could not provide word timestamps; retrying with MAI Transcribe 2")
-                    model = TRANSCRIPTION_MODEL
-                    response = await self._request_transcript(chunk_path, language, keyterms, model)
-                    parsed = self._parse_openrouter_response(response, end - start, model)
-                if model not in used_models:
-                    used_models.append(model)
+                self._progress(f"Transcribing audio, part {index + 1} of {chunk_count}...")
+                parsed = await self._transcribe_chunk(chunk_path, language, keyterms, end - start, models, costs)
                 detected_language = detected_language or parsed.language
-                if parsed.api_costs:
-                    total_cost += parsed.api_costs.estimated_cost_usd
-                    billed_seconds += parsed.api_costs.audio_duration_seconds
                 for segment in parsed.segments:
                     words = []
                     for word in segment.words:
@@ -606,14 +611,73 @@ class TranscriptionService:
                             label = f"C{index + 1}{label}"
                         segments.append(TranscriptSegment(words[0].start_time_ms, words[-1].end_time_ms,
                                                           " ".join(w.word for w in words), label, words))
-        reported_model = " + ".join(used_models)
+        costs.estimated_cost_usd = round(costs.estimated_cost_usd, 8)
         return TranscriptionResult(
             segments=segments, full_text=" ".join(segment.text for segment in segments),
             language=detected_language, duration_seconds=duration,
-            model=reported_model,
-            api_costs=TranscriptionApiCosts(model=reported_model, audio_duration_seconds=billed_seconds,
-                                             estimated_cost_usd=round(total_cost, 8)),
+            model=costs.model,
+            api_costs=costs,
         )
+
+    async def _transcribe_chunk(
+        self, path: str, language: Optional[str], keyterms: Optional[list[str]],
+        duration: float, models: list[str], costs: TranscriptionApiCosts,
+    ) -> TranscriptionResult:
+        """Bounded recovery of one chunk without replaying completed chunks.
+
+        Invalid keys and insufficient credit fail immediately. Transient
+        errors get one cancellable retry per model, then another timed-word
+        model. A long Retry-After skips this model instead of retrying early.
+        """
+        while models:
+            model = models[0]
+            name = TRANSCRIPTION_MODEL_NAMES.get(model, "transcription model")
+            for attempt in range(TRANSCRIPTION_ATTEMPTS_PER_MODEL):
+                try:
+                    costs.attempts += 1
+                    response = await self._request_transcript(path, language, keyterms, model)
+                    # A 200 response can be billed even if its words are unusable.
+                    # Include that cost before parsing or trying another model.
+                    charge = self._response_cost(response, duration, model)
+                    costs.estimated_cost_usd += charge.estimated_cost_usd
+                    costs.audio_duration_seconds += charge.audio_duration_seconds
+                    seen = costs.model.split(" + ") if costs.model else []
+                    if model not in seen:
+                        costs.model = " + ".join([*seen, model])
+                    return self._parse_openrouter_response(response, duration, model)
+                except TranscriptionError as error:
+                    transient = error.reason in {"rate_limit", "network"}
+                    recoverable = transient or error.reason in {
+                        "bad_request", "unavailable", "missing_word_timestamps", "invalid_response",
+                    }
+                    if not recoverable:
+                        raise
+                    logger.warning("Transcription attempt failed: model=%s, reason=%s, status=%s, attempt=%d",
+                                   model, error.reason, getattr(error, "status_code", None), attempt + 1)
+                    delay = max(2.0 + random.uniform(0, 0.5), getattr(error, "retry_after_seconds", None) or 0)
+                    if transient and attempt + 1 < TRANSCRIPTION_ATTEMPTS_PER_MODEL and delay <= MAX_TRANSCRIPTION_RETRY_WAIT:
+                        self._progress(f"{name} is temporarily busy. Retrying in {math.ceil(delay)} seconds...")
+                        await asyncio.sleep(delay)
+                        continue
+                    if len(models) == 1:
+                        raise
+                    models.pop(0)
+                    next_name = TRANSCRIPTION_MODEL_NAMES.get(models[0], "another transcription model")
+                    self._progress(f"Trying {next_name} for transcription...")
+                    logger.info("Switching transcription model: %s -> %s", model, models[0])
+                    break
+        raise TranscriptionError("No transcription model available")
+
+    @staticmethod
+    def _response_cost(response: dict, duration: float, model: str) -> TranscriptionApiCosts:
+        usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
+        billed = usage.get("seconds")
+        if not _nonnegative_number(billed):
+            billed = duration
+        cost = usage.get("cost")
+        if not _nonnegative_number(cost):
+            cost = _estimate_transcription_cost(billed, model)
+        return TranscriptionApiCosts(model=model, audio_duration_seconds=billed, estimated_cost_usd=cost)
 
     @staticmethod
     def _audio_duration(path: str) -> float:
@@ -669,30 +733,31 @@ class TranscriptionService:
             async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0), follow_redirects=False) as client:
                 async with client.stream(
                     "POST", "https://openrouter.ai/api/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {self.settings.openrouter_api_key}"}, json=payload,
+                    headers={"Authorization": f"Bearer {self.settings.openrouter_api_key}", "Accept-Encoding": "identity"}, json=payload,
                 ) as response:
-                    if response.status_code in (401, 403):
-                        raise TranscriptionProviderError("auth", response.status_code)
-                    if response.status_code in (402, 429):
-                        raise TranscriptionProviderError("quota", response.status_code)
-                    if response.status_code >= 500:
-                        raise TranscriptionProviderError("network", response.status_code)
-                    if response.status_code == 400:
-                        raise TranscriptionProviderError("bad_request", response.status_code)
                     if response.status_code != 200:
-                        raise TranscriptionProviderError("rejected", response.status_code)
+                        raise _provider_failure(response.status_code, response.headers.get("Retry-After"))
+                    if response.headers.get("content-encoding", "identity").lower() != "identity":
+                        raise TranscriptionProviderError("invalid_response", response.status_code)
                     body = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        body.extend(chunk)
-                        if len(body) > MAX_TRANSCRIPTION_RESPONSE_BYTES:
+                    async for chunk in response.aiter_raw():
+                        if len(chunk) > MAX_TRANSCRIPTION_RESPONSE_BYTES - len(body):
                             raise TranscriptionProviderError("response_too_large", response.status_code)
+                        body.extend(chunk)
                     result = json.loads(body)
                     if not isinstance(result, dict):
+                        raise TranscriptionProviderError("invalid_response", response.status_code)
+                    if result.get("error"):
+                        # Some upstream failures arrive in a successful HTTP envelope.
+                        error = result["error"]
+                        code = error.get("code") if isinstance(error, dict) else None
+                        if type(code) is int and 400 <= code <= 599:
+                            raise _provider_failure(code, response.headers.get("Retry-After"))
                         raise TranscriptionProviderError("invalid_response", response.status_code)
                     return result
         except (httpx.TimeoutException, httpx.NetworkError):
             raise TranscriptionProviderError("network") from None
-        except ValueError:
+        except (ValueError, RecursionError):
             raise TranscriptionProviderError("invalid_response") from None
         except httpx.HTTPError:
             raise TranscriptionProviderError("network") from None
@@ -732,19 +797,12 @@ class TranscriptionService:
             if word[-1] in SENTENCE_END_PUNCTUATION:
                 flush()
         flush()
-        usage = response.get("usage") if isinstance(response.get("usage"), dict) else {}
-        billed = usage.get("seconds")
-        if not _nonnegative_number(billed):
-            billed = audio_duration
-        cost = usage.get("cost")
-        if not _nonnegative_number(cost):
-            cost = _estimate_transcription_cost(billed, model)
         return TranscriptionResult(
             segments=segments, full_text=text.strip(),
             language=response.get("language") if isinstance(response.get("language"), str) else None,
             duration_seconds=audio_duration,
             model=model,
-            api_costs=TranscriptionApiCosts(model=model, audio_duration_seconds=billed, estimated_cost_usd=cost),
+            api_costs=self._response_cost(response, audio_duration, model),
         )
 
 
@@ -768,6 +826,41 @@ class NoAudioTrackError(TranscriptionError):
 class TranscriptionProviderError(TranscriptionError):
     """A safe classification of an OpenRouter transcription failure, without response details."""
 
-    def __init__(self, reason: str, status_code: int | None = None):
+    def __init__(self, reason: str, status_code: int | None = None, retry_after_seconds: float | None = None):
         self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(reason, reason=reason)
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            seconds = (when - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0.0, seconds) if math.isfinite(seconds) else None
+
+
+def _provider_failure(status: int, retry_after: str | None = None) -> TranscriptionProviderError:
+    if status in (401, 403):
+        reason = "auth"
+    elif status == 402:
+        reason = "quota"
+    elif status == 429:
+        reason = "rate_limit"
+    elif status in (408, 425) or status >= 500:
+        reason = "network"
+    elif status in (400, 422):
+        reason = "bad_request"
+    elif status == 404:
+        reason = "unavailable"
+    else:
+        reason = "rejected"
+    return TranscriptionProviderError(reason, status, _retry_after_seconds(retry_after))

@@ -1,3 +1,4 @@
+import { twitchVodId } from '../../shared/video-source'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -113,6 +114,8 @@ export function youtubeId(url: string): string | null {
 
 /** Short human label for a clip source: file name, or host + path for links. */
 export function sourceLabel(source: string): string {
+  const twitchId = twitchVodId(source)
+  if (twitchId) return `Twitch VOD · ${twitchId}`
   if (!isUrl(source)) return basename(source)
   try {
     const u = new URL(source)

@@ -196,7 +196,8 @@ onZernioReset(() => {
   creatorInfoCache.clear()
   store = null
   storeWorkspace = null
-  quarantineUnbound(postHistoryPath())
+  // PostsStore migrates the old shared path only when its bound workspace
+  // returns. Switching keys must not quarantine another workspace's history.
 })
 
 function assertWorkspace(generation: number): void {
@@ -469,35 +470,42 @@ async function publish(request: PostClipRequest, signal: AbortSignal, notify: (p
     refreshedAt: nowIso
   }
 
-  let created: CreatedPost
+  // Fail before Zernio creates the post if its response could not be kept
+  // locally. The reservation includes the largest fields accepted by the
+  // history parser, so provider text and links cannot exhaust the cache.
+  const releaseHistoryReservation = posts().reserveActive(base)
+
   try {
-    created = await createWithRetry(client, body, attempt.requestId, attempt.requestStartedAt ?? Date.now(), request.timing.mode === 'now' ? PUBLISH_TIMEOUT_MS : SCHEDULE_TIMEOUT_MS, generation, attempt)
-  } catch (error) {
-    // Zernio answered, so nothing is in doubt: the next try is a new request.
-    // After a timeout or 5xx the id is kept, so a retry replays instead of posting twice.
-    if (error instanceof ZernioApiError && error.status >= 400 && error.status < 500) {
-      attempt.requestId = null
-      attempt.requestStartedAt = null
-      saveAttempts()
+    let created: CreatedPost
+    try {
+      created = await createWithRetry(client, body, attempt.requestId, attempt.requestStartedAt ?? Date.now(), request.timing.mode === 'now' ? PUBLISH_TIMEOUT_MS : SCHEDULE_TIMEOUT_MS, generation, attempt)
+    } catch (error) {
+      // Zernio answered, so nothing is in doubt: the next try is a new request.
+      // After a timeout or 5xx the id is kept, so a retry replays instead of posting twice.
+      if (error instanceof ZernioApiError && error.status >= 400 && error.status < 500) {
+        attempt.requestId = null
+        attempt.requestStartedAt = null
+        saveAttempts()
+      }
+      if (error instanceof ZernioDuplicatePostError) return await recordDuplicate(client, error, base, generation)
+      throw error
     }
-    if (error instanceof ZernioDuplicatePostError) return recordDuplicate(client, error, base, generation)
-    throw error
-  }
 
-  assertWorkspace(generation)
+    assertWorkspace(generation)
 
-  const record = applyZernioPost(base, created.post, { platformResults: created.platformResults, error: created.error, now: nowIso })
-  if (!isZernioId(record.id)) throw new Error('Zernio accepted the post but didn’t return its id. Check your Zernio dashboard.')
-  posts().save(record)
-  // The post exists now. Editing and posting again (after a failure) keeps the
-  // upload but is a new request.
-  attempt.requestId = null
-  attempt.payloadKey = null
-  attempt.requestStartedAt = null
-  saveAttempts()
-  const { outcome, message } = outcomeOf(record, created, request)
-  logger.info('zernio.post.created', { targets: record.targets.length, mode: request.timing.mode, status: record.status, replayed: created.replayed })
-  return { post: record, outcome, message, warnings: created.warnings }
+    const record = applyZernioPost(base, created.post, { platformResults: created.platformResults, error: created.error, now: nowIso })
+    if (!isZernioId(record.id)) throw new Error('Zernio accepted the post but didn’t return its id. Check your Zernio dashboard.')
+    posts().save(record)
+    // The post exists now. Editing and posting again (after a failure) keeps the
+    // upload but is a new request.
+    attempt.requestId = null
+    attempt.payloadKey = null
+    attempt.requestStartedAt = null
+    saveAttempts()
+    const { outcome, message } = outcomeOf(record, created, request)
+    logger.info('zernio.post.created', { targets: record.targets.length, mode: request.timing.mode, status: record.status, replayed: created.replayed })
+    return { post: record, outcome, message, warnings: created.warnings }
+  } finally { releaseHistoryReservation() }
 }
 
 export function cancelUpload(attemptId: unknown): void {
@@ -508,6 +516,18 @@ export function cancelUpload(attemptId: unknown): void {
 
 export function listPosts(): PostRecord[] {
   return posts().list()
+}
+
+// A scheduled post must not be deleted and rescheduled at the same time. Both
+// provider requests can succeed in either order, but their local saves would
+// otherwise race and could make a cancelled post appear scheduled again.
+const changingScheduledPosts = new Set<string>()
+
+async function changeScheduledPost<T>(id: string, change: () => Promise<T>): Promise<T> {
+  if (changingScheduledPosts.has(id)) throw new Error('A change to this post is already in progress. Try again.')
+  changingScheduledPosts.add(id)
+  try { return await change() }
+  finally { changingScheduledPosts.delete(id) }
 }
 
 function requirePost(id: unknown): PostRecord {
@@ -557,16 +577,23 @@ export async function refreshPosts(force: unknown): Promise<PostsRefreshResult> 
   let failure: string | null = null
   for (const post of due) {
     const stamp = new Date().toISOString()
+    const currentForRefresh = (): PostRecord | null => {
+      const current = posts().get(post.id)
+      // A cancel or reschedule completed while the GET was in flight.
+      return current && current.status === post.status && current.scheduledFor === post.scheduledFor &&
+        current.timezone === post.timezone && current.refreshedAt === post.refreshedAt ? current : null
+    }
     try {
       const remote = await client.getPost(post.id)
       if (generation !== workspaceGeneration) return { posts: posts().list(), error: null }
-      posts().save(applyZernioPost(posts().get(post.id) ?? post, remote, { now: stamp }))
+      const current = currentForRefresh()
+      if (current) posts().save(applyZernioPost(current, remote, { now: stamp }))
     } catch (error) {
       if (generation !== workspaceGeneration) return { posts: posts().list(), error: null }
       const status = error instanceof ZernioApiError ? error.status : -1
       if (status === 404) {
-        const current = posts().get(post.id) ?? post
-        posts().save({ ...current, status: 'missing', error: 'This post is no longer in your Zernio workspace.', refreshedAt: stamp })
+        const current = currentForRefresh()
+        if (current) posts().save({ ...current, status: 'missing', error: 'This post is no longer in your Zernio workspace.', refreshedAt: stamp })
         continue
       }
       failure = error instanceof Error ? error.message : 'Could not refresh posts.'
@@ -581,25 +608,30 @@ export async function cancelPost(id: unknown): Promise<PostRecord[]> {
   const generation = workspaceGeneration
   const post = requirePost(id)
   if (post.status !== 'scheduled') throw new Error('Only scheduled posts can be cancelled.')
-  const client = getClient()
-  try {
-    await client.deletePost(post.id)
-    assertWorkspace(generation)
-  } catch (error) {
-    if (!(error instanceof ZernioApiError) || (error.status !== 404 && error.status !== 400)) throw error
-    if (error.status === 400) {
-      const remote = await client.getPost(post.id).catch(() => null)
+  return changeScheduledPost(post.id, async () => {
+    const client = getClient()
+    try {
+      await client.deletePost(post.id)
       assertWorkspace(generation)
-      if (remote) posts().save(applyZernioPost(post, remote, { now: new Date().toISOString() }))
-      throw new Error('This post has already started publishing, so it can’t be cancelled.')
+    } catch (error) {
+      if (!(error instanceof ZernioApiError) || (error.status !== 404 && error.status !== 400)) throw error
+      if (error.status === 400) {
+        const remote = await client.getPost(post.id).catch(() => null)
+        assertWorkspace(generation)
+        if (remote) posts().save(applyZernioPost(post, remote, { now: new Date().toISOString() }))
+        throw new Error('This post has already started publishing, so it can’t be cancelled.')
+      }
     }
-  }
-  logger.info('zernio.post.cancelled')
-  return posts().save({
-    ...post,
-    status: 'cancelled',
-    targets: post.targets.map((t) => ({ ...t, status: 'cancelled' })),
-    refreshedAt: new Date().toISOString()
+    // A 404 still completes the cancellation; the key may have changed
+    // while that response was pending, just as on the successful path.
+    assertWorkspace(generation)
+    logger.info('zernio.post.cancelled')
+    return posts().save({
+      ...post,
+      status: 'cancelled',
+      targets: post.targets.map((t) => ({ ...t, status: 'cancelled' })),
+      refreshedAt: new Date().toISOString()
+    })
   })
 }
 
@@ -607,14 +639,16 @@ export async function reschedulePost(id: unknown, scheduledFor: unknown, timezon
   const generation = workspaceGeneration
   const post = requirePost(id)
   if (post.status !== 'scheduled') throw new Error('Only scheduled posts can be rescheduled.')
-  if (typeof scheduledFor !== 'string' || scheduledFor.length > 40 || !isValidTimeZone(timezone)) throw new Error('Choose a valid date and time.')
-  const at = Date.parse(scheduledFor)
-  const error = scheduleError(at, Date.now(), Date.parse(post.uploadedAt))
-  if (error) throw new Error(error)
-  const iso = new Date(at).toISOString()
-  const remote = await getClient().updatePost(post.id, { scheduledFor: iso, timezone })
-  assertWorkspace(generation)
-  return posts().save(applyZernioPost({ ...post, scheduledFor: iso, timezone }, remote, { now: new Date().toISOString() }))
+  return changeScheduledPost(post.id, async () => {
+    if (typeof scheduledFor !== 'string' || scheduledFor.length > 40 || !isValidTimeZone(timezone)) throw new Error('Choose a valid date and time.')
+    const at = Date.parse(scheduledFor)
+    const error = scheduleError(at, Date.now(), Date.parse(post.uploadedAt))
+    if (error) throw new Error(error)
+    const iso = new Date(at).toISOString()
+    const remote = await getClient().updatePost(post.id, { scheduledFor: iso, timezone })
+    assertWorkspace(generation)
+    return posts().save(applyZernioPost({ ...post, scheduledFor: iso, timezone }, remote, { now: new Date().toISOString() }))
+  })
 }
 
 export async function retryPost(id: unknown): Promise<PostRecord[]> {

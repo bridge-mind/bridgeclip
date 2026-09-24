@@ -5,6 +5,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { execFileSync } = require('node:child_process')
 const { createMockZernio } = require('./support/mock-zernio.cjs')
 const { createPostingMock, DEFAULT_CREATOR_INFO } = require('./support/mock-posts.cjs')
@@ -14,6 +15,7 @@ const KEY = 'test-zernio-key'
 const FFMPEG = fs.existsSync(path.join(ROOT, 'engine-bin', 'ffmpeg')) ? path.join(ROOT, 'engine-bin', 'ffmpeg') : 'ffmpeg'
 const MINUTE = 60_000
 const DAY = 86_400_000
+const historyPath = (dir, key = KEY) => path.join(dir, `zernio-posts-${crypto.createHash('sha256').update(key).digest('hex')}.json`)
 
 const pure = loadMain(`
   export * as shared from './src/shared/zernio-posts'
@@ -444,6 +446,64 @@ test('post history rejects another workspace and quarantines unbound legacy reco
   } finally { cleanup() }
 })
 
+test('bound legacy history migrates only for its workspace and survives key switches', () => {
+  const { dir, cleanup } = tempDir()
+  try {
+    const legacy = path.join(dir, 'zernio-posts.json')
+    const record = { id: 'a'.repeat(24), clipPath: '/c.mp4', clipTitle: 'c', status: 'scheduled', error: null,
+      scheduledFor: '2026-09-25T10:00:00.000Z', timezone: 'UTC', createdAt: '2026-09-01T00:00:00.000Z',
+      uploadedAt: '2026-09-01T00:00:00.000Z', refreshedAt: null,
+      targets: [{ platform: 'youtube', accountId: 'y'.repeat(24), handle: '@y', status: 'pending', error: null, url: null, inbox: false }] }
+    fs.writeFileSync(legacy, JSON.stringify({ version: 2, workspace: 'workspace-one', posts: [record] }), { mode: 0o600 })
+    assert.deepEqual(new pure.PostsStore(legacy, 'workspace-two').list(), [])
+    assert.equal(fs.existsSync(legacy), true, 'another workspace cannot consume or discard the legacy file')
+    assert.equal(new pure.PostsStore(legacy, 'workspace-one').list().length, 1)
+    assert.equal(fs.existsSync(path.join(dir, 'zernio-posts-workspace-one.json')), true)
+    new pure.PostsStore(legacy, 'workspace-two').clear()
+    assert.equal(new pure.PostsStore(legacy, 'workspace-one').list().length, 1)
+  } finally { cleanup() }
+})
+
+test('post history keeps active posts and stays below its read limit', () => {
+  const { dir, cleanup } = tempDir()
+  try {
+    const file = path.join(dir, 'zernio-posts.json')
+    const store = new pure.PostsStore(file)
+    const make = (i, status, large = false) => ({
+      id: i.toString(16).padStart(24, '0'), clipPath: '/c.mp4', clipTitle: 'c', status, error: null,
+      scheduledFor: status === 'scheduled' ? '2026-09-25T10:00:00.000Z' : null, timezone: 'UTC',
+      createdAt: new Date(Date.parse('2026-09-01T00:00:00Z') + i * MINUTE).toISOString(),
+      uploadedAt: '2026-09-01T00:00:00.000Z', refreshedAt: null,
+      targets: Array.from({ length: large ? 7 : 1 }, () => ({ platform: 'youtube', accountId: 'y'.repeat(24),
+        handle: '@y', status: 'failed', error: large ? 'e'.repeat(1000) : null, url: null, inbox: false }))
+    })
+    store.save(make(999, 'scheduled'), ...Array.from({ length: 300 }, (_, i) => make(i, 'published', true)))
+    assert.ok(fs.statSync(file).size <= 2 * 1024 * 1024)
+    assert.ok(store.list().some((post) => post.id === make(999, 'scheduled').id))
+    assert.ok(store.list().length < 300, 'old finished records are trimmed to meet the byte limit')
+    const prior = fs.readFileSync(file)
+    const active = Array.from({ length: 301 }, (_, i) => make(i + 2000, 'scheduled'))
+    assert.throws(() => store.save(...active), /full of active posts/)
+    assert.deepEqual(fs.readFileSync(file), prior, 'a failed write preserves the good file')
+    assert.equal(store.list().some((post) => post.id === make(999, 'scheduled').id), true)
+    store.remove(make(999, 'scheduled').id)
+    store.save(...active.slice(0, 300))
+    assert.throws(() => store.reserveActive(make(8888, 'scheduled')), /full of active posts/)
+    store.remove(active[0].id)
+    const release = store.reserveActive(make(8888, 'scheduled'))
+    assert.throws(() => store.reserveActive(make(8889, 'scheduled')), /full of active posts/)
+    release()
+    const releaseAgain = store.reserveActive(make(8889, 'scheduled'))
+    releaseAgain()
+    const byteFile = path.join(dir, 'large-posts.json')
+    const byteStore = new pure.PostsStore(byteFile)
+    byteStore.save(make(8000, 'scheduled'))
+    const activeHistory = fs.readFileSync(byteFile)
+    assert.throws(() => byteStore.save(...Array.from({ length: 250 }, (_, i) => make(i + 5000, 'scheduled', true))), /storage limit/)
+    assert.deepEqual(fs.readFileSync(byteFile), activeHistory, 'an oversized active history does not replace existing posts')
+  } finally { cleanup() }
+})
+
 test('post history persists atomically, survives a damaged file and keeps scheduled posts when pruning', () => {
   const { dir, cleanup } = tempDir()
   try {
@@ -578,13 +638,13 @@ test('publish now: presign, a streamed PUT to storage, then POST /v1/posts with 
   assert.match(youtube.url, /^https:\/\/www\.youtube\.com\/shorts\//)
   assert.equal(youtube.handle, '@channel')
 
-  const history = JSON.parse(fs.readFileSync(path.join(userData, 'zernio-posts.json'), 'utf8'))
+  const history = JSON.parse(fs.readFileSync(historyPath(userData), 'utf8'))
   assert.equal(history.posts.length, 1)
   assert.equal(history.posts[0].id, result.post.id)
   assert.equal(history.posts[0].clipPath, clipPath)
 }))
 
-test('changing the Zernio key clears local post history and cached uploads', () => withPosting(async ({ mock, posting, main, publish }) => {
+test('changing the Zernio key isolates local post history and cached uploads', () => withPosting(async ({ mock, posting, main, publish }) => {
   await publish()
   assert.equal(main.posts.listPosts().length, 1)
   assert.equal(posting.state.uploads.length, 1)
@@ -594,9 +654,11 @@ test('changing the Zernio key clears local post history and cached uploads', () 
   assert.deepEqual(main.posts.listPosts(), [])
 
   main.settings.replaceApiKey('zernioApiKey', KEY)
+  main.service.resetZernioState(() => null)
+  assert.equal(main.posts.listPosts().length, 1, 'the original workspace history is restored')
   await publish({ caption: 'A post after switching workspaces' })
   assert.equal(posting.state.uploads.length, 2, 'the prior workspace upload is not reused')
-  assert.equal(main.posts.listPosts().length, 1)
+  assert.equal(main.posts.listPosts().length, 2)
   assert.equal(mock.requestsTo('POST', '/api/v1/media/presign').length, 2)
 }))
 
@@ -789,6 +851,61 @@ test('schedule, refresh, reschedule and cancel; history follows Zernio', () => w
   assert.equal(main.posts.listPosts().length, 2)
 }))
 
+test('a pending cancellation blocks rescheduling the same post', () => withPosting(async ({ mock, main, accounts, publish }) => {
+  const result = await publish({
+    targets: [{ platform: 'instagram', accountId: accounts.instagram._id }],
+    timing: { mode: 'schedule', scheduledFor: new Date(Date.now() + 3 * 3_600_000).toISOString(), timezone: 'UTC' },
+    options: { instagram: { shareToFeed: true } }
+  })
+  let releaseDelete
+  let reachedDelete
+  const deleteStarted = new Promise((resolve) => { reachedDelete = resolve })
+  const deleteGate = new Promise((resolve) => { releaseDelete = resolve })
+  mock.route({ method: 'DELETE', path: `/api/v1/posts/${result.post.id}`, handler: async (ctx) => {
+    reachedDelete()
+    await deleteGate
+    return ctx.json(200, { message: 'Post deleted successfully' })
+  } })
+
+  const cancelling = main.posts.cancelPost(result.post.id)
+  await deleteStarted
+  await assert.rejects(main.posts.reschedulePost(result.post.id, new Date(Date.now() + 5 * 3_600_000).toISOString(), 'UTC'), /already in progress/)
+  assert.equal(mock.requestsTo('PUT', `/api/v1/posts/${result.post.id}`).length, 0)
+  releaseDelete()
+  await cancelling
+  assert.equal(main.posts.listPosts().find((post) => post.id === result.post.id).status, 'cancelled')
+}))
+
+test('a delayed status refresh cannot revive a locally cancelled post', () => withPosting(async ({ mock, posting, main, accounts, publish, userData }) => {
+  const result = await publish({
+    targets: [{ platform: 'instagram', accountId: accounts.instagram._id }],
+    timing: { mode: 'schedule', scheduledFor: new Date(Date.now() + 3 * 3_600_000).toISOString(), timezone: 'UTC' },
+    options: { instagram: { shareToFeed: true } }
+  })
+  const file = historyPath(userData)
+  const history = JSON.parse(fs.readFileSync(file, 'utf8'))
+  history.posts[0].refreshedAt = new Date(Date.now() - 3_600_000).toISOString()
+  fs.writeFileSync(file, JSON.stringify(history))
+  let releaseGet
+  let reachedGet
+  const getStarted = new Promise((resolve) => { reachedGet = resolve })
+  const getGate = new Promise((resolve) => { releaseGet = resolve })
+  mock.route({ method: 'GET', path: `/api/v1/posts/${result.post.id}`, handler: async (ctx) => {
+    const oldPost = structuredClone(posting.state.posts.get(result.post.id))
+    reachedGet()
+    await getGate
+    return ctx.json(200, { post: oldPost })
+  } })
+
+  const refreshing = main.posts.refreshPosts(true)
+  await getStarted
+  await main.posts.cancelPost(result.post.id)
+  releaseGet()
+  const refreshed = await refreshing
+  assert.equal(refreshed.error, null)
+  assert.equal(main.posts.listPosts().find((post) => post.id === result.post.id).status, 'cancelled')
+}))
+
 test('refresh reads only posts that can still change, a few at a time, and marks deleted ones', () => withPosting(async ({ mock, posting, main, accounts, publish, userData }) => {
   const results = []
   for (let i = 0; i < 7; i++) {
@@ -801,7 +918,7 @@ test('refresh reads only posts that can still change, a few at a time, and marks
     }))
   }
   // Age every record's refresh stamp so they're all due, then make Zernio publish them.
-  const file = path.join(userData, 'zernio-posts.json')
+  const file = historyPath(userData)
   const history = JSON.parse(fs.readFileSync(file, 'utf8'))
   for (const post of history.posts) {
     post.refreshedAt = new Date(Date.now() - 3_600_000).toISOString()
@@ -967,3 +1084,30 @@ test('cancelling an upload stops the PUT and leaves no post', () => withPosting(
   assert.equal(posting.state.creates.length, 0)
   assert.equal(main.posts.listPosts().length, 0)
 }, { clip: { seconds: 3 } }))
+
+test('a not-found cancellation cannot write into a newly selected workspace', () => withPosting(async ({ mock, main, accounts, publish }) => {
+  const result = await publish({
+    targets: [{ platform: 'instagram', accountId: accounts.instagram._id }],
+    timing: { mode: 'schedule', scheduledFor: new Date(Date.now() + 3 * 3_600_000).toISOString(), timezone: 'UTC' },
+    options: { instagram: { shareToFeed: true } }
+  })
+  let releaseDelete
+  let reachedDelete
+  const deleteStarted = new Promise((resolve) => { reachedDelete = resolve })
+  const deleteGate = new Promise((resolve) => { releaseDelete = resolve })
+  mock.route({ method: 'DELETE', path: `/api/v1/posts/${result.post.id}`, handler: async (ctx) => {
+    reachedDelete()
+    await deleteGate
+    return ctx.json(404, { error: 'Post not found' })
+  } })
+  const cancelling = main.posts.cancelPost(result.post.id)
+  await deleteStarted
+  main.settings.replaceApiKey('zernioApiKey', 'another-workspace-key')
+  main.service.resetZernioState(() => null)
+  releaseDelete()
+  await assert.rejects(cancelling, /API key changed/)
+  assert.deepEqual(main.posts.listPosts(), [])
+  main.settings.replaceApiKey('zernioApiKey', KEY)
+  main.service.resetZernioState(() => null)
+  assert.equal(main.posts.listPosts().find((post) => post.id === result.post.id).status, 'scheduled')
+}))

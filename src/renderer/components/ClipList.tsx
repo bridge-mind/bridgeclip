@@ -421,7 +421,7 @@ function CostDetail({ costs }: { costs: ApiCosts }): React.JSX.Element {
   if (costs.layout_vision) parts.push(`Framing ${formatUsd(costs.layout_vision.estimated_cost_usd)}`)
   const title = [
     costs.transcription &&
-      `Transcription: ${costs.transcription.provider}/${costs.transcription.model}, ${formatDuration(costs.transcription.audio_duration_seconds * 1000)} of audio`,
+      `Transcription: ${costs.transcription.provider}/${costs.transcription.model}, ${formatDuration(costs.transcription.audio_duration_seconds * 1000)} of audio${(costs.transcription.attempts ?? 0) > 1 ? `, ${costs.transcription.attempts} attempts` : ''}`,
     costs.planning &&
       `Planning: ${costs.planning.model}, ${costs.planning.total_tokens.toLocaleString()} tokens${costs.planning.attempts > 1 ? `, ${costs.planning.attempts} attempts` : ''}`,
     costs.layout_vision && `Framing: ${costs.layout_vision.model} checked webcam and screen positions`,

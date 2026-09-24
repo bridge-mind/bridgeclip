@@ -17,16 +17,17 @@ function loadShared(file) {
   const source = fs.readFileSync(path.join(__dirname, '../../src/shared', file), 'utf8')
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const module = { exports: {} }
-  vm.runInNewContext(js, { module, exports: module.exports, require })
+  vm.runInNewContext(js, { module, exports: module.exports, require, URL })
   return module.exports
 }
 const TEST_WORK_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-worker-test-'))
 process.on('exit', () => fs.rmSync(TEST_WORK_HOME, { recursive: true, force: true }))
 const jobContract = loadShared('job-contract.ts')
 const jobOutput = loadShared('job-output.ts')
-const runHistory = loadSource('run-history.ts')
+const videoSource = loadShared('video-source.ts')
+const runHistory = loadSource('run-history.ts', { '../shared/video-source': videoSource })
 const security = loadSource('security.ts', { electron: {}, '../shared/brand': loadShared('brand.ts') })
-const { validateJobConfig } = loadSource('validation.ts', { './security': security, '../shared/job-contract': jobContract })
+const { validateJobConfig } = loadSource('validation.ts', { './security': security, '../shared/video-source': videoSource, '../shared/job-contract': jobContract })
 
 test('development checks the staged FFmpeg that the clipping engine uses', async () => {
   const binDir = path.join(__dirname, '../../engine-bin')
@@ -217,6 +218,8 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'economy' }))
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'quality' }))
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
+  assert.equal(validateJobConfig({ ...job, videoUrl: 'https://go.twitch.tv/videos/123?t=30s' }).videoUrl, 'https://www.twitch.tv/videos/123')
+  for (const videoUrl of ['https://twitch.tv/channel', 'https://clips.twitch.tv/Clip']) assert.throws(() => validateJobConfig({ ...job, videoUrl }), /completed Twitch VOD/)
   for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
 })
 
@@ -387,6 +390,8 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
   child.stdout = new PassThrough()
   child.stderr = new PassThrough()
   child.kill = () => true
+  let workerInput = ''
+  child.stdin.on('data', (chunk) => { workerInput += chunk.toString() })
   const sent = []
   const settings = { openrouterApiKey: 'test-secret', outputDirectory: '/tmp', pythonPath: 'python3', enginePath: '/tmp' }
   const runner = loadSource('pipeline-runner.ts', {
@@ -405,7 +410,8 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
     './tools': { resolveBinary: () => '/staged/engine-bin/ffmpeg' }
   })
   const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel, data) => sent.push({ channel, data }) } }
-  runner.startClipJob('trusted-job', { videoUrl: '/tmp/video.mp4' }, window)
+  runner.startClipJob('trusted-job', { videoUrl: '/tmp/video.mp4' }, window, undefined, '/tmp/queued-output')
+  assert.equal(JSON.parse(workerInput).output_dir, '/tmp/queued-output')
   child.stdout.write('{"type":"prog')
   child.stdout.write('ress","jobId":"spoof","percent":42}\n{"type":"result","status":"completed","job_id":"trusted-job","output":{"job_id":"trusted-job","clips":[]}}\n')
   child.stdout.end()

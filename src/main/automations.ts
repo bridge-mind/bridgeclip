@@ -138,6 +138,11 @@ function data(): { workspace: string; automations: Automation[] } {
 }
 
 function save(workspace: string): void {
+  // Async imports and posts can resume after a key switch has loaded another
+  // workspace into the module-level cache. Never write that cache to a stale path.
+  if (cachedWorkspace !== workspace || currentWorkspace() !== workspace) {
+    throw new Error('The Zernio workspace changed. Please try again.')
+  }
   const path = dataPath(workspace)
   mkdirSync(app.getPath('userData'), { recursive: true, mode: 0o700 })
   const payload = JSON.stringify({ version: 3, workspace, automations: cached })
@@ -281,11 +286,17 @@ export async function addAutomationContent(id: unknown, paths: string[], titles?
       const fileName = `${itemId}${extension}`
       const dest = join(directory, fileName)
       try {
+        if (currentWorkspace() !== workspace || cachedWorkspace !== workspace || !cached.includes(automation)) {
+          throw new Error('Automation changed while adding content.')
+        }
         if (!VIDEO_EXTENSIONS.has(extension)) throw new Error('Use MP4, MOV, M4V or WebM clips.')
         if (source.size === 0 || source.size > MAX_FILE_BYTES) throw new Error('Clips must be between 1 byte and 5 GB.')
         const target = await open(dest, 'wx', 0o600)
         try { await pipeline(source.handle.createReadStream({ autoClose: false }), createWriteStream('', { fd: target.fd, autoClose: false })) }
         finally { await target.close() }
+        if (currentWorkspace() !== workspace || cachedWorkspace !== workspace || !cached.includes(automation)) {
+          throw new Error('Automation changed while adding content.')
+        }
         const title = Array.from(titles?.[index] || basename(path, extname(path))).filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('').replace(/[_-]+/g, ' ').trim().slice(0, 500) || 'Untitled clip'
         const item: AutomationContent = { id: itemId, fileName, title, caption: title, transcript: null, generatedMetadata: null, status: 'queued', addedAt: new Date().toISOString(), postedAt: null, postId: null, error: null }
         automation.content.push(item)

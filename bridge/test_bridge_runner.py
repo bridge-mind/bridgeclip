@@ -149,7 +149,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_failures_map_to_fixed_messages(self):
         blocked = bridge.describe_failure("YouTube download failed after trying all 5 proxies. Last error: ERROR: unable to download video data: HTTP Error 403: Forbidden")
-        self.assertEqual(blocked["message"], "YouTube refused the download.")
+        self.assertEqual(blocked["message"], "The video service refused the download.")
         secret = "socks5h://user:secret-pass@10.0.0.1:1 /Users/someone/private.mp4"
         fallback = bridge.describe_failure(RuntimeError(secret))
         self.assertEqual(fallback["message"], "The clipping pipeline failed.")
@@ -158,7 +158,8 @@ class BridgeTests(unittest.TestCase):
         empty = bridge.describe_failure("No clip-worthy moments found (the video may have no speech, or the selected time range is too short for the chosen clip length)")
         self.assertEqual(empty["message"], "BridgeClip couldn't find any clips in this video.")
         self.assertEqual(bridge.describe_failure("Transcription authentication failed")["message"], "OpenRouter rejected the transcription request.")
-        self.assertEqual(bridge.describe_failure("Transcription quota or rate limit reached")["message"], "OpenRouter could not transcribe the video because its quota or rate limit was reached.")
+        self.assertEqual(bridge.describe_failure("Transcription account credit limit reached")["message"], "OpenRouter could not transcribe the video because the account has insufficient credit or a spending limit.")
+        self.assertEqual(bridge.describe_failure("Transcription providers are temporarily rate limited")["message"], "Transcription providers are busy after automatic retries and fallback attempts.")
         self.assertEqual(bridge.describe_failure("Transcription service unavailable")["message"], "OpenRouter could not be reached for transcription.")
         self.assertEqual(bridge.describe_failure("Transcription request rejected by provider")["message"], "OpenRouter rejected the transcription audio request.")
         self.assertEqual(bridge.describe_failure("Transcription response lacked word timestamps")["message"], "OpenRouter returned a transcript without word timestamps.")
@@ -166,6 +167,23 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.describe_failure("Not enough disk space to save clips")["message"],
                          "There is not enough free disk space to finish this video.")
         self.assertEqual(bridge.describe_failure("Video download failed")["message"], "The video could not be downloaded.")
+
+    def test_twitch_failures_are_actionable_and_safe_for_the_desktop(self):
+        cases = {
+            "Unsupported Twitch source": "Choose a public, completed Twitch VOD.",
+            "Twitch VOD is not completed": "This Twitch video is still live or processing.",
+            "Twitch VOD duration is invalid or too long": "This Twitch video has no usable duration or exceeds the six hour limit.",
+            "Twitch VOD unavailable": "The Twitch VOD could not be downloaded.",
+        }
+        for error, message in cases.items():
+            with self.subTest(error=error):
+                result = bridge.describe_failure(error)
+                self.assertEqual(result["message"], message)
+                self.assertTrue(result["hint"])
+                for value in result.values():
+                    self.assertNotIn("/", value)
+                    self.assertNotIn("https:", value)
+        self.assertIn("signed out", bridge.describe_failure("Twitch VOD unavailable")["hint"])
 
     def test_engine_stdout_cannot_corrupt_protocol(self):
         script = (

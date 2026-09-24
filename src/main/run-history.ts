@@ -1,3 +1,4 @@
+import { twitchVodId } from '../shared/video-source'
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { basename, isAbsolute, join, relative, sep } from 'path'
 import { randomUUID } from 'crypto'
@@ -35,6 +36,8 @@ function checkedDirectory(baseDir: string, jobId: string): string {
 }
 
 function sourceLabel(source: string): string {
+  const twitchId = twitchVodId(source)
+  if (twitchId) return `Twitch VOD · ${twitchId}`.slice(0, 160)
   let label: string
   try {
     const url = new URL(source)

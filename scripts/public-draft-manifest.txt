@@ -149,6 +149,7 @@ bridgeclip/src/shared/brand.ts
 bridgeclip/src/shared/job-contract.ts
 bridgeclip/src/shared/job-output.ts
 bridgeclip/src/shared/jobs.ts
+bridgeclip/src/shared/video-source.ts
 bridgeclip/src/shared/zernio-posts.ts
 bridgeclip/src/shared/zernio.ts
 bridgeclip/tailwind.config.ts
@@ -238,7 +239,12 @@ bridgeclip/engine/tests/test_render_fallback.py
 bridgeclip/engine/tests/test_render_timing.py
 bridgeclip/engine/tests/test_resilience.py
 bridgeclip/engine/tests/test_transcription.py
+bridgeclip/engine/tests/test_transcription_recovery.py
+bridgeclip/engine/tests/test_twitch_downloader.py
 bridgeclip/engine/tests/test_visual_fallback.py
 bridgeclip/engine/tests/test_media_process_security.py
 bridgeclip/engine/tests/test_openrouter_security.py
 bridgeclip/scripts/release-ref.test.cjs
+bridgeclip/.github/CODEOWNERS
+bridgeclip/scripts/check-lockfile-integrity.cjs
+bridgeclip/scripts/check-lockfile-integrity.test.cjs

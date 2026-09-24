@@ -1,7 +1,7 @@
 """
-Video Downloader Service - Downloads videos from YouTube or S3.
+Video Downloader Service - Downloads videos from YouTube, Twitch or S3.
 
-Uses yt-dlp through guarded Python sockets for YouTube and a pinned HTTP
+Uses yt-dlp through guarded Python sockets for YouTube and Twitch and a pinned HTTP
 client for direct URLs. Native network handlers and proxies are disabled for
 caller-supplied URLs so redirects cannot reach private destinations.
 """
@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import threading
@@ -58,6 +59,33 @@ YOUTUBE_FORMAT_SELECTORS = [
 ]
 
 
+TWITCH_HOSTS = {"twitch.tv", "www.twitch.tv", "m.twitch.tv", "go.twitch.tv"}
+
+
+def twitch_vod_url(url: str) -> Optional[str]:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host.rstrip(".") != "twitch.tv" and not host.rstrip(".").endswith(".twitch.tv"):
+        return None
+    match = re.fullmatch(r"/videos/([0-9]+)/?", parsed.path)
+    try:
+        valid_port = parsed.port in {None, 443 if parsed.scheme == "https" else 80}
+    except ValueError:
+        valid_port = False
+    if (host not in TWITCH_HOSTS or not match or parsed.scheme not in {"http", "https"}
+            or parsed.username or parsed.password or not valid_port):
+        raise VideoDownloadError("Unsupported Twitch source", reason="twitch_unsupported")
+    return f"https://www.twitch.tv/videos/{match[1]}"
+
+
+def finite_number(value, default=0):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else default
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 # User-Agent rotation list for avoiding detection
 UA_LIST = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -69,7 +97,7 @@ UA_LIST = [
 
 
 # Source types for videos
-VideoSourceType = Literal["youtube", "s3", "direct_url", "local"]
+VideoSourceType = Literal["youtube", "twitch", "s3", "direct_url", "local"]
 
 
 @dataclass
@@ -242,6 +270,9 @@ class VideoDownloaderService:
         
         parsed = urlparse(url_or_key)
         
+        if twitch_vod_url(url_or_key):
+            return "twitch"
+
         # S3 URL formats
         if parsed.hostname and (
             ".s3." in parsed.hostname or
@@ -293,6 +324,8 @@ class VideoDownloaderService:
                 result = await self._use_local_file(url)
             elif source_type == "s3":
                 result = await self._download_from_s3(url, output_path, s3_bucket)
+            elif source_type == "twitch":
+                result = await self._download_from_youtube(twitch_vod_url(url), output_path, output_dir, max_duration_seconds, source_type="twitch")
             elif source_type == "youtube":
                 result = await self._download_from_youtube(url, output_path, output_dir, max_duration_seconds)
             else:
@@ -343,9 +376,10 @@ class VideoDownloaderService:
         output_path: str,
         output_dir: str,
         max_duration_seconds: Optional[int] = None,
+        source_type: VideoSourceType = "youtube",
     ) -> DownloadResult:
         """
-        Download video from YouTube using yt-dlp Python library.
+        Download video from YouTube or Twitch using yt-dlp Python library.
 
         Downloads through guarded Python sockets:
         - Uses flexible format selectors that work reliably
@@ -357,24 +391,23 @@ class VideoDownloaderService:
             self._get_video_info(url, deadline=deadline), timeout=DOWNLOAD_DEADLINE_SECONDS
         )
 
-        max_duration = max_duration_seconds or self.settings.max_download_duration_seconds
+        max_duration = min(max_duration_seconds or self.settings.max_download_duration_seconds, self.settings.max_download_duration_seconds)
         if metadata.duration_seconds > max_duration:
             raise VideoDownloadError(
                 f"Video duration ({metadata.duration_seconds}s) exceeds maximum "
                 f"allowed duration ({max_duration}s)"
             )
 
-        logger.info("Downloading video from YouTube")
+        logger.info("Downloading video from %s", source_type)
         def check_progress(progress: dict) -> None:
             if time.monotonic() > deadline:
                 raise VideoDownloadError("Video download deadline exceeded")
             self._check_source_size(int(progress.get("downloaded_bytes") or 0))
             total_bytes = int(progress.get("total_bytes") or progress.get("total_bytes_estimate") or 0)
             self._check_source_size(total_bytes)
-            if total_bytes:
-                self._check_free_space(
-                    output_dir, total_bytes - int(progress.get("downloaded_bytes") or 0)
-                )
+            self._check_free_space(
+                output_dir, total_bytes - int(progress.get("downloaded_bytes") or 0)
+            )
             # yt-dlp downloads video and audio separately, so each stream can
             # be smaller than the limit while their combined files exceed it.
             stored_bytes = sum(
@@ -385,7 +418,7 @@ class VideoDownloaderService:
 
         # Highest available quality first; see YOUTUBE_FORMAT_SELECTORS.
         # CRITICAL: All selectors MUST exclude AV1 (the bundled FFmpeg can't decode it).
-        format_selectors = YOUTUBE_FORMAT_SELECTORS
+        format_selectors = ["b[vcodec!^=av01]"] if source_type == "twitch" else YOUTUBE_FORMAT_SELECTORS
 
         # Run download in thread pool to not block event loop
         loop = asyncio.get_event_loop()
@@ -404,6 +437,10 @@ class VideoDownloaderService:
                         output_path=output_path,
                         download=True,
                     )
+                    if source_type == "twitch":
+                        ydl_opts["allowed_extractors"] = ["twitch:vod"]
+                        ydl_opts["skip_unavailable_fragments"] = False
+                        ydl_opts["match_filter"] = lambda info, *, incomplete=False: self._validate_twitch_info(info, max_duration, incomplete)
                     ydl_opts["format"] = format_selector
                     ydl_opts["progress_hooks"] = [check_progress]
                     ydl_opts["postprocessor_hooks"] = [check_progress]
@@ -456,7 +493,11 @@ class VideoDownloaderService:
             await loop.run_in_executor(None, do_download)
         except Exception as e:
             self._remove_partial_files(output_path)
-            raise VideoDownloadError(f"Failed to download video: {e}")
+            if isinstance(e, VideoDownloadError):
+                raise
+            if source_type == "twitch" and not is_disk_full(e):
+                raise VideoDownloadError("Twitch VOD download failed", reason="twitch_unavailable") from e
+            raise VideoDownloadError(f"Failed to download video: {e}") from e
 
         # Verify output exists
         if not os.path.isfile(output_path):
@@ -511,7 +552,7 @@ class VideoDownloaderService:
         actual_metadata.upload_date = metadata.upload_date
         actual_metadata.description = metadata.description
         actual_metadata.thumbnail_url = metadata.thumbnail_url
-        actual_metadata.source_type = "youtube"
+        actual_metadata.source_type = source_type
 
         logger.info(f"Actual video dimensions: {actual_metadata.width}x{actual_metadata.height} @ {actual_metadata.fps}fps")
 
@@ -519,7 +560,7 @@ class VideoDownloaderService:
             video_path=output_path,
             metadata=actual_metadata,
             file_size_bytes=file_size,
-            source_type="youtube",
+            source_type=source_type,
         )
 
     async def _download_from_s3(
@@ -797,6 +838,20 @@ class VideoDownloaderService:
         except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError) as e:
             raise VideoDownloadError("Invalid video metadata") from e
 
+    @staticmethod
+    def _validate_twitch_info(info: dict, max_duration: float, incomplete: bool = False):
+        if not isinstance(info, dict):
+            raise VideoDownloadError("Twitch VOD unavailable", reason="twitch_unavailable")
+        # Archived broadcasts often have was_live=True and is_live=None.
+        if info.get("is_live") or info.get("live_status") in {"is_live", "is_upcoming", "post_live", "processing"}:
+            raise VideoDownloadError("Twitch VOD is not completed", reason="twitch_not_completed")
+        if incomplete:
+            return None
+        duration = finite_number(info.get("duration"))
+        if not 0 < duration <= max_duration:
+            raise VideoDownloadError("Twitch VOD duration is invalid or too long", reason="twitch_duration")
+        return None
+
     async def _get_video_info(self, url: str, deadline: Optional[float] = None) -> VideoMetadata:
         """
         Get video metadata without downloading using yt-dlp Python library.
@@ -804,6 +859,9 @@ class VideoDownloaderService:
         Uses guarded Python sockets for metadata requests and redirects.
         """
         logger.debug("Getting video info")
+        twitch_url = twitch_vod_url(url)
+        if twitch_url:
+            url = twitch_url
 
         # Run in thread pool to not block event loop
         loop = asyncio.get_event_loop()
@@ -823,6 +881,8 @@ class VideoDownloaderService:
                 "no_warnings": True,
             })
 
+            if twitch_url:
+                opts["allowed_extractors"] = ["twitch:vod"]
             with guarded_ytdlp_children(deadline), guarded_public_connections():
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     return ydl.extract_info(url, download=False)
@@ -830,6 +890,8 @@ class VideoDownloaderService:
         try:
             info = await loop.run_in_executor(None, do_extract)
         except Exception as e:
+            if twitch_url and not is_disk_full(e):
+                raise VideoDownloadError("Twitch VOD unavailable", reason="twitch_unavailable") from e
             error_str = str(e)
             # Provide user-friendly error for YouTube bot detection
             if "Sign in to confirm" in error_str or "bot" in error_str.lower():
@@ -840,12 +902,16 @@ class VideoDownloaderService:
                 )
             raise VideoDownloadError(f"Failed to get video info: {e}")
 
+        if twitch_url:
+            self._validate_twitch_info(info, self.settings.max_download_duration_seconds)
+
         return VideoMetadata(
+            source_type="twitch" if twitch_url else "youtube",
             title=info.get("title", "Unknown"),
-            duration_seconds=float(info.get("duration", 0)),
-            width=int(info.get("width", 1920)),
-            height=int(info.get("height", 1080)),
-            fps=float(info.get("fps", 30)),
+            duration_seconds=float(finite_number(info.get("duration"), 0)),
+            width=int(finite_number(info.get("width"), 1920)),
+            height=int(finite_number(info.get("height"), 1080)),
+            fps=float(finite_number(info.get("fps"), 30)),
             format_id=info.get("format_id", "unknown"),
             extractor=info.get("extractor", "unknown"),
             uploader=info.get("uploader"),
@@ -856,4 +922,6 @@ class VideoDownloaderService:
 
 class VideoDownloadError(Exception):
     """Exception raised when video download fails."""
-    pass
+    def __init__(self, message: str, reason: Optional[str] = None):
+        super().__init__(message)
+        self.reason = reason

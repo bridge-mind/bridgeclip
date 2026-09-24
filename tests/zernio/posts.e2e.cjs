@@ -232,9 +232,10 @@ test('post a Library clip now and on a schedule, then cancel the scheduled one',
   await page.getByText(/^Cancelled · created/).waitFor()
   await shot(page, '07-cancelled')
 
-  const history = JSON.parse(fs.readFileSync(path.join(userDataDir, 'zernio-posts.json'), 'utf8'))
+  const historyPath = path.join(userDataDir, `zernio-posts-${crypto.createHash('sha256').update(KEY).digest('hex')}.json`)
+  const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'))
   assert.deepEqual(history.posts.map((p) => p.status).sort(), ['cancelled', 'published'])
-  assert.equal(fs.readFileSync(path.join(userDataDir, 'zernio-posts.json'), 'utf8').includes(KEY), false)
+  assert.equal(fs.readFileSync(historyPath, 'utf8').includes(KEY), false)
   // No request ever carried a key other than the test one, and storage never saw it.
   assert.ok(mock.state.requests.filter((r) => r.path.startsWith('/api/')).every((r) => r.authorized))
 })

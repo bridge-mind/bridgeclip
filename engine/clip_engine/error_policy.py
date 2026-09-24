@@ -2,6 +2,13 @@
 
 import errno
 
+TWITCH_ERRORS = {
+    "twitch_unsupported": "Unsupported Twitch source",
+    "twitch_not_completed": "Twitch VOD is not completed",
+    "twitch_duration": "Twitch VOD duration is invalid or too long",
+    "twitch_unavailable": "Twitch VOD unavailable",
+}
+
 DISK_FULL_ERRNOS = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
 DISK_FULL_MARKERS = ("no space left on device", "disk quota exceeded")
 
@@ -31,13 +38,15 @@ def safe_processing_error(error: Exception) -> str:
     if isinstance(error, TimeoutError):
         return "Processing timed out"
     if type(error).__name__ == "VideoDownloadError":
-        return "Video download failed"
+        return TWITCH_ERRORS.get(getattr(error, "reason", None), "Video download failed")
     if type(error).__name__ == "TranscriptionProviderError":
         return {
             "auth": "Transcription authentication failed",
-            "quota": "Transcription quota or rate limit reached",
+            "quota": "Transcription account credit limit reached",
+            "rate_limit": "Transcription providers are temporarily rate limited",
             "network": "Transcription service unavailable",
             "bad_request": "Transcription request rejected by provider",
+            "unavailable": "Transcription service unavailable",
             "rejected": "Transcription request rejected by provider",
             "invalid_response": "Transcription response was invalid",
             "response_too_large": "Transcription response was too large",
@@ -68,7 +77,7 @@ def safe_failure_code(error: Exception) -> str:
     if type(error).__name__ in {"TranscriptionError", "TranscriptionProviderError"}:
         reason = getattr(error, "reason", "unknown")
         if reason in {
-            "auth", "quota", "network", "bad_request", "rejected", "invalid_response",
+            "auth", "quota", "rate_limit", "network", "bad_request", "unavailable", "rejected", "invalid_response",
             "response_too_large", "source_missing", "audio_extraction_failed",
             "audio_extraction_empty", "audio_missing", "translation_unsupported",
             "audio_duration_unknown", "audio_chunk_failed", "audio_chunk_too_large",
@@ -77,7 +86,8 @@ def safe_failure_code(error: Exception) -> str:
             return f"transcription.{reason}"
         return "transcription.unknown"
     if type(error).__name__ == "VideoDownloadError":
-        return "download.failed"
+        reason = getattr(error, "reason", None)
+        return f"download.{reason}" if reason in TWITCH_ERRORS else "download.failed"
     if type(error).__name__ == "RenderingError":
         return "render.failed"
     return "pipeline.failed"
@@ -87,10 +97,14 @@ def safe_job_error_text(error: str | None) -> str | None:
     """Only expose known, fixed messages from stored job state."""
     if error is None:
         return None
+    if error in TWITCH_ERRORS.values():
+        return error
     if error in {
         "Processing timed out", "Video download failed", "No clip-worthy moments found",
         "Processing failed", "Job cancelled", "Transcription authentication failed",
         "Transcription quota or rate limit reached", "Transcription service unavailable",
+        "Transcription providers are temporarily rate limited",
+        "Transcription account credit limit reached",
         "Transcription failed",
         "Transcription request rejected by provider", "Transcription response was invalid",
         "Transcription response was too large", "Audio extraction failed",
