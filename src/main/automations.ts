@@ -49,7 +49,7 @@ function bankPath(workspace: string, automationId: string): string { return join
 function validContent(value: unknown): value is AutomationContent {
   if (!value || typeof value !== 'object') return false
   const item = value as AutomationContent
-  return UUID.test(item.id) && typeof item.fileName === 'string' &&
+  return UUID.test(item.id) && (item.postingAttemptId === undefined || (typeof item.postingAttemptId === 'string' && UUID.test(item.postingAttemptId))) && typeof item.fileName === 'string' &&
     item.fileName === `${item.id}${extname(item.fileName)}` && VIDEO_EXTENSIONS.has(extname(item.fileName)) &&
     typeof item.title === 'string' && item.title.length <= 500 &&
     typeof item.caption === 'string' && item.caption.length <= 63_206 &&
@@ -319,12 +319,17 @@ export function updateAutomationContent(id: unknown, contentId: unknown, raw: un
   const update = raw as { title?: unknown; caption?: unknown; returnToQueue?: unknown }
   if (typeof update.title !== 'string' || !update.title.trim() || update.title.length > 500 ||
       typeof update.caption !== 'string' || update.caption.length > 63_206) throw new Error('Enter a title and caption within the allowed lengths.')
+  if (update.returnToQueue === true) {
+    if (item.status !== 'needs_review') throw new Error('Only clips needing review can return to the queue.')
+    if (item.postId) throw new Error('This clip has a Zernio post. Use Posts on Accounts to review or retry it.')
+  }
   item.title = update.title.trim()
   item.caption = update.caption
   item.generatedMetadata = null
   if (update.returnToQueue === true) {
-    if (item.status !== 'needs_review') throw new Error('Only clips needing review can return to the queue.')
-    if (item.postId) throw new Error('This clip has a Zernio post. Use Posts on Accounts to review or retry it.')
+    // The old request ID stays in the attempt journal. Only a person who has
+    // checked Zernio may authorize a new post after an uncertain response.
+    item.postingAttemptId = randomUUID()
     item.status = 'queued'
     item.error = null
   }
@@ -390,10 +395,10 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     const youtube = generated?.find((post) => post.platform === 'youtube')
     const facebook = generated?.find((post) => post.platform === 'facebook')
     const threads = generated?.find((post) => post.platform === 'threads')
-    // The attempt is keyed by the bank item, so a retry after a timeout or 5xx
-    // replays the stored request id instead of creating a second post.
+    // Automatic retries use one attempt per bank item. A manual review can
+    // start a new attempt without discarding the old request journal.
     const request: PostClipRequest = {
-      attemptId: item.id, clipPath: path, clipTitle: item.title, durationMs: null, caption: item.caption,
+      attemptId: item.postingAttemptId ?? item.id, clipPath: path, clipTitle: item.title, durationMs: null, caption: item.caption,
       targets: automation.accounts.map((account) => ({ ...account, ...(generated?.find((post) => post.platform === account.platform)?.caption
         ? { customContent: generated.find((post) => post.platform === account.platform)!.caption } : {}) })), timing: { mode: 'now' },
       options: {

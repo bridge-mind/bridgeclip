@@ -161,6 +161,61 @@ test('an upload failure keeps an automation clip retryable without creating a po
   }
 })
 
+test('a reviewed uncertain post can return to the queue after its replay window expires', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-automation-reviewed-retry-')
+  const posting = createPostingMock()
+  const mock = await createMockZernio({ apiKey: KEY, extraRoutes: posting.routes })
+  const previousUrl = process.env.BRIDGECLIP_ZERNIO_API_URL
+  const previousPath = process.env.PATH
+  process.env.BRIDGECLIP_ZERNIO_API_URL = mock.apiUrl
+  process.env.PATH = `${previousPath}${path.delimiter}${path.join(ROOT, 'engine-bin')}`
+  const realNow = Date.now
+  try {
+    const library = path.join(dir, 'library')
+    const clip = makeClip(path.join(library, 'clip.mp4'))
+    const main = loadMain("export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'", { electron: fakeElectron(dir).electron })
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3' })
+    const [profile] = mock.state.profiles
+    const youtube = mock.addAccount('youtube', profile._id)
+    const [created] = main.automations.createAutomation('Reviewed retry')
+    await main.automations.updateAutomation(created.id, {
+      name: created.name, enabled: false, profileId: profile._id, metadataMode: 'manual', timezone: 'UTC', times: [],
+      youtubeVisibility: 'unlisted', youtubeMadeForKids: false,
+      accounts: [{ platform: 'youtube', accountId: youtube._id }]
+    })
+    await main.automations.addAutomationContent(created.id, [clip])
+    for (let i = 0; i < 3; i++) mock.failNext('POST', '/api/v1/posts', 500, { error: 'temporary failure' })
+    const [uncertain] = await main.automations.runAutomation(created.id)
+    assert.equal(uncertain.content[0].status, 'needs_review')
+    await main.automations.runAutomation(created.id)
+    assert.equal(mock.requestsTo('POST', '/api/v1/posts').length, 3, 'uncertain posts never retry automatically')
+    const oldAttemptId = uncertain.content[0].id
+    const journal = path.join(dir, 'userData', 'zernio-post-attempts.json')
+    assert.ok(JSON.parse(fs.readFileSync(journal, 'utf8')).attempts.some(([id]) => id === oldAttemptId))
+
+    Date.now = () => realNow() + 5 * 60_000
+    const [requeued] = main.automations.updateAutomationContent(created.id, oldAttemptId, {
+      title: uncertain.content[0].title, caption: 'Reviewed and ready', returnToQueue: true
+    })
+    assert.equal(requeued.content[0].status, 'queued')
+    assert.notEqual(requeued.content[0].postingAttemptId, oldAttemptId)
+    const restarted = loadMain("export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'", { electron: fakeElectron(dir).electron })
+    assert.equal(restarted.automations.listAutomations()[0].content[0].postingAttemptId, requeued.content[0].postingAttemptId)
+    const [posted] = await restarted.automations.runAutomation(created.id)
+    assert.equal(posted.content[0].status, 'posted')
+    assert.equal(posting.state.posts.size, 1)
+    assert.ok(JSON.parse(fs.readFileSync(journal, 'utf8')).attempts.some(([id]) => id === oldAttemptId), 'the uncertain attempt stays in the audit journal')
+  } finally {
+    Date.now = realNow
+    if (previousUrl === undefined) delete process.env.BRIDGECLIP_ZERNIO_API_URL
+    else process.env.BRIDGECLIP_ZERNIO_API_URL = previousUrl
+    process.env.PATH = previousPath
+    await mock.close()
+    cleanup()
+  }
+})
+
 test('generated copy enforces platform fields, X weights and grounded Threads topics', () => {
   const { dir, cleanup } = tempDir('bridgeclip-metadata-')
   try {
@@ -289,8 +344,10 @@ test('bank clips publish once to selected accounts and keep their used state aft
     assert.equal(partial.content[1].status, 'needs_review')
     assert.ok(partial.content[1].postId, 'the partial post is linked for review')
     assert.throws(() => restarted.automations.updateAutomationContent(created.id, partial.content[1].id, {
-      title: partial.content[1].title, caption: partial.content[1].caption, returnToQueue: true
+      title: partial.content[1].title, caption: 'Must not be saved', returnToQueue: true
     }), /Use Posts on Accounts/)
+    assert.equal(restarted.automations.listAutomations()[0].content[1].caption, partial.content[1].caption,
+      'a rejected return does not change the clip in memory')
     await restarted.automations.runAutomation(created.id)
     assert.equal(posting.state.creates.length, 2, 'a partial post is never retried silently')
 

@@ -24,6 +24,8 @@ export interface GeneratedPlatformMetadata {
 
 export interface AutomationContent {
   id: string
+  /** Changes only after a person reviews an uncertain post and returns the clip to the queue. */
+  postingAttemptId?: string
   fileName: string
   title: string
   caption: string
