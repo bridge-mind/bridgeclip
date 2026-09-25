@@ -1,5 +1,6 @@
 {
   "name": "bridgeclip",
+  "private": true,
   "productName": "BridgeClip",
   "version": "0.1.17",
   "description": "BridgeClip: open-source AI video clipping by BridgeMind. Turn long videos into captioned short-form clips, locally, with your own API keys.",
@@ -15,10 +16,10 @@
     "url": "https://github.com/bridge-mind/bridgeclip/issues"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "install-electron && electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "postinstall": "node node_modules/electron/install.js && electron-builder install-app-deps",
+    "preview": "install-electron && electron-vite preview",
+    "postinstall": "electron-builder install-app-deps",
     "dist": "electron-vite build && electron-builder",
     "dist:mac": "electron-vite build && electron-builder --mac --$(node -p 'process.arch')",
     "dist:win": "electron-vite build && electron-builder --win",
