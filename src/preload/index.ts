@@ -13,6 +13,7 @@ import type { ClipMediaInfo, PostClipRequest, PostClipResult, PostProgress, Post
 import type { ClipJobRequest, JobSnapshot } from '../shared/jobs'
 import type { Automation, AutomationUpdate, AutomationTikTokReview, AutomationTikTokReviewUpdate } from '../shared/automations'
 import type { OpenRouterCatalog } from '../shared/openrouter-models'
+import type { UpdateState } from '../shared/updates'
 
 export interface ClipSettings {
   openrouterConfigured: boolean
@@ -149,13 +150,17 @@ export interface BridgeClipAPI {
     openLogFolder: () => Promise<boolean>
   }
   update: {
-    onAvailable: (cb: (info: { version: string; releaseNotes?: string; releaseDate?: string }) => void) => () => void
-    onProgress: (cb: (info: { percent: number; bytesPerSecond: number; transferred: number; total: number }) => void) => () => void
-    onDownloaded: (cb: () => void) => () => void
-    onError: (cb: (info: { message: string }) => void) => () => void
-    download: () => Promise<void>
-    install: () => Promise<void>
-    check: () => Promise<void>
+    getState: () => Promise<UpdateState>
+    /** Every change to the update state, from background checks too. */
+    onState: (cb: (state: UpdateState) => void) => () => void
+    /** Check now; resolves with the state once the check finishes. */
+    check: () => Promise<UpdateState>
+    /** Quit and install the downloaded update, then reopen BridgeClip. */
+    install: () => Promise<boolean>
+    /** macOS: move the app out of the disk image or Downloads so it can update. */
+    moveToApplications: () => Promise<boolean>
+    /** The GitHub release page for the new version (or this one). */
+    openReleaseNotes: () => Promise<boolean>
   }
 }
 
@@ -246,13 +251,12 @@ const api: BridgeClipAPI = {
     openLogFolder: () => ipcRenderer.invoke('diagnostics:openLogFolder')
   },
   update: {
-    onAvailable: (callback) => subscribe('update:available', callback),
-    onProgress: (callback) => subscribe('update:progress', callback),
-    onDownloaded: (callback) => subscribe('update:downloaded', () => callback()),
-    onError: (callback) => subscribe('update:error', callback),
-    download: () => ipcRenderer.invoke('update:download'),
+    getState: () => ipcRenderer.invoke('update:getState'),
+    onState: (callback) => subscribe('update:state', callback),
+    check: () => ipcRenderer.invoke('update:check'),
     install: () => ipcRenderer.invoke('update:install'),
-    check: () => ipcRenderer.invoke('update:check')
+    moveToApplications: () => ipcRenderer.invoke('update:moveToApplications'),
+    openReleaseNotes: () => ipcRenderer.invoke('update:openReleaseNotes')
   }
 }
 

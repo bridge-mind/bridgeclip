@@ -104,7 +104,6 @@ bridgeclip/src/renderer/components/PostDialog.tsx
 bridgeclip/src/renderer/components/SetupCard.tsx
 bridgeclip/src/renderer/components/Sidebar.tsx
 bridgeclip/src/renderer/components/SourcePicker.tsx
-bridgeclip/src/renderer/components/UpdateModal.tsx
 bridgeclip/src/renderer/components/brand/BridgeClipLogo.tsx
 bridgeclip/src/renderer/components/ui/Badge.tsx
 bridgeclip/src/renderer/components/ui/Button.tsx
@@ -287,3 +286,9 @@ bridgeclip/scripts/release/verify-runtime.py
 bridgeclip/scripts/release/stage-runtime.py
 bridgeclip/scripts/release/windows-config.cjs
 bridgeclip/scripts/release/yt-dlp-launcher.c
+bridgeclip/src/main/update-provider.ts
+bridgeclip/src/shared/updates.ts
+bridgeclip/src/renderer/components/Updates.tsx
+bridgeclip/src/renderer/store/use-update-store.ts
+bridgeclip/tests/main/auto-updater.test.cjs
+bridgeclip/tests/main/updates.e2e.cjs

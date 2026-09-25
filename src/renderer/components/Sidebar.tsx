@@ -8,6 +8,7 @@ import { BridgeClipLogo } from './brand/BridgeClipLogo'
 import { ProgressBar } from './ui/ProgressBar'
 import { StatusDot } from './ui/Badge'
 import { STAGE_LABELS } from './JobProgress'
+import { SidebarUpdateButton } from './Updates'
 
 export type Page = 'clip' | 'library' | 'jobs' | 'accounts' | 'posts' | 'automations' | 'settings'
 
@@ -73,6 +74,7 @@ export function Sidebar({ currentPage, onNavigate }: SidebarProps): React.JSX.El
 
       <div className={cn('mt-auto space-y-1.5', expanded ? 'p-2.5' : 'p-2')}>
         {currentPage !== 'jobs' && <ActiveJobsCard expanded={expanded} onOpen={() => onNavigate('jobs')} />}
+        <SidebarUpdateButton expanded={expanded} />
         <div className={cn('flex items-center gap-1', !expanded && 'justify-center')}>
           <SetupStatus expanded={expanded} onOpenSettings={() => onNavigate('settings')} />
           {expanded && <span className="shrink-0 pr-2 font-mono text-[10px] tabular text-ink-faint">v{APP_VERSION}</span>}

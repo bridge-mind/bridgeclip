@@ -45,7 +45,9 @@ In **Create → Format → Video speed**, choose **1×** (normal), **1.1×**, **
 
 ## Download
 
-The release pipeline targets signed/notarized macOS builds for Apple silicon and Intel, signed Windows x64 installers, and Linux x64 AppImage/DEB packages. Official downloads will appear on [Releases](https://github.com/bridge-mind/bridgeclip/releases) after signing setup and release acceptance are complete. Packages bundle Python, FFmpeg and yt-dlp. Until then, use the development setup below; see [release status and verification](docs/RELEASING.md).
+**macOS** (Apple silicon and Intel): download BridgeClip from [bridgeclip.ai](https://www.bridgeclip.ai) or [Releases](https://github.com/bridge-mind/bridgeclip/releases), open the disk image and drag BridgeClip to Applications. Builds are signed with BridgeMind's Developer ID and notarized by Apple, and bundle Python, FFmpeg and yt-dlp. **Windows and Linux** packages are coming soon; until then, use the development setup below. See [release status and verification](docs/RELEASING.md).
+
+BridgeClip keeps itself up to date. It checks [Releases](https://github.com/bridge-mind/bridgeclip/releases) shortly after launch and every four hours, downloads a new version in the background, and installs it when you choose **Restart to update** (in the sidebar or **Settings → About**) or the next time you quit. macOS only installs an update signed by the same developer, and every download is checked against the SHA-512 published with the release. Copies run from source, local package builds and apps opened straight from the disk image don't update themselves; **Settings → About** says why. To turn updates off, start BridgeClip with `BRIDGECLIP_DISABLE_AUTO_UPDATE=1`.
 
 On first launch, paste your OpenRouter key into the setup card:
 

@@ -8,11 +8,11 @@ import { SettingsPage } from './pages/SettingsPage'
 import { AccountsPage } from './pages/AccountsPage'
 import { PostsPage } from './pages/PostsPage'
 import { AutomationsPage } from './pages/AutomationsPage'
-import { UpdateModal } from './components/UpdateModal'
 import { BridgeClipLogo } from './components/brand/BridgeClipLogo'
 import { useSettingsStore } from './store/use-settings-store'
 import { useJobStore } from './store/use-job-store'
 import { useSidebarStore } from './store/use-sidebar-store'
+import { useUpdateStore } from './store/use-update-store'
 import { Button } from './components/ui/Button'
 import { getApi } from './lib/ipc'
 
@@ -36,6 +36,15 @@ export default function App(): React.JSX.Element {
     const api = getApi()
     const unsubscribe = api.job.onUpdate((job) => useJobStore.getState().upsert(job))
     void api.job.list().then((jobs) => useJobStore.getState().hydrate(jobs)).catch(() => {})
+    return unsubscribe
+  }, [])
+
+  // Update state lives in the main process, which keeps checking in the
+  // background. Subscribe first, then read it, so no change is missed.
+  useEffect(() => {
+    const api = getApi()
+    const unsubscribe = api.update.onState((state) => useUpdateStore.getState().set(state))
+    void api.update.getState().then((state) => useUpdateStore.getState().set(state)).catch(() => {})
     return unsubscribe
   }, [])
 
@@ -88,7 +97,6 @@ export default function App(): React.JSX.Element {
           ) : <BridgeClipLogo className="h-7 animate-pulse opacity-80" />}
         </div>
       )}
-      <UpdateModal />
     </>
   )
 }

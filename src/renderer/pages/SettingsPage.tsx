@@ -16,6 +16,7 @@ import { Field, TextArea, TextInput } from '../components/ui/Field'
 import { Badge, StatusDot } from '../components/ui/Badge'
 import { IconTile } from '../components/ui/IconTile'
 import { Callout } from '../components/ui/Callout'
+import { UpdatesRow } from '../components/Updates'
 
 type SectionId = 'keys' | 'vocabulary' | 'output' | 'system' | 'about'
 type SectionTone = 'success' | 'warning' | 'danger' | 'idle'
@@ -252,6 +253,7 @@ export function SettingsPage(): React.JSX.Element {
                 </Button>
               </div>
             </div>
+            <UpdatesRow />
           </Section>
         </div>
       </div>
