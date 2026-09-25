@@ -126,7 +126,7 @@ The release workflow packages the in-repo engine and media tools into signed mac
 ```
 src/main/        Electron main process: settings, pipeline runner, IPC, optional Zernio posting
 src/preload/     The typed window.bridgeclip API exposed to the renderer
-src/renderer/    React UI (Create, Library, Jobs, Accounts, Automations, Settings)
+src/renderer/    React UI (Create, Library, Jobs, Accounts, Posts, Automations, Settings)
 src/shared/      Product constants shared by main and renderer
 bridge/          Python worker protocol and network guard
 engine/          BridgeClip clipping engine, assets, locked Python dependencies, and tests

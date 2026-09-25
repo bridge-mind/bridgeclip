@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Clock3, FileVideo2, Globe2, Pencil, Play, Plus, RefreshCw, Sparkles, Trash2, Workflow, X } from 'lucide-react'
 import { AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate } from '../../shared/automations'
 import { isPostableAccount, isValidProfileName } from '../../shared/zernio'
@@ -7,9 +7,10 @@ import { PlatformIcon, platformName } from '../components/PlatformIcon'
 import { Badge, StatusDot } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Callout } from '../components/ui/Callout'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
+import { ConfirmDialog, type ConfirmRequest } from '../components/ui/ConfirmDialog'
 import { EmptyState } from '../components/ui/EmptyState'
-import { Field, Select, TextArea, TextInput } from '../components/ui/Field'
+import { Field, TextArea, TextInput } from '../components/ui/Field'
+import { Select } from '../components/ui/Select'
 import { IconTile } from '../components/ui/IconTile'
 import { Page } from '../components/ui/Page'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -20,7 +21,6 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { Switch } from '../components/ui/Switch'
 import { useAccountsStore } from '../store/use-accounts-store'
 import { useSettingsStore } from '../store/use-settings-store'
-import { usePostsStore } from '../store/use-posts-store'
 import { getApi } from '../lib/ipc'
 import { cn, errorMessage, formatRelativeDate } from '../lib/utils'
 import type { Page as PageName } from '../components/Sidebar'
@@ -73,13 +73,6 @@ const CONTENT_STATUS: Record<AutomationContentStatus, { label: string; tone: 'id
 }
 
 type ContentFilter = 'all' | 'queued' | 'ready' | 'tiktok_review' | 'posted' | 'needs_review'
-
-interface ConfirmRequest {
-  title: string
-  body: ReactNode
-  confirmLabel: string
-  onConfirm: () => void
-}
 
 export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) => void }): React.JSX.Element {
   const configured = useSettingsStore((state) => state.zernioConfigured)
@@ -422,10 +415,14 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                     htmlFor="automation-profile"
                     aside={!newProfileOpen && <button type="button" className="text-xs text-ink-muted hover:text-ink" onClick={() => setNewProfileOpen(true)}>New profile</button>}
                   >
-                    <Select id="automation-profile" value={draft.profileId ?? ''} onChange={(event) => setDraft({ ...draft, profileId: event.target.value || null, accounts: [], enabled: false })}>
-                      <option value="">Choose a profile</option>
-                      {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.isOverLimit ? ' · over limit' : ''}</option>)}
-                    </Select>
+                    <Select
+                      id="automation-profile"
+                      value={draft.profileId ?? ''}
+                      onChange={(profileId) => setDraft({ ...draft, profileId: profileId || null, accounts: [], enabled: false })}
+                      options={profiles.map((profile) => ({ value: profile.id, label: profile.name, detail: profile.isOverLimit ? 'over limit' : undefined }))}
+                      placeholder="Choose a profile"
+                      emptyText="No profiles yet. Create one with New profile."
+                    />
                   </Field>
                   {newProfileOpen && (
                     <form onSubmit={(event) => void addProfile(event)} className="mt-2 flex gap-2">
@@ -501,9 +498,14 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                     </div>
                   </div>
                   <Field className="mt-4" label="Time zone" htmlFor="automation-timezone">
-                    <Select id="automation-timezone" value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}>
-                      {timeZones(draft.timezone).map((zone) => <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>)}
-                    </Select>
+                    <Select
+                      id="automation-timezone"
+                      value={draft.timezone}
+                      onChange={(timezone) => setDraft({ ...draft, timezone })}
+                      options={timeZones(draft.timezone).map((zone) => ({ value: zone, label: zone.replace(/_/g, ' ') }))}
+                      searchable
+                      searchPlaceholder="Search time zones"
+                    />
                   </Field>
                 </Panel>
               </div>
@@ -587,7 +589,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                       onSave={() => void saveContent(item)}
                       onReturnToQueue={() => requestReturnToQueue(item)}
                       onRemove={() => removeContent(item)}
-                      onCheckPosts={() => { usePostsStore.getState().requestReveal(); onNavigate('accounts') }}
+                      onCheckPosts={() => onNavigate('posts')}
                     />
                   ))}
                 </ul>
@@ -803,29 +805,5 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
         </div>
       )}
     </li>
-  )
-}
-
-function ConfirmDialog({ request, onClose }: { request: ConfirmRequest; onClose: () => void }): React.JSX.Element {
-  const titleId = useId()
-  const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    cancelRef.current?.focus()
-    const onKeyDown = (event: KeyboardEvent): void => { if (event.key === 'Escape') { event.preventDefault(); onClose() } }
-    document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown); previousFocus?.focus() }
-  }, [onClose])
-  return (
-    <Dialog role="alertdialog" aria-labelledby={titleId} onBackdropMouseDown={onClose} panelClassName="max-w-[420px]">
-      <div className="px-5 pb-5 pt-5">
-        <h2 id={titleId} className="text-base font-semibold text-ink">{request.title}</h2>
-        <p className="mt-1.5 text-sm text-ink-muted">{request.body}</p>
-      </div>
-      <DialogFooter>
-        <Button ref={cancelRef} onClick={onClose}>Cancel</Button>
-        <Button variant="danger" onClick={() => { onClose(); request.onConfirm() }}>{request.confirmLabel}</Button>
-      </DialogFooter>
-    </Dialog>
   )
 }

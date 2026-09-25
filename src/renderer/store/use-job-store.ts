@@ -33,6 +33,8 @@ export interface ApiCosts {
   planning?: PlanningCost
   layout_vision?: LayoutVisionCost
   total_estimated_cost_usd: number
+  /** A model didn't report its price, so the total is a lower bound. */
+  cost_incomplete?: boolean
 }
 
 /** A clipping job as the main process reports it. */

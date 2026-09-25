@@ -1,31 +1,30 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowUpRight, KeyRound, Loader2, Plus, RefreshCw, Share2, WifiOff } from 'lucide-react'
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
+import { ArrowUpRight, KeyRound, Loader2, Plus, RefreshCw, RotateCw, Unplug, WifiOff, X } from 'lucide-react'
 import { useSettingsStore } from '../store/use-settings-store'
 import { useAccountsStore, type AccountsNotice } from '../store/use-accounts-store'
 import { useApiKeyDrafts } from '../hooks/use-api-key-drafts'
 import { getApi } from '../lib/ipc'
 import { cn, errorMessage } from '../lib/utils'
 import { PROVIDER_LINKS, ZERNIO_LINKS } from '../config/brand'
-import { isValidProfileName, isZernioPlatform, ZERNIO_PLATFORMS, ZERNIO_PROFILE_NAME_MAX, type ZernioAccount, type ZernioPlatform } from '../../shared/zernio'
+import { isValidProfileName, isZernioPlatform, ZERNIO_PLATFORMS, ZERNIO_PROFILE_NAME_MAX, type ZernioAccount } from '../../shared/zernio'
 import { ApiKeyInput } from '../components/ApiKeyInput'
 import { PLATFORM_INFO, PlatformIcon, platformName } from '../components/PlatformIcon'
-import { PostsPanel } from '../components/PostsPanel'
 import { PageHeader } from '../components/ui/PageHeader'
 import { Page as PageColumn } from '../components/ui/Page'
-import { Panel, PanelHeader } from '../components/ui/Panel'
+import { Panel } from '../components/ui/Panel'
 import { Button } from '../components/ui/Button'
-import { Badge, StatusDot } from '../components/ui/Badge'
 import { Callout } from '../components/ui/Callout'
-import { IconTile } from '../components/ui/IconTile'
-import { Field, Select, TextInput } from '../components/ui/Field'
+import { ConfirmDialog, type ConfirmRequest } from '../components/ui/ConfirmDialog'
+import { TextInput } from '../components/ui/Field'
+import { Select } from '../components/ui/Select'
 import { Skeleton } from '../components/ui/Skeleton'
 import type { Page } from '../components/Sidebar'
 
 const TITLE = 'Accounts'
-const EYEBROW = 'Publishing'
-const DESCRIPTION = 'Group your social accounts by brand or project.'
 /** Opening the page re-reads Zernio only when the shown data is older than this. */
 const REFRESH_ON_OPEN_AFTER_MS = 30_000
+/** Account tiles: two columns at the page's full width, one in a narrow window. */
+const TILE_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-1.5'
 
 function openLink(url: string): void {
   void getApi().shell.openPath(url).catch(() => {})
@@ -45,97 +44,84 @@ function ZernioSetup(): React.JSX.Element {
 
   return (
     <>
-      <PageHeader eyebrow={EYEBROW} title={TITLE} description={DESCRIPTION} />
-      <Panel padded={false} className="mt-5 overflow-hidden">
-        <div className="relative p-5">
-          <PanelHeader
-            icon={<IconTile tone="accent" size="lg"><Share2 /></IconTile>}
-            title="Connect with Zernio"
-            description="BridgeClip uses your Zernio API key to manage connections. Platform sign-in happens in your browser through Zernio."
-          />
-          <ol className="mt-5 space-y-5">
-            <SetupStep
-              step={1}
-              title="Create a free Zernio account"
-              description="The first two connected accounts are free on most platforms; X may require a card."
-              action={
-                <Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(ZERNIO_LINKS.signup)}>
-                  Sign up
-                </Button>
-              }
-            />
-            <SetupStep
-              step={2}
-              title="Create an API key"
-              description="In Zernio, create an API key with Full access and Read & Write permission to create and connect new profiles. Copy it right away: Zernio only shows it once."
-              action={
-                <Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(PROVIDER_LINKS.zernio)}>
-                  Open API keys
-                </Button>
-              }
-            />
-            <SetupStep step={3} title="Paste your key" last>
-              <ApiKeyInput
-                label="Zernio API key"
-                value={keys.drafts.zernioApiKey}
-                onChange={(v) => keys.setDraft('zernioApiKey', v)}
-                onBlur={() => void keys.persist()}
-                placeholder="sk_…"
-                description="Encrypted with your system keychain. You can change it later in Settings."
-              />
-              {keys.error && <p role="alert" className="mt-2 text-xs text-danger">{keys.error}</p>}
-            </SetupStep>
-          </ol>
-        </div>
-        <div className="relative flex items-center gap-3 border-t border-white/[0.06] bg-black/[0.12] px-5 py-3">
-          <div className="flex -space-x-1.5">
+      <PageHeader title={TITLE} />
+      <Panel padded={false} className="mt-4 overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-ink">Connect with Zernio</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Post and schedule clips to {ZERNIO_PLATFORMS.length} platforms. BridgeClip only holds your Zernio key; platform sign-in happens in your browser.
+            </p>
+          </div>
+          <div aria-hidden className="hidden shrink-0 -space-x-1 sm:flex">
             {ZERNIO_PLATFORMS.map((platform) => (
-              <PlatformIcon key={platform} platform={platform} className="h-7 w-7 rounded-full ring-2 ring-canvas/60 [&_svg]:h-3.5 [&_svg]:w-3.5" />
+              <PlatformIcon key={platform} platform={platform} className="h-6 w-6 rounded-full ring-2 ring-canvas [&_svg]:h-3 [&_svg]:w-3" />
             ))}
           </div>
-          <p className="text-xs text-ink-muted">Post and schedule clips to {ZERNIO_PLATFORMS.length} platforms from one place.</p>
         </div>
+        <ol className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+          <SetupStep
+            step={1}
+            action={
+              <Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(ZERNIO_LINKS.signup)}>
+                Sign up
+              </Button>
+            }
+          >
+            <StepText title="Create a free Zernio account" hint="The first two connected accounts are free on most platforms; X may require a card." />
+          </SetupStep>
+          <SetupStep
+            step={2}
+            action={
+              <Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(PROVIDER_LINKS.zernio)}>
+                API keys
+              </Button>
+            }
+          >
+            <StepText title="Create an API key" hint="Full access with Read & Write permission, so BridgeClip can create and connect profiles. Copy it right away: Zernio only shows it once." />
+          </SetupStep>
+          <SetupStep step={3}>
+            <ApiKeyInput
+              label="Paste your Zernio API key"
+              value={keys.drafts.zernioApiKey}
+              onChange={(v) => keys.setDraft('zernioApiKey', v)}
+              onBlur={() => void keys.persist()}
+              placeholder="sk_…"
+              description="Encrypted with your system keychain. You can change it later in Settings."
+            />
+            {keys.error && <p role="alert" className="mt-2 text-xs text-danger">{keys.error}</p>}
+          </SetupStep>
+        </ol>
       </Panel>
     </>
   )
 }
 
-function SetupStep({
-  step,
-  title,
-  description,
-  action,
-  last = false,
-  children
-}: {
-  step: number
-  title: string
-  description?: string
-  action?: ReactNode
-  last?: boolean
-  children?: ReactNode
-}): React.JSX.Element {
+function SetupStep({ step, action, children }: { step: number; action?: ReactNode; children: ReactNode }): React.JSX.Element {
   return (
-    <li className="relative flex gap-3">
-      {/* The thread that joins one step's lens to the next. */}
-      {!last && (
-        <span aria-hidden className="absolute bottom-[-24px] left-[15.5px] top-10 w-px bg-white/[0.1]" />
-      )}
-      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.1] font-mono text-xs font-medium tabular text-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.22),inset_0_0_0_1px_rgb(255_255_255/0.12),0_4px_12px_-4px_rgb(0_0_0/0.6)]">
+    <li className="flex items-start gap-3 px-4 py-3">
+      <span className="mt-px flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-white/[0.08] font-mono text-2xs tabular text-ink-muted shadow-[inset_0_0_0_1px_rgb(255_255_255/0.1)]">
         {step}
       </span>
-      <div className="min-w-0 flex-1 pt-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-ink">{title}</p>
-            {description && <p className="mt-1 text-sm leading-relaxed text-ink-muted">{description}</p>}
-          </div>
-          {action}
-        </div>
-        {children && <div className="mt-3">{children}</div>}
-      </div>
+      <div className="min-w-0 flex-1">{children}</div>
+      {action}
     </li>
   )
+}
+
+function StepText({ title, hint }: { title: string; hint: string }): React.JSX.Element {
+  return (
+    <p className="text-sm leading-[18px]">
+      <span className="font-medium text-ink">{title}</span>
+      <span className="mt-0.5 block text-xs text-ink-muted">{hint}</span>
+    </p>
+  )
+}
+
+/** A confirmation waiting on the dialog, by account id so a removed account ends it. */
+interface PendingConfirm {
+  kind: 'disconnect' | 'reconnect'
+  accountId: string
 }
 
 function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void }): React.JSX.Element {
@@ -143,6 +129,7 @@ function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void })
   const [newProfileName, setNewProfileName] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingConfirm | null>(null)
   const {
     profiles,
     accounts,
@@ -187,6 +174,40 @@ function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void })
   const hasData = syncedAt > 0
   const busy = Boolean(connecting) || Boolean(disconnecting) || savingProfile
   const profileNameValid = isValidProfileName(newProfileName)
+
+  // An account disappearing (disconnected elsewhere) ends a pending confirmation.
+  const pendingAccount = pending ? accounts.find((a) => a.id === pending.accountId) : undefined
+  useEffect(() => {
+    if (pending && !pendingAccount) setPending(null)
+  }, [pending, pendingAccount])
+  const closeConfirm = useCallback(() => setPending(null), [])
+
+  let confirmRequest: ConfirmRequest | null = null
+  if (pending && pendingAccount) {
+    const name = platformName(pendingAccount.platform)
+    const label = accountLabel(pendingAccount)
+    confirmRequest = pending.kind === 'disconnect'
+      ? {
+          title: `Disconnect ${name}?`,
+          body: `This also removes ${label} from your Zernio workspace. You can connect it again later.`,
+          confirmLabel: 'Disconnect',
+          confirmAriaLabel: `Confirm disconnecting ${name}`,
+          onConfirm: () => void disconnect(pendingAccount.id)
+        }
+      : {
+          title: `Reconnect ${name}?`,
+          body: `Sign in as ${label}. A different ${name} account replaces it and permanently deletes its Zernio analytics, inbox and DM history. A renamed handle may also be treated as different.`,
+          confirmLabel: 'Continue',
+          confirmAriaLabel: `Confirm reconnecting ${name}`,
+          tone: 'primary',
+          onConfirm: () => { if (isZernioPlatform(pendingAccount.platform)) void connect(pendingAccount.platform, { reconnect: true }) }
+        }
+  }
+
+  const toggleNewProfile = (): void => {
+    setCreatingProfile((open) => !open)
+    setProfileError(null)
+  }
   const submitProfile = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!profileNameValid || busy) return
@@ -210,14 +231,38 @@ function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void })
   return (
     <>
       <PageHeader
-        eyebrow={EYEBROW}
         title={TITLE}
-        description={DESCRIPTION}
+        className="items-center"
         actions={
           <>
+            {hasData && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span aria-hidden className="text-xs text-ink-subtle">Profile</span>
+                  <Select
+                    aria-label="Zernio profile"
+                    value={profileId ?? ''}
+                    onChange={setProfile}
+                    options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+                    placeholder="No profiles yet"
+                    disabled={busy || profiles.length === 0}
+                    className="w-44"
+                  />
+                </div>
+                <Button
+                  iconOnly
+                  aria-label="New profile"
+                  title="New profile: one account per platform, for another brand or project"
+                  icon={<Plus className="h-4 w-4" />}
+                  onClick={toggleNewProfile}
+                  disabled={busy}
+                  aria-expanded={creatingProfile}
+                  aria-controls="new-zernio-profile-form"
+                />
+              </>
+            )}
             <Button
               variant="ghost"
-              size="sm"
               iconOnly
               aria-label="Refresh accounts"
               title="Refresh"
@@ -229,148 +274,128 @@ function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void })
         }
       />
 
-      <div className="mt-5 space-y-4">
+      <div className="mt-4 space-y-3">
+        {creatingProfile && (
+          <form id="new-zernio-profile-form" className="animate-fade-in" onSubmit={(event) => void submitProfile(event)}>
+            <div className="glass-tile flex items-center gap-1.5 rounded-2xl p-1.5">
+              <TextInput
+                aria-label="Profile name"
+                value={newProfileName}
+                onChange={(event) => setNewProfileName(event.target.value)}
+                maxLength={ZERNIO_PROFILE_NAME_MAX}
+                required
+                autoFocus
+                disabled={savingProfile}
+                placeholder="New profile name, e.g. My brand"
+                aria-describedby="zernio-new-profile-hint"
+                aria-invalid={Boolean(profileError)}
+                onKeyDown={(event) => { if (event.key === 'Escape') setCreatingProfile(false) }}
+                leading={<Plus className="h-3.5 w-3.5" />}
+                className="min-w-0 flex-1"
+              />
+              <Button variant="ghost" disabled={savingProfile} onClick={() => setCreatingProfile(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" loading={savingProfile} disabled={!profileNameValid || busy}>Create profile</Button>
+            </div>
+            {profileError ? (
+              <p role="alert" className="mt-1.5 px-2 text-xs text-danger" data-selectable>{profileError}</p>
+            ) : (
+              <p id="zernio-new-profile-hint" className="mt-1.5 px-2 text-2xs text-ink-subtle">
+                A profile holds one account per platform. Your Zernio key needs Full access and Read &amp; Write permission to use new ones.
+              </p>
+            )}
+          </form>
+        )}
+
         {notice && <NoticeBar notice={notice} onDismiss={dismissNotice} onAction={openNoticeAction} />}
 
         {error && (!hasData || error.kind === 'auth') ? (
           <Callout
             tone="danger"
             icon={error.kind === 'auth' ? <KeyRound /> : undefined}
-            stacked
             action={
               <>
-                <Button size="sm" onClick={() => void load()} loading={loading}>
-                  Try again
-                </Button>
                 <Button size="sm" variant="ghost" onClick={() => onNavigate('settings')}>
                   Open Settings
+                </Button>
+                <Button size="sm" onClick={() => void load()} loading={loading}>
+                  Try again
                 </Button>
               </>
             }
           >
             {error.message}
-            {hasData && <p className="mt-1 text-xs text-ink-muted">Showing the accounts from {syncedAgo(syncedAt)}.</p>}
+            {hasData && <p className="mt-0.5 text-xs text-ink-muted">Showing the accounts from {syncedAgo(syncedAt)}.</p>}
           </Callout>
         ) : error ? (
           <StaleNotice error={error.message} offline={error.kind === 'offline'} syncedAt={syncedAt} loading={loading} onRetry={() => void load()} />
         ) : null}
 
-        {!hasData && !error && (loading || !loaded) && <LoadingRows />}
+        {profile?.isOverLimit && (
+          <Callout tone="warning" action={<Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(ZERNIO_LINKS.billing)}>Zernio billing</Button>}>
+            {profile.name} is over your Zernio plan’s profile limit, so its accounts can’t post.
+          </Callout>
+        )}
+
+        {!hasData && !error && (loading || !loaded) && <LoadingTiles />}
 
         {hasData && (
-          <Panel padded={false} className="overflow-hidden">
-            <div className="space-y-3 p-4">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="min-w-0 flex-1 basis-48">
-                  <label htmlFor="zernio-profile" className="mb-1.5 block text-xs font-medium text-ink-muted">Zernio profile</label>
-                  <Select
-                    id="zernio-profile"
-                    value={profileId ?? ''}
-                    onChange={(e) => setProfile(e.target.value)}
-                    disabled={busy || profiles.length === 0}
-                  >
-                    {profiles.length === 0 && <option value="">No profiles yet</option>}
-                    {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </Select>
-                </div>
-                <Button
-                  size="md"
-                  variant="secondary"
-                  icon={<Plus className="h-3.5 w-3.5" />}
-                  onClick={() => { setCreatingProfile((open) => !open); setProfileError(null) }}
-                  disabled={busy}
-                  aria-expanded={creatingProfile}
-                  aria-controls="new-zernio-profile-form"
-                >
-                  New profile
-                </Button>
-              </div>
-              <p className="text-xs leading-relaxed text-ink-muted">
-                A profile groups accounts for one brand or project. Connect one account per platform in each profile.
-              </p>
-
-              {creatingProfile && (
-                <form id="new-zernio-profile-form" className="space-y-3 rounded-xl border border-accent/20 bg-accent/[0.04] p-3" onSubmit={(event) => void submitProfile(event)}>
-                  <div>
-                    <h2 className="text-sm font-semibold text-ink">New profile</h2>
-                    <p className="mt-0.5 text-xs text-ink-muted">Name the group, then connect its accounts below.</p>
-                  </div>
-                  <Field label="Profile name" htmlFor="zernio-new-profile-name">
-                    <TextInput
-                      id="zernio-new-profile-name"
-                      value={newProfileName}
-                      onChange={(event) => setNewProfileName(event.target.value)}
-                      maxLength={ZERNIO_PROFILE_NAME_MAX}
-                      required
-                      autoFocus
-                      disabled={savingProfile}
-                      placeholder="e.g. My brand"
-                      aria-describedby="zernio-new-profile-hint"
-                      aria-invalid={Boolean(profileError)}
-                    />
-                  </Field>
-                  <p id="zernio-new-profile-hint" className="text-xs text-ink-subtle">Your Zernio key needs Full access and Read &amp; Write permission to use new profiles.</p>
-                  {profileError && <Callout tone="danger" role="alert">{profileError}</Callout>}
-                  <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="ghost" disabled={savingProfile} onClick={() => setCreatingProfile(false)}>Cancel</Button>
-                    <Button type="submit" size="sm" variant="primary" loading={savingProfile} disabled={!profileNameValid || busy}>Create profile</Button>
-                  </div>
-                </form>
-              )}
-              {profile?.isOverLimit && (
-                <Callout tone="warning" action={<Button size="sm" trailingIcon={<ArrowUpRight className="h-3.5 w-3.5" />} onClick={() => openLink(ZERNIO_LINKS.billing)}>Zernio billing</Button>}>
-                  This profile is over your Zernio plan’s profile limit, so its accounts can’t post.
-                </Callout>
-              )}
-            </div>
-
+          <Panel padded={false} className="p-1.5">
             {profile ? (
-              <section aria-labelledby="profile-accounts-title">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-y border-white/[0.06] bg-black/[0.1] px-4 py-2.5">
-                  <h2 id="profile-accounts-title" className="min-w-0 break-words text-sm font-semibold text-ink">Accounts in {profile.name}</h2>
-                  <p className="text-xs text-ink-muted">
-                    {inProfile.length} connected
-                    {attention > 0 && <span className="text-warning"> · {attention} need{attention === 1 ? 's' : ''} attention</span>}
-                  </p>
-                </div>
-                {inProfile.length === 0 && (
-                  <p className="border-b border-white/[0.06] px-4 py-3 text-xs text-ink-muted">No accounts yet. Choose a platform to connect; sign-in opens in your browser.</p>
-                )}
-                <ul className="divide-y divide-white/[0.06]">
+              <>
+                <ul aria-label={`Accounts in ${profile.name}`} className={TILE_GRID}>
                   {platforms.map((platform) => {
                     const account = byPlatform.get(platform)
+                    const connectable = isZernioPlatform(platform)
                     return (
-                      <PlatformRow
+                      <AccountTile
                         key={`${profileId}:${platform}:${account?.id ?? 'empty'}`}
                         platform={platform}
                         account={account}
                         connecting={connecting?.platform === platform}
                         busy={busy}
                         disconnecting={Boolean(account && disconnecting === account.id)}
-                        onConnect={isZernioPlatform(platform) ? (reconnect) => void connect(platform, { reconnect }) : undefined}
+                        onConnect={connectable ? () => void connect(platform) : undefined}
+                        onReconnect={connectable && account
+                          ? () => platform === 'tiktok' ? setPending({ kind: 'reconnect', accountId: account.id }) : void connect(platform, { reconnect: true })
+                          : undefined}
                         onCancel={cancelConnect}
-                        onDisconnect={(id) => void disconnect(id)}
+                        onDisconnect={() => { if (account) setPending({ kind: 'disconnect', accountId: account.id }) }}
                       />
                     )
                   })}
                 </ul>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] px-4 py-3">
-                  <p className="text-xs text-ink-subtle">Another account on the same platform? Use a separate profile.</p>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-2 pb-0.5 pt-2 text-2xs text-ink-subtle">
+                  <p>
+                    {inProfile.length === 0 ? (
+                      'Nothing connected yet. Pick a platform; sign-in opens in your browser.'
+                    ) : (
+                      <>
+                        <span className="font-mono tabular text-ink-muted">{inProfile.length}</span> connected
+                        {attention > 0 && <span className="text-warning"> · {attention} need{attention === 1 ? 's' : ''} attention</span>}
+                        {' · '}A second account on a platform goes in another profile.
+                      </>
+                    )}
+                  </p>
                   <SyncedLabel syncedAt={syncedAt} stale={Boolean(error)} />
                 </div>
-              </section>
+              </>
             ) : (
-              <div className="border-t border-white/[0.06] px-4 py-6 text-center">
-                <p className="text-sm font-medium text-ink">Create your first profile</p>
-                <p className="mt-1 text-xs text-ink-muted">Then connect the social accounts you want to publish to.</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-2.5 py-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink">Create your first profile</p>
+                  <p className="text-xs text-ink-muted">A profile groups the accounts for one brand or project.</p>
+                </div>
+                {!creatingProfile && (
+                  <Button size="sm" variant="primary" icon={<Plus className="h-3.5 w-3.5" />} onClick={toggleNewProfile} disabled={busy}>
+                    Create profile
+                  </Button>
+                )}
               </div>
             )}
           </Panel>
         )}
 
-        <PostsPanel onNavigate={onNavigate} />
-
-        <p className="px-1 text-xs text-ink-subtle">
+        <p className="px-1 text-2xs text-ink-subtle">
           Zernio bills per connected account, and your first 2 are free.{' '}
           <button
             onClick={() => openLink(ZERNIO_LINKS.pricing)}
@@ -381,6 +406,8 @@ function ConnectedAccounts({ onNavigate }: { onNavigate: (page: Page) => void })
           </button>
         </p>
       </div>
+
+      {confirmRequest && <ConfirmDialog request={confirmRequest} onClose={closeConfirm} />}
     </>
   )
 }
@@ -416,13 +443,7 @@ function useNow(intervalMs: number): number {
 function SyncedLabel({ syncedAt, stale }: { syncedAt: number; stale: boolean }): React.JSX.Element {
   const now = useNow(30_000)
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-2xs',
-        stale ? 'bg-warning/[0.1] text-warning' : 'bg-white/[0.05] text-ink-subtle'
-      )}
-      data-testid="accounts-synced"
-    >
+    <span className={cn('whitespace-nowrap', stale ? 'text-warning' : 'text-ink-subtle')} data-testid="accounts-synced">
       {stale ? 'Last synced' : 'Synced'} {syncedAgo(syncedAt, now)}
     </span>
   )
@@ -461,25 +482,24 @@ function StaleNotice({
   )
 }
 
-function LoadingRows(): React.JSX.Element {
+function LoadingTiles(): React.JSX.Element {
   return (
-    <Panel padded={false} className="overflow-hidden" aria-busy="true" aria-label="Loading your Zernio accounts">
-      <div className="flex items-center gap-2.5 p-4 pb-4 text-sm text-ink-muted">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading your Zernio accounts…
-      </div>
-      <ul className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+    <Panel padded={false} className="p-1.5" aria-busy="true" aria-label="Loading your Zernio accounts">
+      <ul className={TILE_GRID}>
         {ZERNIO_PLATFORMS.slice(0, 4).map((platform) => (
-          <li key={platform} className="flex items-center gap-3 px-4 py-3">
-            <Skeleton className="h-10 w-10 rounded-xl" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-2.5 w-48" />
+          <li key={platform} className="glass-tile flex items-center gap-2.5 rounded-xl p-1.5">
+            <Skeleton className="h-8 w-8" />
+            <div className="flex-1 space-y-1.5">
+              <Skeleton className="h-2.5 w-20" />
+              <Skeleton className="h-2 w-32" />
             </div>
-            <Skeleton className="h-[30px] w-20 rounded-full" />
           </li>
         ))}
       </ul>
+      <p className="flex items-center gap-2 px-2 pb-0.5 pt-2 text-2xs text-ink-subtle">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Loading your Zernio accounts…
+      </p>
     </Panel>
   )
 }
@@ -525,164 +545,180 @@ function accountLabel(account: ZernioAccount): string {
   return handle ?? account.displayName ?? 'Connected account'
 }
 
-interface PlatformRowProps {
+type LensStatus = 'off' | 'ok' | 'warning' | 'connecting'
+
+/** The platform's lens with a status dot on its corner. */
+function PlatformLens({ platform, status }: { platform: string; status: LensStatus }): React.JSX.Element {
+  return (
+    <span className="relative shrink-0">
+      <PlatformIcon platform={platform} className={cn('h-8 w-8 rounded-lg transition-[filter,opacity] duration-150', status === 'off' && 'opacity-60 grayscale group-hover/tile:opacity-90 group-hover/tile:grayscale-0')} />
+      {status !== 'off' && (
+        <span
+          aria-hidden
+          className={cn(
+            'absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-canvas',
+            status === 'ok' ? 'bg-success' : status === 'warning' ? 'bg-warning' : 'animate-pulse bg-accent'
+          )}
+        />
+      )}
+    </span>
+  )
+}
+
+/** Platform name over one line of detail; both truncate, the full detail is the tooltip. */
+function TileText({ name, detail, title, detailId, dim = false }: {
+  name: string
+  detail: ReactNode
+  title?: string
+  detailId?: string
+  dim?: boolean
+}): React.JSX.Element {
+  return (
+    <span className="block min-w-0 flex-1">
+      <span className={cn('block truncate text-sm font-medium leading-4', dim ? 'text-ink-muted group-hover/tile:text-ink' : 'text-ink')}>{name}</span>
+      <span id={detailId} className="block truncate text-xs leading-4 text-ink-muted" title={title} data-selectable>{detail}</span>
+    </span>
+  )
+}
+
+interface AccountTileProps {
   platform: string
   account?: ZernioAccount
   connecting: boolean
   busy: boolean
   disconnecting: boolean
-  /** `reconnect` asks Zernio for a fresh sign-in on the connected account. */
-  onConnect?: (reconnect: boolean) => void
-  onCancel?: () => void
-  onDisconnect: (accountId: string) => void
+  /** Absent for platforms BridgeClip can't connect (accounts added in Zernio itself). */
+  onConnect?: () => void
+  /** Asks Zernio for a fresh sign-in on the connected account. */
+  onReconnect?: () => void
+  onCancel: () => void
+  onDisconnect: () => void
 }
 
-function PlatformRow({
+function AccountTile({
   platform,
   account,
   connecting,
   busy,
   disconnecting,
   onConnect,
+  onReconnect,
   onCancel,
   onDisconnect
-}: PlatformRowProps): React.JSX.Element {
-  const [confirming, setConfirming] = useState(false)
-  const [confirmingReconnect, setConfirmingReconnect] = useState(false)
+}: AccountTileProps): React.JSX.Element {
+  const detailId = useId()
   const name = platformName(platform)
-  const note = isZernioPlatform(platform) ? PLATFORM_INFO[platform as ZernioPlatform].note : undefined
   const health = account ? accountHealth(account) : 'ok'
-  const needsSignIn = health === 'sign-in'
-  const unhealthy = health === 'unhealthy'
+  const attention = health !== 'ok'
+  const state = account ? (health === 'sign-in' ? 'reconnect' : 'connected') : 'disconnected'
 
-  // An account disappearing (disconnected elsewhere) ends a pending confirmation.
-  useEffect(() => {
-    if (!account) {
-      setConfirming(false)
-      setConfirmingReconnect(false)
-    }
-  }, [account])
+  // Not connected: the whole tile is the Connect button.
+  if (!account && !connecting) {
+    const note = isZernioPlatform(platform) ? PLATFORM_INFO[platform].note : undefined
+    const disabled = busy || !onConnect
+    return (
+      <li data-platform={platform} data-state={state}>
+        <button
+          type="button"
+          onClick={onConnect}
+          disabled={disabled}
+          aria-label={`Connect ${name}`}
+          aria-describedby={note ? detailId : undefined}
+          className={cn(
+            'glass-tile group/tile flex w-full items-center gap-2.5 rounded-xl p-1.5 pr-2 text-left',
+            disabled ? 'cursor-not-allowed opacity-60' : 'glass-tile-hover'
+          )}
+        >
+          <PlatformLens platform={platform} status="off" />
+          <TileText name={name} detail={<span className="text-ink-subtle">{note ?? 'Not connected'}</span>} title={note} detailId={detailId} dim />
+          <span
+            aria-hidden
+            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2 text-2xs font-medium text-ink-muted shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)] transition-colors duration-150 group-hover/tile:bg-white/[0.11] group-hover/tile:text-ink"
+          >
+            <Plus className="h-3 w-3" />
+            Connect
+          </span>
+        </button>
+      </li>
+    )
+  }
 
   let detail: ReactNode
-  if (confirming && account) {
-    detail = <span className="text-ink">Disconnect {accountLabel(account)}? This also removes it from your Zernio workspace.</span>
-  } else if (confirmingReconnect && account) {
+  let title: string | undefined
+  if (connecting) {
+    detail = account
+      ? `Sign in again as ${account.username ? `@${account.username}` : 'the same account'} in your browser…`
+      : `Finish signing in to ${name} in your browser…`
+    title = account ? 'Finish in your browser. Sign in as the same account to keep its history.' : undefined
+  } else if (account && disconnecting) {
+    detail = 'Disconnecting…'
+  } else if (account && attention) {
+    const status = account.needsReconnect ? 'Reconnect needed' : !account.isActive ? 'Inactive' : 'Needs attention'
     detail = (
-      <span role="alert" className="text-warning">
-        Sign in as {accountLabel(account)}. A different TikTok account replaces it and permanently deletes its Zernio analytics, inbox and DM history. A renamed handle may also be treated as different.
-      </span>
+      <>
+        <span className="text-warning">{status}</span> · {account.issue ?? accountLabel(account)}
+      </>
     )
-  } else if (connecting) {
-    detail = (
-      <span className="text-accent-hover">
-        {account
-          ? 'Finish in your browser. Sign in as the same account to keep its history.'
-          : `Finish signing in to ${name} in your browser…`}
-      </span>
-    )
+    title = [accountLabel(account), account.issue].filter(Boolean).join(' · ')
   } else if (account) {
-    const issue = account.issue && (needsSignIn || unhealthy || account.health === 'warning') ? account.issue : null
+    const issue = account.health === 'warning' ? account.issue : null
     detail = (
-      <span className="flex min-w-0 items-center gap-2">
-        {!needsSignIn && !unhealthy && <StatusDot tone="success" />}
-        <span className="truncate" title={issue ?? undefined}>
-          {accountLabel(account)}
-          {issue && <span className={needsSignIn || unhealthy ? 'text-ink-muted' : 'text-ink-subtle'}> · {issue}</span>}
-        </span>
-      </span>
+      <>
+        {accountLabel(account)}
+        {issue && <span className="text-ink-subtle"> · {issue}</span>}
+      </>
     )
-  } else {
-    detail = <span className="text-ink-subtle">Not connected{note ? ` · ${note}` : ''}</span>
+    title = [accountLabel(account), issue].filter(Boolean).join(' · ')
   }
 
   return (
     <li
-      className={cn(
-        'flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 transition-colors duration-150',
-        confirming ? 'bg-danger/[0.04]' : confirmingReconnect ? 'bg-warning/[0.04]' : connecting ? 'bg-accent/[0.05]' : 'hover:bg-white/[0.02]'
-      )}
       data-platform={platform}
-      data-state={account ? (needsSignIn ? 'reconnect' : 'connected') : 'disconnected'}
+      data-state={state}
+      className={cn(
+        'group/tile flex items-center gap-2.5 rounded-xl p-1.5 transition-colors duration-150',
+        connecting
+          ? 'border border-accent/30 bg-accent/[0.07]'
+          : attention
+            ? 'border border-warning/25 bg-warning/[0.05]'
+            : 'glass-tile glass-tile-hover'
+      )}
     >
-      <PlatformIcon platform={platform} className={cn('h-8 w-8 rounded-lg', !account && !connecting && 'opacity-70')} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ink">{name}</span>
-          {account?.needsReconnect ? (
-            <Badge tone="warning">Reconnect needed</Badge>
-          ) : account && !account.isActive ? (
-            <Badge tone="warning">Inactive</Badge>
-          ) : unhealthy ? (
-            <Badge tone="warning">Needs attention</Badge>
-          ) : null}
-        </div>
-        <div className="mt-0.5 text-xs leading-relaxed text-ink-muted" data-selectable>
-          {detail}
-        </div>
-      </div>
-
-      <div className="ml-auto flex shrink-0 items-center gap-1.5">
-        {confirming && account ? (
+      <PlatformLens platform={platform} status={connecting ? 'connecting' : attention ? 'warning' : 'ok'} />
+      <TileText name={name} detail={connecting ? <span className="text-accent-hover">{detail}</span> : detail} title={title} />
+      <div className="flex shrink-0 items-center gap-0.5">
+        {connecting ? (
           <>
-            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={disconnecting}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              loading={disconnecting}
-              aria-label={`Confirm disconnecting ${name}`}
-              onClick={() => {
-                onDisconnect(account.id)
-                setConfirming(false)
-              }}
-            >
-              Disconnect
-            </Button>
+            <Loader2 className="mx-1 h-3.5 w-3.5 animate-spin text-accent-hover" aria-label="Waiting for your browser" />
+            <Button variant="ghost" size="sm" iconOnly title="Cancel" aria-label={`Cancel connecting ${name}`} onClick={onCancel} icon={<X className="h-3.5 w-3.5" />} />
           </>
-        ) : confirmingReconnect && account ? (
+        ) : (
           <>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmingReconnect(false)}>Cancel</Button>
-            <Button size="sm" onClick={() => { setConfirmingReconnect(false); onConnect?.(true) }} aria-label={`Confirm reconnecting ${name}`}>
-              Continue
-            </Button>
-          </>
-        ) : connecting ? (
-          <>
-            <Loader2 className="mr-1 h-4 w-4 animate-spin text-accent-hover" aria-label="Waiting for your browser" />
-            <Button size="sm" variant="ghost" onClick={onCancel} aria-label={`Cancel connecting ${name}`}>
-              Cancel
-            </Button>
-          </>
-        ) : account ? (
-          <>
-            {onConnect && (
-              <Button
-                size="sm"
-                variant={needsSignIn || unhealthy ? 'secondary' : 'ghost'}
-                onClick={() => platform === 'tiktok' ? setConfirmingReconnect(true) : onConnect(true)}
-                disabled={busy}
-                aria-label={`Reconnect ${name}`}
-              >
+            {attention && onReconnect && (
+              <Button size="sm" onClick={onReconnect} disabled={busy} aria-label={`Reconnect ${name}`}>
                 Reconnect
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirming(true)}
-              disabled={busy}
-              loading={disconnecting}
-              aria-label={`Disconnect ${name}`}
-            >
-              Disconnect
-            </Button>
+            {/* Quiet until the tile is hovered or focused, so a full grid doesn't repeat the same buttons. */}
+            <div className={cn('flex items-center gap-0.5 transition-opacity duration-150', disconnecting ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 group-hover/tile:opacity-100')}>
+              {!attention && onReconnect && (
+                <Button variant="ghost" size="sm" iconOnly title="Reconnect" aria-label={`Reconnect ${name}`} onClick={onReconnect} disabled={busy} icon={<RotateCw className="h-3.5 w-3.5" />} />
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                title="Disconnect"
+                aria-label={`Disconnect ${name}`}
+                onClick={onDisconnect}
+                disabled={busy}
+                loading={disconnecting}
+                icon={<Unplug className="h-3.5 w-3.5" />}
+                className="hover:bg-danger/10 hover:text-danger"
+              />
+            </div>
           </>
-        ) : onConnect ? (
-          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => onConnect(false)} disabled={busy} aria-label={`Connect ${name}`}>
-            Connect
-          </Button>
-        ) : null}
+        )}
       </div>
     </li>
   )
