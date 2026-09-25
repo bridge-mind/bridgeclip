@@ -67,7 +67,7 @@ export function RunStats({ output, costs, videoSpeed }: RunStatsProps): React.JS
   const analysisSeconds = comparisonDurationSeconds(sourceSeconds, output.metrics?.analysis_duration_seconds)
   const percentLess = exactCost !== null && analysisSeconds !== null ? percentLessThanOpusClip(exactCost, analysisSeconds) : null
   const theirCost = analysisSeconds !== null ? opusClipCostUsd(analysisSeconds) : null
-  const faster = timesFasterThanOpusClip(output.processing_time_seconds)
+  const faster = timesFasterThanOpusClip(output.processing_time_seconds, analysisSeconds)
 
   const processingCell = (
     <StatCell

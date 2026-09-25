@@ -36,10 +36,14 @@ test('cost is credits at the Pro list price, and the saving is a whole percent',
 })
 
 test('speed is measured against the low end of OpusClip’s stated 20–40 minutes', () => {
-  assert.equal(formatTimes(timesFasterThanOpusClip(238)), '5×', '20 min / 3m 58s, rounded down')
-  assert.equal(formatTimes(timesFasterThanOpusClip(60)), '20×')
-  assert.equal(formatTimes(timesFasterThanOpusClip(420)), '2.8×')
+  const longRun = 22 * 60 + 53
+  assert.equal(formatTimes(timesFasterThanOpusClip(238, longRun)), '5×', '20 min / 3m 58s, rounded down')
+  assert.equal(formatTimes(timesFasterThanOpusClip(60, 20 * 60)), '20×')
+  assert.equal(formatTimes(timesFasterThanOpusClip(420, longRun)), '2.8×')
+  assert.equal(timesFasterThanOpusClip(60, 60), null, 'a 1-minute run is not held to OpusClip’s 20 minutes')
+  assert.equal(timesFasterThanOpusClip(60, 19 * 60), null)
+  assert.equal(timesFasterThanOpusClip(60, null), null, 'no claim when the analyzed length is unknown')
   assert.equal(formatTimes(10.9), '10×', 'never round a comparison upward')
-  assert.equal(timesFasterThanOpusClip(19 * 60), null, 'no claim when not clearly faster')
-  assert.equal(timesFasterThanOpusClip(0), null)
+  assert.equal(timesFasterThanOpusClip(19 * 60, longRun), null, 'no claim when not clearly faster')
+  assert.equal(timesFasterThanOpusClip(0, longRun), null)
 })

@@ -45,9 +45,15 @@ export function percentLessThanOpusClip(runUsd: number, sourceSeconds: number): 
   return percent > 0 ? percent : null
 }
 
-/** How many times faster this run was than OpusClip's typical processing, or null when it wasn't clearly faster. */
-export function timesFasterThanOpusClip(processingSeconds: number): number | null {
+/**
+ * How many times faster this run was than OpusClip's typical processing, or
+ * null when it wasn't clearly faster. OpusClip's time depends on video length,
+ * so only a run that analyzed at least as much video as the typical time can
+ * be compared with it (a 1-minute clip is not "20× faster").
+ */
+export function timesFasterThanOpusClip(processingSeconds: number, analyzedSeconds: number | null): number | null {
   if (!Number.isFinite(processingSeconds) || processingSeconds <= 0) return null
+  if (analyzedSeconds === null || !Number.isFinite(analyzedSeconds) || analyzedSeconds < OPUS_CLIP.processingMinutes * 60) return null
   const times = (OPUS_CLIP.processingMinutes * 60) / processingSeconds
   return times >= 1.1 ? times : null
 }
