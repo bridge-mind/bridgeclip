@@ -14,6 +14,8 @@ def test_desktop_encoder_matches_lgpl_bundle(monkeypatch, platform, encoder):
     assert args[args.index("-b:v") + 1] == "18M"
     assert args[args.index("-g") + 1] == "120"
     assert "-crf" not in args
+    if platform == "darwin":
+        assert args[args.index("-allow_sw") + 1] == "1"
 
 
 def test_server_retains_configured_x264():

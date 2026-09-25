@@ -270,7 +270,7 @@ def test_longform_render_end_to_end(tmp_path, monkeypatch):
     out, captions, a timed title card, two-pass loudness, chapters and an SRT sidecar."""
     monkeypatch.setenv("PATH", TEST_FFMPEG_DIR + os.pathsep + os.environ.get("PATH", ""))
     videotoolbox_only = not _ffmpeg_has("encoders", "libx264")
-    encoder = ["-c:v", "h264_videotoolbox", "-b:v", "4M"] if videotoolbox_only else ["-c:v", "libx264", "-preset", "ultrafast"]
+    encoder = ["-c:v", "h264_videotoolbox", "-allow_sw", "1", "-b:v", "4M"] if videotoolbox_only else ["-c:v", "libx264", "-preset", "ultrafast"]
     src = str(tmp_path / "src.mp4")
     subprocess.run([
         "ffmpeg", "-v", "error", "-y",

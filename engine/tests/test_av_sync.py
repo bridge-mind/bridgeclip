@@ -236,13 +236,15 @@ def test_video_only_preserves_duration_across_off_grid_shots(tmp_path):
     assert float(data["format"]["duration"]) == pytest.approx(12, abs=0.034)
 
 
-@pytest.mark.parametrize("encoder_name", ["libx264", "h264_videotoolbox"])
-def test_h264_aac_encoder_delay_does_not_move_presentation_start(tmp_path, encoder_name):
+@pytest.mark.parametrize("encoder_name,software_only", [("libx264", False), ("h264_videotoolbox", False), ("h264_videotoolbox", True)])
+def test_h264_aac_encoder_delay_does_not_move_presentation_start(tmp_path, encoder_name, software_only):
     encoders = run(FFMPEG, "-hide_banner", "-encoders").decode()
     if encoder_name not in encoders:
         pytest.skip(f"{encoder_name} is unavailable")
     encoder = ["-c:v", encoder_name]
-    encoder += ["-preset", "ultrafast"] if encoder_name == "libx264" else ["-b:v", "1M"]
+    encoder += ["-preset", "ultrafast"] if encoder_name == "libx264" else ["-allow_sw", "1", "-b:v", "1M"]
+    if software_only:
+        encoder += ["-require_sw", "1"]
     path = source(tmp_path, audio_delay=0.3)
     out = render(path, tmp_path, encoder=encoder, start=1.137, duration=8)
     flashes, beeps = events(out)

@@ -156,7 +156,7 @@ def test_real_native_hls_download_and_probe(service, monkeypatch, tmp_path):
     encoder = next(name for name in ['libx264', 'libopenh264', 'h264_videotoolbox'] if name in encoders)
     subprocess.run([
         'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=10:d=2',
-        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', encoder, '-pix_fmt', 'yuv420p',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', encoder, *(['-allow_sw', '1'] if encoder == 'h264_videotoolbox' else []), '-pix_fmt', 'yuv420p',
         '-g', '10', '-c:a', 'aac', '-f', 'hls', '-hls_time', '1', '-hls_list_size', '0',
         str(media / 'vod.m3u8'),
     ], check=True, capture_output=True)

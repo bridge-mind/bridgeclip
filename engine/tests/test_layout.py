@@ -56,7 +56,7 @@ def encoder_args(binary):
     if "libx264" in encoders:
         return ["-c:v", "libx264", "-preset", "ultrafast"]
     if "h264_videotoolbox" in encoders:
-        return ["-c:v", "h264_videotoolbox", "-b:v", "4M"]
+        return ["-c:v", "h264_videotoolbox", "-allow_sw", "1", "-b:v", "4M"]
     pytest.skip("No H.264 encoder in test FFmpeg")
 
 
