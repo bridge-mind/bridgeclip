@@ -116,7 +116,7 @@ test('packaged tools never fall back to PATH or a user-selected Python', () => {
     for (const name of ['ffmpeg', 'ffprobe', 'yt-dlp']) {
       assert.equal(api.resolveBinary(name), path.join(dir, 'engine-bin', name + (process.platform === 'win32' ? '.exe' : '')))
     }
-    assert.equal(api.resolvePythonPath(dir, '/untrusted/python'), path.join(dir, 'engine-venv', ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python3'])))
+    assert.equal(api.resolvePythonPath(dir, '/untrusted/python'), path.join(dir, 'engine-venv', ...(process.platform === 'win32' ? ['python.exe'] : ['bin', 'python3'])))
     const check = api.preflightCheck({ pythonPath: '/untrusted/python', bridgePath: dir, enginePath: dir })
     assert.equal(check.ok, false)
     assert.match(check.error, /Bundled ffmpeg is missing/)

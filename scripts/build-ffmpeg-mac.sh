@@ -13,6 +13,11 @@ if ! command -v pkg-config >/dev/null || ! pkg-config --exists libass; then
   exit 1
 fi
 
+if [[ "$(uname -m)" == "x86_64" ]] && ! command -v nasm >/dev/null; then
+  echo "Install nasm before building Intel FFmpeg" >&2
+  exit 1
+fi
+
 output_dir="${1:-engine-bin}"
 version="8.1.3"
 source_hash="7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3"
