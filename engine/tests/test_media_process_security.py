@@ -19,7 +19,7 @@ from clip_engine.services.video_downloader import VideoDownloaderService, VideoD
 
 
 def test_tool_output_and_exit_status():
-    result = run_media([sys.executable, "-c", "import sys; print('out'); sys.stderr.write('err'); sys.exit(3)"])
+    result = run_media([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'out\\n'); sys.stderr.write('err'); sys.exit(3)"])
     assert result.stdout == b"out\n" and result.stderr == b"err" and result.returncode == 3
 
 

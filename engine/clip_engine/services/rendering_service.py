@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Optional, Union
@@ -67,6 +68,9 @@ MAX_OUTPUT_FPS = 60
 # Landscape H.264 bitrates (Mbps) by output height at 30 fps, after
 # YouTube's upload recommendations; 60 fps sources get 1.5x.
 LANDSCAPE_BITRATE_MBPS = {1080: 12, 1440: 20, 2160: 45}
+# Leave room for input/output paths and codec options below Windows' process
+# command-line limit. Long edits can contain hundreds of trims and concats.
+MAX_INLINE_FILTER_GRAPH_BYTES = 8192
 
 
 @dataclass
@@ -985,10 +989,38 @@ class RenderingService:
         """Run a command asynchronously."""
         logger.debug(f"Running: {' '.join(cmd[:10])}...")
 
+        def invoke():
+            # Keep the script inside the worker: cancelling the await does not
+            # stop run_media's thread, so the file must outlive that thread.
+            try:
+                graph_index = cmd.index("-filter_complex")
+            except ValueError:
+                return run_media(cmd)
+            graph = cmd[graph_index + 1]
+            if len(graph.encode("utf-8")) <= MAX_INLINE_FILTER_GRAPH_BYTES:
+                return run_media(cmd)
+
+            script_path = None
+            try:
+                # NamedTemporaryFile creates a private file. Close it before
+                # FFmpeg opens it, which is required on Windows.
+                with tempfile.NamedTemporaryFile(
+                    mode="w", encoding="utf-8", suffix=".ffgraph",
+                    prefix="bridgeclip-filter-", delete=False,
+                ) as script:
+                    script_path = script.name
+                    script.write(graph)
+                script_cmd = cmd.copy()
+                script_cmd[graph_index:graph_index + 2] = ["-/filter_complex", script_path]
+                return run_media(script_cmd)
+            finally:
+                if script_path is not None:
+                    os.remove(script_path)
+
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: run_media(cmd)
+            invoke,
         )
 
         if result.returncode != 0:

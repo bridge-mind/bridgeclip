@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -85,3 +87,79 @@ def test_empty_edit_is_not_replaced_with_entire_source():
     plan = ClipLayoutPlan([ShotLayout(0, 1000, LayoutType.TALKING_HEAD)], 64, 64)
     with pytest.raises(ValueError, match="no video"):
         build_layout_graph(plan, 64, 64, keeps=[])
+
+
+def test_short_filter_graph_stays_inline(monkeypatch):
+    graph = "[0:v]null[out]"
+    seen = []
+
+    def run_media(cmd):
+        seen.append(cmd)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module, "run_media", run_media)
+    service = RenderingService.__new__(RenderingService)
+    asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    assert seen == [["ffmpeg", "-filter_complex", graph]]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_large_filter_graph_uses_private_script_and_cleans_up(monkeypatch, fail):
+    graph = "[0:v]" + "null," * 2000 + "null[out]"
+    seen = []
+
+    def run_media(cmd):
+        assert cmd[1] == "-/filter_complex"
+        script_path = cmd[2]
+        seen.append(script_path)
+        with open(script_path, encoding="utf-8") as script:
+            assert script.read() == graph
+        if os.name != "nt":
+            assert os.stat(script_path).st_mode & 0o077 == 0
+        if fail:
+            raise RuntimeError("FFmpeg launch failed")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module, "run_media", run_media)
+    service = RenderingService.__new__(RenderingService)
+    if fail:
+        with pytest.raises(RuntimeError, match="FFmpeg launch failed"):
+            asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    else:
+        asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    assert len(seen) == 1
+    assert not os.path.exists(seen[0])
+
+
+def test_cancelled_large_filter_graph_stays_until_worker_finishes(monkeypatch):
+    graph = "null," * 2000
+    started = threading.Event()
+    release = threading.Event()
+    seen = []
+
+    def run_media(cmd):
+        seen.append(cmd[2])
+        started.set()
+        assert release.wait(5), "test did not release the FFmpeg worker"
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module, "run_media", run_media)
+    service = RenderingService.__new__(RenderingService)
+
+    async def check():
+        task = asyncio.create_task(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+        try:
+            assert await asyncio.to_thread(started.wait, 5)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert os.path.isfile(seen[0]), "FFmpeg still needs the script after cancellation"
+        finally:
+            release.set()
+        for _ in range(100):
+            if not os.path.exists(seen[0]):
+                break
+            await asyncio.sleep(0.01)
+        assert not os.path.exists(seen[0])
+
+    asyncio.run(check())

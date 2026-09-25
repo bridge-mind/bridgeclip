@@ -123,8 +123,6 @@ jobs:
       - run: npm ci
       - run: python -m pip install --require-hashes -r engine/requirements.lock
       - run: python -m pip install pytest pip-audit==2.10.1
-      - run: python -m pytest -q engine/tests
-      - run: python -m pip_audit --requirement engine/requirements.lock --disable-pip --require-hashes
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:main
@@ -134,6 +132,8 @@ jobs:
       - name: Check release helpers with Git Bash
         shell: bash
         run: npm run test:release
+      - run: python -m pytest -q engine/tests
+      - run: python -m pip_audit --requirement engine/requirements.lock --disable-pip --require-hashes
       - run: npm run build
       - run: npm audit --audit-level=low
 
