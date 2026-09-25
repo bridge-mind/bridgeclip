@@ -21,3 +21,14 @@ def test_server_retains_configured_x264():
     service.settings = SimpleNamespace(local_mode=False, ffmpeg_preset="fast", ffmpeg_crf=21)
     args = service._video_codec_args()
     assert args[:6] == ["-c:v", "libx264", "-preset", "fast", "-crf", "21"]
+
+
+@pytest.mark.parametrize("available,expected", [("libx264", "libx264"), ("libx264 libopenh264", "libopenh264")])
+def test_system_ffmpeg_remains_usable_for_local_development(monkeypatch, available, expected):
+    monkeypatch.setattr("clip_engine.services.rendering_service.sys.platform", "linux")
+    monkeypatch.setattr("clip_engine.services.rendering_service.shutil.which", lambda _: "/test/ffmpeg")
+    monkeypatch.setattr("clip_engine.services.rendering_service.run_media", lambda *a, **kw: SimpleNamespace(stdout=available.encode()))
+    service = RenderingService.__new__(RenderingService)
+    service.settings = SimpleNamespace(local_mode=True, ffmpeg_preset="fast", ffmpeg_crf=21)
+    service._verify_ffmpeg()
+    assert service._video_codec_args()[1] == expected

@@ -186,6 +186,11 @@ class RenderingService:
         """Verify ffmpeg is available."""
         if not shutil.which("ffmpeg"):
             raise RuntimeError("ffmpeg not found in PATH")
+        if self.settings.local_mode and sys.platform != "darwin":
+            encoders = run_media(["ffmpeg", "-hide_banner", "-encoders"], timeout=10, check=True).stdout.decode("utf-8", errors="replace")
+            self._local_cpu_encoder = next((name for name in ("libopenh264", "libx264") if re.search(rf"\b{name}\b", encoders)), None)
+            if self._local_cpu_encoder is None:
+                raise RuntimeError("FFmpeg needs a CPU H.264 encoder (OpenH264 or x264)")
         logger.info("FFmpeg available")
 
     def _video_codec_args(self, out_w: int = 1080, out_h: int = 1920, fps: str = "30") -> list[str]:
@@ -201,7 +206,7 @@ class RenderingService:
                 mbps = LANDSCAPE_BITRATE_MBPS.get(out_h, 12) * (1.5 if rate > 31 else 1)
                 return ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", f"{mbps:g}M", *gop]
             return ["-c:v", "h264_videotoolbox", "-b:v", "8M", *gop]
-        if self.settings.local_mode:
+        if self.settings.local_mode and getattr(self, "_local_cpu_encoder", "libopenh264") == "libopenh264":
             # The Windows/Linux LGPL distribution includes OpenH264, not x264.
             # A CPU encoder also works on machines without an NVIDIA/Intel GPU.
             mbps = LANDSCAPE_BITRATE_MBPS.get(out_h, 12) if out_w > out_h else 8

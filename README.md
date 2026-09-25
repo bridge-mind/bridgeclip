@@ -45,7 +45,7 @@ In **Create → Format → Video speed**, choose **1×** (normal), **1.1×**, **
 
 ## Download
 
-Signed macOS builds for Apple silicon and Intel will appear on [Releases](https://github.com/bridge-mind/bridgeclip/releases) after release testing. Those builds bundle Python, FFmpeg and yt-dlp. Until then, use the development setup below. Windows source builds are experimental and are not part of the supported release workflow.
+The release pipeline targets signed/notarized macOS builds for Apple silicon and Intel, signed Windows x64 installers, and Linux x64 AppImage/DEB packages. Official downloads will appear on [Releases](https://github.com/bridge-mind/bridgeclip/releases) after signing setup and release acceptance are complete. Packages bundle Python, FFmpeg and yt-dlp. Until then, use the development setup below; see [release status and verification](docs/RELEASING.md).
 
 On first launch, paste your OpenRouter key into the setup card:
 
@@ -97,9 +97,9 @@ npm ci
 npm run dev
 ```
 
-The in-repo Windows virtual environment is detected automatically. Native Windows CI checks the engine, desktop modules, renderer, and production build. Tests that create file symlinks report a skip if Windows denies symlink creation; they run when the account has the required capability. Release-helper tests use Git Bash. Windows installers and signed updates remain outside the supported release workflow.
+The in-repo Windows virtual environment is detected automatically. Native Windows CI checks the engine, desktop modules, renderer, and production build. Tests that create file symlinks report a skip if Windows denies symlink creation; they run when the account has the required capability. Release-helper tests use Git Bash. The private release pipeline includes Windows installers; a real signed upgrade must pass acceptance before update support is claimed.
 
-The release workflow packages the in-repo engine and media tools into signed macOS builds. For local packaging, first run `bash scripts/prepare-resources.sh arm64` (or `x64` on Intel), then follow [the release guide](docs/RELEASING.md). Signing credentials are still required for a distributable build.
+Private release workflows package the in-repo engine and media tools for macOS, Windows, and Linux. For local packaging, first run `bash scripts/prepare-resources.sh arm64` (or `x64` on Intel), then follow [the release guide](docs/RELEASING.md). Signing credentials are still required for a distributable build.
 
 ### First run and troubleshooting
 
@@ -116,7 +116,7 @@ The release workflow packages the in-repo engine and media tools into signed mac
 | `npm run build` | Production build into `out/` |
 | `npm run test:bridge` | Run Python bridge regression tests |
 | `engine/.venv/bin/python -m pytest -q engine/tests` | Run the clipping engine tests after installing pytest |
-| `npm run test:release` | Check macOS updater metadata merging |
+| `npm run test:release` | Check complete release artifacts and updater metadata |
 | `npm run test:renderer` | Check renderer state and parsing regressions |
 | `npm run test:main` | Check desktop security and pipeline regressions |
 | `npm run test:zernio` | Check social account, upload and posting flows against local mocks |
