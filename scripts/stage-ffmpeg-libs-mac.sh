@@ -29,8 +29,18 @@ for ((index=0; index<${#queue[@]}; index++)); do
       install_name_tool -id "@loader_path/$name" "$bundled"
       queue+=("$bundled")
 
-      formula_dir="$(dirname "$(dirname "$dependency")")"
-      formula="$(basename "$formula_dir")"
+      cellar_root="$(brew --cellar)"
+      resolved="$(realpath "$dependency")"
+      [[ "$resolved" == "$cellar_root/"* ]] || {
+        echo "Bundled library is outside Homebrew Cellar: $dependency" >&2
+        exit 1
+      }
+      relative="${resolved#"$cellar_root/"}"
+      formula="${relative%%/*}"
+      version_path="${relative#*/}"
+      version="${version_path%%/*}"
+      [[ -n "$formula" && -n "$version" && "$version_path" != "$version" ]] || exit 1
+      formula_dir="$cellar_root/$formula/$version"
       if [[ ! -d "$notices_dir/$formula" ]]; then
         mkdir -p "$notices_dir/$formula"
         license_index=0
@@ -48,7 +58,9 @@ for ((index=0; index<${#queue[@]}; index++)); do
             exit 1
           fi
         fi
-        brew list --versions "$formula" >> "$output_dir/BUNDLED_LIBRARIES.txt"
+        # Record the version of the dylib actually copied. A runner may have
+        # several installed versions, so `brew list --versions` is ambiguous.
+        printf '%s %s\n' "$formula" "$version" >> "$output_dir/BUNDLED_LIBRARIES.txt"
       fi
     fi
     install_name_tool -change "$dependency" "@loader_path/$name" "$target"
