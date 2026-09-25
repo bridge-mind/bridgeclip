@@ -11,12 +11,20 @@ const targets = {
   'windows-x64': { metadata: 'latest.yml', extensions: ['exe'] },
   'linux-x64': { metadata: 'latest-linux.yml', extensions: ['AppImage', 'deb'] }
 }
-async function collect(root, output, version, sourceSha) {
+const platformTargets = {
+  all: Object.keys(targets),
+  macos: ['mac-arm64', 'mac-x64'],
+  windows: ['windows-x64'],
+  linux: ['linux-x64']
+}
+async function collect(root, output, version, sourceSha, platform = 'all') {
   if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[a-f0-9]{40}$/.test(sourceSha)) throw new Error('Invalid release identity')
+  if (!Object.hasOwn(platformTargets, platform)) throw new Error('Invalid release platform')
   if (fs.existsSync(output)) throw new Error('Publication directory already exists')
   fs.mkdirSync(output)
   const metadata = new Map()
-  for (const [target, contract] of Object.entries(targets)) {
+  for (const target of platformTargets[platform]) {
+    const contract = targets[target]
     const directory = path.join(root, target)
     const doc = yaml.load(fs.readFileSync(path.join(directory, contract.metadata), 'utf8'))
     if (doc.version !== version) throw new Error(`Wrong ${target} version`)
@@ -52,9 +60,9 @@ async function collect(root, output, version, sourceSha) {
     const data = fs.readFileSync(path.join(output, name))
     entries.push({ name, size: data.length, sha256: crypto.createHash('sha256').update(data).digest('hex') })
   }
-  fs.writeFileSync(path.join(output, 'release-manifest.json'), JSON.stringify({ version, sourceRepository: 'bridge-mind/bridgeclip', sourceSha, files: entries }, null, 2) + '\n')
+  fs.writeFileSync(path.join(output, 'release-manifest.json'), JSON.stringify({ version, platform, sourceRepository: 'bridge-mind/bridgeclip', sourceSha, files: entries }, null, 2) + '\n')
   const manifest = fs.readFileSync(path.join(output, 'release-manifest.json'))
   fs.writeFileSync(path.join(output, 'SHA256SUMS.txt'), entries.map(entry => `${entry.sha256}  ${entry.name}\n`).join('') + `${crypto.createHash('sha256').update(manifest).digest('hex')}  release-manifest.json\n`)
 }
 if (require.main === module) collect(...process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1 })
-module.exports = { collect, targets }
+module.exports = { collect, targets, platformTargets }

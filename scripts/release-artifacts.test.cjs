@@ -59,9 +59,31 @@ test('a release includes all platforms and metadata matches the final bytes', as
   await collect(root, output, '1.2.3', 'a'.repeat(40))
   const manifest = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
   assert.equal(manifest.sourceSha, 'a'.repeat(40))
+  assert.equal(manifest.platform, 'all')
   assert.equal(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb)$/.test(file.name)).length, 7)
   assert.equal(yaml.load(fs.readFileSync(path.join(output, 'latest-mac.yml'), 'utf8')).files.length, 4)
   for (const entry of manifest.files) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(output, entry.name))).digest('hex'), entry.sha256)
+})
+test('a Mac-only release includes both architectures and no other update feed', async t => {
+  const root = fixture(t), output = path.join(root, 'publish')
+  fs.rmSync(path.join(root, 'windows-x64'), { recursive: true })
+  fs.rmSync(path.join(root, 'linux-x64'), { recursive: true })
+  await collect(root, output, '1.2.3', 'a'.repeat(40), 'macos')
+  const manifest = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
+  assert.equal(manifest.platform, 'macos')
+  assert.deepEqual(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb)$/.test(file.name)).map(file => file.name).sort(), [
+    'BridgeClip-1.2.3-mac-arm64.dmg', 'BridgeClip-1.2.3-mac-arm64.zip',
+    'BridgeClip-1.2.3-mac-x64.dmg', 'BridgeClip-1.2.3-mac-x64.zip'
+  ])
+  assert.equal(yaml.load(fs.readFileSync(path.join(output, 'latest-mac.yml'), 'utf8')).files.length, 4)
+  assert.equal(fs.existsSync(path.join(output, 'latest.yml')), false)
+  assert.equal(fs.existsSync(path.join(output, 'latest-linux.yml')), false)
+})
+test('invalid platform and incomplete selected platform fail closed', async t => {
+  const root = fixture(t)
+  await assert.rejects(collect(root, path.join(root, 'bad'), '1.2.3', 'a'.repeat(40), 'macos;echo bad'), /Invalid release platform/)
+  fs.rmSync(path.join(root, 'mac-x64'), { recursive: true })
+  await assert.rejects(collect(root, path.join(root, 'publish'), '1.2.3', 'a'.repeat(40), 'macos'))
 })
 test('missing platforms cannot produce a partial public release', async t => {
   const root = fixture(t)
