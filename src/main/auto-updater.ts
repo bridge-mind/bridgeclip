@@ -1,6 +1,6 @@
 import { app, dialog, ipcMain, powerMonitor, shell, type BrowserWindow, type MessageBoxSyncOptions } from 'electron'
 import { execFile } from 'child_process'
-import { resolve } from 'path'
+import { posix } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { is } from '@electron-toolkit/utils'
 import { REPO_URL } from '../shared/brand'
@@ -38,8 +38,9 @@ function errorCode(error: unknown): string {
 }
 
 function macBundlePath(): string {
-  // …/BridgeClip.app/Contents/MacOS/BridgeClip
-  return resolve(app.getPath('exe'), '..', '..', '..')
+  // …/BridgeClip.app/Contents/MacOS/BridgeClip. A macOS path, so resolve it
+  // with POSIX rules on every host (the tests run on Windows too).
+  return posix.resolve(app.getPath('exe'), '..', '..', '..')
 }
 
 /** Official builds carry BridgeMind's Developer ID; a local `npm run dist:mac` build doesn't. */
