@@ -15,7 +15,7 @@ import { TextInput } from './ui/Field'
 import { IconTile } from './ui/IconTile'
 import { SettingRow } from './ui/SettingRow'
 import { onRadioKeyDown } from './ui/Segmented'
-import { DURATION_OPTIONS } from '../../shared/job-contract'
+import { DURATION_OPTIONS, VIDEO_SPEED_OPTIONS } from '../../shared/job-contract'
 
 const DURATIONS = DURATION_OPTIONS
 
@@ -34,7 +34,7 @@ const MAX_CLIPS = 100
 
 export const WIZARD_STEPS: { id: WizardStep; label: string; title: string; description: string }[] = [
   { id: 'video', label: 'Video', title: 'Choose a video', description: 'A local file, YouTube link or Twitch VOD link. Optionally clip only part of it.' },
-  { id: 'format', label: 'Format', title: 'Format and framing', description: 'Where the clips will run and how each shot is framed.' },
+  { id: 'format', label: 'Format', title: 'Format, framing and speed', description: 'Choose the look and pace of every clip in this job.' },
   { id: 'clips', label: 'Clips', title: 'Clip length and count', description: 'Pick one or more lengths, or leave them all off for any length.' },
   { id: 'captions', label: 'Captions', title: 'Captions', description: 'Word-by-word captions burned into each clip. Silent videos are clipped without them.' },
   { id: 'review', label: 'Review', title: 'Review and generate', description: 'Check the run, then generate. You can queue another video right after.' }
@@ -65,6 +65,7 @@ export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; 
     layoutStyle: draft.layoutStyle,
     layoutVision: draft.clippingMode === 'quality' && draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
     pacing: draft.pacing,
+    videoSpeed: draft.videoSpeed ?? 1,
     includeCaptions: draft.includeCaptions,
     captionPreset: draft.captionPreset,
     startTimeSeconds: trim.start,
@@ -355,6 +356,25 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
           }
         />
       </Group>
+
+      <Group label="Video speed" aside="All clips in this job">
+        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6" role="radiogroup" aria-label="Video speed" aria-describedby="video-speed-help">
+          {VIDEO_SPEED_OPTIONS.map((speed) => {
+            const selected = (draft.videoSpeed ?? 1) === speed
+            return (
+              <button key={speed} type="button" role="radio" aria-checked={selected}
+                aria-label={`${speed}×${speed === 1 ? ' (Normal)' : ''}`}
+                tabIndex={selected ? 0 : -1} onKeyDown={onRadioKeyDown}
+                onClick={() => update({ videoSpeed: speed })}
+                className={cn('glass-tile glass-tile-hover rounded-xl px-2 py-2 text-center', selected ? 'glass-selected text-ink' : 'text-ink-muted hover:text-ink')}>
+                <span className="block font-mono text-sm tabular">{speed}×</span>
+                <span className="block text-2xs text-ink-subtle">{speed === 1 ? 'Normal' : `${Math.round(60 / speed)}s per minute`}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p id="video-speed-help" className="mt-2 text-2xs text-ink-subtle">Speeds up every exported clip, keeping voice pitch natural and captions in sync. Faster clips are shorter.</p>
+      </Group>
     </div>
   )
 }
@@ -403,6 +423,7 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
             )
           })}
         </div>
+        {(draft.videoSpeed ?? 1) > 1 && <p className="mt-2 text-2xs text-ink-subtle">Lengths refer to the original footage. At {draft.videoSpeed}×, 60 seconds becomes about {Math.round(60 / draft.videoSpeed)} seconds before dead-air cuts.</p>}
       </Group>
 
       <Group label="Number of clips">
@@ -487,9 +508,10 @@ function ReviewStep({ draft, trim, onEdit }: {
   const rows: { step: WizardStep; label: string; value: string }[] = [
     { step: 'video', label: 'Video', value: `${sourceLabel(draft.source)}${trimLabel}` },
     { step: 'format', label: 'Format', value: `${FORMATS.find((f) => f.id === draft.aspectRatio)?.label ?? draft.aspectRatio} ${draft.aspectRatio} · ${framing}` },
-    { step: 'format', label: 'Pacing', value: draft.pacing === 'tight' ? 'Cut dead air' : 'Original timing' },
+    { step: 'format', label: 'Pacing', value: draft.pacing === 'tight' ? 'Cut dead air' : 'Keep pauses' },
+    { step: 'format', label: 'Speed', value: `${draft.videoSpeed ?? 1}×${(draft.videoSpeed ?? 1) === 1 ? ' · Normal' : ' · All exported clips'}` },
     { step: 'clips', label: 'Mode', value: draft.clippingMode === 'economy' ? 'Economy · lower cost' : 'Quality · higher accuracy' },
-    { step: 'clips', label: 'Clips', value: `${lengths} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
+    { step: 'clips', label: 'Clips', value: `${lengths}${(draft.videoSpeed ?? 1) > 1 && draft.durations.length > 0 ? ' of source footage' : ''} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
     { step: 'captions', label: 'Captions', value: draft.includeCaptions ? CAPTION_PRESET_NAMES[draft.captionPreset] ?? draft.captionPreset : 'Off' }
   ]
 

@@ -227,6 +227,7 @@ async def run(config: dict) -> bool:
         aspect_ratio=config.get("aspect_ratio", "9:16"),
         layout_style=config.get("layout_style") or "auto",
         pacing=config.get("pacing") or "tight",
+        video_speed=config.get("video_speed", 1.0),
         include_captions=config.get("include_captions", True),
         caption_style=caption_style,
         start_time_seconds=config.get("start_time_seconds"),
@@ -279,7 +280,7 @@ def validate_config(config: object) -> dict:
     """Reject malformed bridge requests before loading the engine or writing files."""
     if not isinstance(config, dict):
         raise ValueError("Config must be a JSON object")
-    if type(config.get("contract_version")) is not int or config["contract_version"] != 1:
+    if type(config.get("contract_version")) is not int or config["contract_version"] != 2:
         raise ValueError("Unsupported clipping engine contract version")
     if type(config.get("layout_vision_enabled")) is not bool:
         raise ValueError("layout_vision_enabled must be a boolean")
@@ -311,6 +312,9 @@ def validate_config(config: object) -> dict:
         raise ValueError("Invalid layout style")
     if config.get("pacing", "tight") not in ("tight", "natural"):
         raise ValueError("Invalid pacing")
+    speed = config.get("video_speed", 1.0)
+    if type(speed) not in (int, float) or not 1 <= speed <= 2:
+        raise ValueError("Video speed must be between 1x and 2x")
     if config.get("clipping_mode", "quality") not in ("quality", "economy"):
         raise ValueError("Invalid clipping mode")
     keyterms = config.get("keyterms")

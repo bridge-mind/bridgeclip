@@ -24,6 +24,7 @@ from enum import Enum
 from typing import Any, Callable, Optional
 
 from clip_engine.config import CaptionStyle, LayoutStyle, get_settings, is_longform, resolve_clip_duration_bounds
+from clip_engine.services.video_speed import validate_video_speed
 from clip_engine.error_policy import safe_failure_code, safe_processing_error
 from clip_engine.services.intelligence_planner import (
     ClipPlanResponse,
@@ -104,8 +105,10 @@ class ClippingJobRequest:
     layout_style: str = LayoutStyle.AUTO
     # "tight" cuts dead air and filler words; "natural" keeps original timing.
     pacing: str = "tight"
+    video_speed: float = 1.0
 
     def __post_init__(self):
+        validate_video_speed(self.video_speed)
         if self.job_id is None:
             self.job_id = str(uuid.uuid4())
         if not isinstance(self.job_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", self.job_id):
@@ -428,6 +431,7 @@ class AIClippingPipeline:
                         aspect_ratio=request.aspect_ratio,
                         layout_style=request.layout_style,
                         pacing=request.pacing,
+                        video_speed=request.video_speed,
                         longform=longform,
                         skip_ranges_ms=segment.skip_ranges_ms,
                         chapters=segment.chapters,
@@ -638,6 +642,7 @@ class AIClippingPipeline:
                     "layout_style": request.layout_style,
                     "layout_vision_enabled": self.settings.layout_vision_enabled,
                     "pacing": request.pacing,
+                    "video_speed": request.video_speed,
                 },
                 "transcription_status": transcription_status,
                 "planning_source": "visual" if visual_frames else "transcript",

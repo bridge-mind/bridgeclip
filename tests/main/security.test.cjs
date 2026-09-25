@@ -215,6 +215,11 @@ test('external URLs reject executable schemes and embedded credentials', () => {
 test('job validation rejects malformed options and invalid trim intervals', () => {
   const job = { videoUrl: 'https://example.com/video', maxClips: 5, autoClipCount: true, includeCaptions: true, aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'tight', captionPreset: 'pop', durationRanges: ['short'], startTimeSeconds: null, endTimeSeconds: null, bannerPlatform: null, bannerChannelUrl: null }
   assert.doesNotThrow(() => validateJobConfig(job))
+  assert.equal(validateJobConfig(job).videoSpeed, 1)
+  for (const videoSpeed of jobContract.VIDEO_SPEED_OPTIONS) assert.equal(validateJobConfig({ ...job, videoSpeed }).videoSpeed, videoSpeed)
+  for (const videoSpeed of [null, true, '1.5', 0, 0.5, 2.01, NaN, Infinity, -Infinity]) {
+    assert.throws(() => validateJobConfig({ ...job, videoSpeed }), /Video speed/)
+  }
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'economy' }))
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'quality' }))
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
@@ -420,8 +425,10 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
     './tools': { resolveBinary: () => '/staged/engine-bin/ffmpeg' }
   })
   const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel, data) => sent.push({ channel, data }) } }
-  runner.startClipJob('trusted-job', { videoUrl: '/tmp/video.mp4' }, window, undefined, '/tmp/queued-output')
+  runner.startClipJob('trusted-job', { videoUrl: '/tmp/video.mp4', videoSpeed: 1.5 }, window, undefined, '/tmp/queued-output')
   assert.equal(JSON.parse(workerInput).output_dir, '/tmp/queued-output')
+  assert.equal(JSON.parse(workerInput).video_speed, 1.5)
+  assert.equal(JSON.parse(workerInput).contract_version, 2)
   child.stdout.write('{"type":"prog')
   child.stdout.write('ress","jobId":"spoof","percent":42}\n{"type":"result","status":"completed","job_id":"trusted-job","output":{"job_id":"trusted-job","clips":[]}}\n')
   child.stdout.end()

@@ -1,7 +1,7 @@
 {
   "name": "bridgeclip",
   "productName": "BridgeClip",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "BridgeClip: open-source AI video clipping by BridgeMind. Turn long videos into captioned short-form clips, locally, with your own API keys.",
   "main": "./out/main/index.js",
   "author": "BridgeMind",
@@ -35,7 +35,7 @@
     "test:renderer": "node --test tests/renderer-state.test.cjs tests/create-form.test.cjs",
     "test:main": "node --test tests/main/*.test.cjs",
     "test:zernio": "node --test tests/zernio/*.test.cjs",
-    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/main/video-speed.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
     "test": "npm run test:main && npm run test:renderer && npm run test:zernio && npm run test:bridge && npm run test:release"
   },
   "dependencies": {

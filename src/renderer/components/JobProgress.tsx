@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Clapperboard, Clock3, Download, FileText, Film, Github, RotateCcw, ScrollText, Sparkles } from 'lucide-react'
+import { AlertTriangle, Check, Clapperboard, Clock3, Download, FileText, Film, Gauge, Github, RotateCcw, ScrollText, Sparkles } from 'lucide-react'
 import { cn, formatTimecode, sourceLabel } from '../lib/utils'
 import { getApi } from '../lib/ipc'
 import { ISSUES_URL } from '../config/brand'
@@ -93,6 +93,9 @@ export function JobProgress({ job, onCancel, leading }: JobProgressProps): React
           </p>
 
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {(job.request.videoSpeed ?? 1) > 1 && (
+              <InfoChip icon={<Gauge />}>{job.request.videoSpeed}× export speed</InfoChip>
+            )}
             {job.clipsTotal > 0 && (
               <InfoChip icon={<Clapperboard />}>
                 {job.clipsDone} of {job.clipsTotal} clip{job.clipsTotal === 1 ? '' : 's'} rendered

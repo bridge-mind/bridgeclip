@@ -248,3 +248,8 @@ bridgeclip/scripts/release-ref.test.cjs
 bridgeclip/.github/CODEOWNERS
 bridgeclip/scripts/check-lockfile-integrity.cjs
 bridgeclip/scripts/check-lockfile-integrity.test.cjs
+bridgeclip/docs/video-speed.md
+bridgeclip/engine/clip_engine/services/video_speed.py
+bridgeclip/engine/tests/test_video_speed.py
+bridgeclip/tests/main/video-speed.e2e.cjs
+bridgeclip/docs/assets/video-speed.png

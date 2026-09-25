@@ -50,6 +50,7 @@ from clip_engine.services.layout_renderer import (
     title_y,
 )
 from clip_engine.services.transcription_service import TranscriptSegment
+from clip_engine.services.video_speed import scaled_duration_ms, speed_video_filter, validate_video_speed
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class RenderRequest:
     layout_style: str = LayoutStyle.AUTO
     # tight: cut dead air and filler words; natural: original timing.
     pacing: str = Pacing.TIGHT
+    video_speed: float = 1.0
     # Longform episode (16:9, 5+ min): gentler pacing, SRT sidecar, and the
     # planner's skips (source ms, cut at any pacing) and chapters (source ms).
     longform: bool = False
@@ -113,7 +115,7 @@ class RenderResult:
 
     output_path: str
     file_size_bytes: int
-    duration_ms: int  # of the rendered file, after pacing cuts
+    duration_ms: int  # of the rendered file, after pacing cuts and speed
     removed_ms: int = 0  # dead air / fillers cut by tight pacing
     layout_type: str = "fit"
     layout_shots: list[dict] = field(default_factory=list)
@@ -207,6 +209,7 @@ class RenderingService:
         16:9 (landscape): Whole frame at the source's resolution (1080p-4K)
             and frame rate, over a blurred fill when the source isn't 16:9.
         """
+        validate_video_speed(request.video_speed)
         os.makedirs(os.path.dirname(request.output_path), exist_ok=True)
 
         duration_ms = request.end_time_ms - request.start_time_ms
@@ -314,7 +317,7 @@ class RenderingService:
         subtitle_path = await self._write_subtitles(request, window_start_ms, time_map)
         logger.info(
             f"Clip rendered: {request.output_path} ({file_size / 1024 / 1024:.1f} MB, "
-            f"{time_map.output_ms / 1000:.1f}s"
+            f"{scaled_duration_ms(time_map.output_ms, request.video_speed) / 1000:.1f}s at {request.video_speed:g}x"
             + (f", pacing removed {removed_ms / 1000:.1f}s in {time_map.cut_count} cuts" if removed_ms else "")
             + (f", fallback={render_fallback}" if render_fallback else "")
             + ")"
@@ -322,7 +325,7 @@ class RenderingService:
         return RenderResult(
             output_path=request.output_path,
             file_size_bytes=file_size,
-            duration_ms=time_map.output_ms,
+            duration_ms=scaled_duration_ms(time_map.output_ms, request.video_speed),
             removed_ms=removed_ms,
             layout_type=plan.dominant_layout if smart else "fit",
             layout_shots=[shot.summary() for shot in plan.shots] if analyzed else [],
@@ -352,10 +355,10 @@ class RenderingService:
         """Chapters moved onto the edited timeline; the first starts at 0."""
         chapters: list[tuple[int, str]] = []
         for t_ms, title in request.chapters:
-            out = time_map.to_output_clamped(max(0, t_ms - window_start_ms))
+            out = scaled_duration_ms(time_map.to_output_clamped(max(0, t_ms - window_start_ms)), request.video_speed)
             if chapters and out - chapters[-1][0] < 10_000:
                 continue  # YouTube needs 10 s+ per chapter
-            if out < time_map.output_ms - 10_000:
+            if out < scaled_duration_ms(time_map.output_ms, request.video_speed) - 10_000:
                 chapters.append((out, title))
         if chapters:
             chapters[0] = (0, chapters[0][1])
@@ -369,9 +372,13 @@ class RenderingService:
             return None
         try:
             segments = remap_segments(request.transcript_segments, window_start_ms, time_map)
+            for segment in segments:
+                for item in [segment, *segment.words]:
+                    item.start_time_ms = window_start_ms + scaled_duration_ms(item.start_time_ms - window_start_ms, request.video_speed)
+                    item.end_time_ms = max(item.start_time_ms + 1, window_start_ms + scaled_duration_ms(item.end_time_ms - window_start_ms, request.video_speed))
             path = os.path.splitext(request.output_path)[0] + ".srt"
             return self.caption_generator.generate_srt(
-                segments, window_start_ms, window_start_ms + time_map.output_ms, path,
+                segments, window_start_ms, window_start_ms + scaled_duration_ms(time_map.output_ms, request.video_speed), path,
             )
         except Exception as e:
             logger.warning(f"Subtitle sidecar failed; the clip is unaffected: {e}")
@@ -395,6 +402,7 @@ class RenderingService:
         graph = build_layout_graph(
             plan, target_width, target_height, time_map.keeps, has_audio, landscape=is_landscape,
             fps=fps, loudness_filter=loudness_filter,
+            video_speed=request.video_speed,
         )
         out_plan = remap_plan(plan, time_map)
         caption_path = await self._generate_captions(
@@ -402,7 +410,11 @@ class RenderingService:
         )
         graph += f";[base]{self._caption_filter(caption_path)}[captioned]"
         overlays = self._overlays(request, out_plan, target_width, target_height, is_landscape)
-        filter_complex, extra_inputs = self._compose_overlays(graph, overlays)
+        # Burn captions and animate framing/overlays on the edited source clock,
+        # then speed up the entire composited picture to match the tempo audio.
+        filter_complex, extra_inputs = self._compose_overlays(
+            graph, overlays, speed_video_filter(request.video_speed, fps),
+        )
 
         try:
             await self._run_ffmpeg_complex(
@@ -415,7 +427,7 @@ class RenderingService:
                 extra_inputs=extra_inputs if extra_inputs else None,
                 fps=fps,
                 output_size=(target_width, target_height),
-                output_duration_ms=time_map.output_ms,
+                output_duration_ms=scaled_duration_ms(time_map.output_ms, request.video_speed),
             )
         finally:
             for path in extra_inputs:
@@ -531,19 +543,19 @@ class RenderingService:
         return "null"
 
     @staticmethod
-    def _compose_overlays(graph: str, overlays: list[Overlay]) -> tuple[str, list[str]]:
+    def _compose_overlays(graph: str, overlays: list[Overlay], video_filter: str = "null") -> tuple[str, list[str]]:
         """Append image overlays to a graph ending in [captioned]; output is [out].
 
         Returns the full filter_complex and the extra input paths, in input
         order (the video is input 0, overlays follow).
         """
         if not overlays:
-            return f"{graph};[captioned]null[out]", []
+            return f"{graph};[captioned]{video_filter}[out]", []
         parts = [graph]
         current = "captioned"
         for index, overlay in enumerate(overlays, start=1):
             _, x_expr, y_expr = overlay[:3]
-            label = "out" if index == len(overlays) else f"ov{index}"
+            label = "composited" if index == len(overlays) else f"ov{index}"
             image, enable = f"[{index}:v]", ""
             if len(overlay) == 5:
                 enable_expr, image_filter = overlay[3], overlay[4]
@@ -553,6 +565,7 @@ class RenderingService:
                 f"[{current}]{image}overlay=x='{x_expr}':y='{y_expr}':shortest=1{enable}[{label}]"
             )
             current = label
+        parts.append(f"[composited]{video_filter}[out]")
         return ";".join(parts), [overlay[0] for overlay in overlays]
 
     def _title_overlay_image(

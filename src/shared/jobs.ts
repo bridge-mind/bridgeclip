@@ -12,6 +12,8 @@ export interface ClipJobRequest {
   layoutStyle: string
   layoutVision: boolean
   pacing: string
+  /** Export speed for every clip. Older requests default to normal speed. */
+  videoSpeed?: number
   includeCaptions: boolean
   captionPreset: string
   startTimeSeconds: number | null

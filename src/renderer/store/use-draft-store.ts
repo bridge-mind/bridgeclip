@@ -25,6 +25,7 @@ export interface ClipDraft {
   layoutVision: boolean
   /** tight: cut dead air and filler words; natural: original timing. */
   pacing: 'tight' | 'natural'
+  videoSpeed: number
   durations: string[]
   autoClipCount: boolean
   maxClips: number
@@ -54,6 +55,7 @@ export const useDraftStore = create<DraftState>((set) => ({
   layoutStyle: 'auto',
   layoutVision: true,
   pacing: 'tight',
+  videoSpeed: 1,
   durations: ['short'],
   autoClipCount: true,
   maxClips: 5,

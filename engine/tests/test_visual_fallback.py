@@ -137,7 +137,8 @@ def test_visual_only_planner_uses_duration_and_rejects_unsupported_clip(monkeypa
 
 
 @pytest.mark.parametrize("no_audio", [False, True])
-def test_visual_fallback_completes_without_captions_and_discloses_status(monkeypatch, tmp_path, no_audio):
+@pytest.mark.parametrize("speed", [1, 1.5])
+def test_visual_fallback_completes_without_captions_and_discloses_status(monkeypatch, tmp_path, no_audio, speed):
     monkeypatch.setattr(RenderingService, "_verify_ffmpeg", lambda self: None)
     settings = pipeline_module.get_settings()
     monkeypatch.setattr(settings, "local_mode", True)
@@ -163,14 +164,15 @@ def test_visual_fallback_completes_without_captions_and_discloses_status(monkeyp
     async def plan(**kwargs):
         assert len(kwargs["frames"]) == 3
         assert not kwargs["transcript_result"].segments
-        return ClipPlanResponse([ClipPlanSegment(10_000, 30_000, 0.8, summary="Visible action")], total_clips=1)
+        return ClipPlanResponse([ClipPlanSegment(t, t + 20_000, 0.8, summary="Visible action") for t in (10_000, 30_000)], total_clips=2)
 
     async def render(request):
+        assert request.video_speed == speed
         assert request.include_captions is False
         assert request.transcript_segments == []
         with open(request.output_path, "wb") as output:
             output.write(b"mp4")
-        return RenderResult(request.output_path, 3, 20_000, layout_type="fit")
+        return RenderResult(request.output_path, 3, round(20_000 / speed), layout_type="fit")
 
     monkeypatch.setattr(pipeline.video_downloader, "download_video", download)
     monkeypatch.setattr(pipeline.transcription_service, "transcribe", transcribe)
@@ -179,10 +181,13 @@ def test_visual_fallback_completes_without_captions_and_discloses_status(monkeyp
     monkeypatch.setattr(pipeline.intelligence_planner, "plan_clips", plan)
     monkeypatch.setattr(pipeline.rendering_service, "render_clip", render)
 
-    result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url="x", job_id="visual-test")))
+    result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url="x", job_id="visual-test", video_speed=speed)))
     assert result.status == JobStatus.COMPLETED
     assert result.output.metrics["transcription_status"] == "no_speech"
     assert result.output.metrics["planning_source"] == "visual"
+    assert result.output.metrics["requested_settings"]["video_speed"] == speed
+    assert len(result.output.clips) == 2
+    assert all(clip.duration_ms == round(20_000 / speed) for clip in result.output.clips)
     assert result.output.metrics["captions_status"] == "unavailable_without_transcript"
     transcript = json.loads((tmp_path / "out" / "visual-test" / "transcript.json").read_text())
     assert transcript["captions_available"] is False

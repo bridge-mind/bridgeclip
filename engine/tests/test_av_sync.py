@@ -76,6 +76,9 @@ def events(path):
     frames = np.frombuffer(run(FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0",
                               "-vf", "scale=8:8", "-pix_fmt", "gray", "-f", "rawvideo", "-"), np.uint8)
     samples = np.frombuffer(run(FFMPEG, "-v", "error", "-i", path, "-map", "0:a:0",
+                               # Materialize presentation gaps before measuring
+                               # speech; raw samples alone conceal late packets.
+                               "-af", "aresample=48000:async=1:first_pts=0:min_hard_comp=0.001",
                                "-ac", "1", "-ar", "48000", "-f", "f32le", "-"), np.float32)
     # 5 ms RMS windows suppress individual zero crossings and AAC ringing.
     rms = np.sqrt(np.mean(samples[:len(samples) // 240 * 240].reshape(-1, 240) ** 2, axis=1))

@@ -384,6 +384,7 @@ export function startClipJob(
     layout_style: config.layoutStyle || 'auto',
     layout_vision_enabled: config.clippingMode === 'economy' ? false : config.layoutVision,
     pacing: config.pacing || 'tight',
+    video_speed: config.videoSpeed ?? 1,
     include_captions: config.includeCaptions,
     caption_preset: config.captionPreset,
     keyterms: vocabularyTerms(settings.customVocabulary),
