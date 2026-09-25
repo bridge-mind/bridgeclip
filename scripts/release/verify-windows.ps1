@@ -13,6 +13,7 @@ $process = Start-Process -FilePath (Resolve-Path $Installer) -ArgumentList @('/S
 if ($process.ExitCode -ne 0) { throw 'NSIS installation failed' }
 $application = Join-Path $destination 'BridgeClip.exe'
 Assert-Signature $application
+Assert-Signature (Join-Path $destination 'Uninstall BridgeClip.exe')
 $expected = (Get-Content package.json -Raw | ConvertFrom-Json).version
 if ((Get-Item $application).VersionInfo.ProductVersion -ne $expected) { throw 'Installed version mismatch' }
 python scripts/release/verify-runtime.py (Join-Path $destination 'resources')

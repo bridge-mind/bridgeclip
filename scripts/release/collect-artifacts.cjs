@@ -28,6 +28,11 @@ async function collect(root, output, version, sourceSha) {
       const name = `BridgeClip-${version}-${platform}-${target.split('-').at(-1)}.${extension}`
       const file = path.join(directory, name)
       if (!fs.lstatSync(file).isFile()) throw new Error(`Missing release asset ${name}`)
+      // These are the actual updater payloads for each platform. A valid hash
+      // for a differently named file is not a complete update feed.
+      if (['zip', 'exe', 'AppImage'].includes(extension) && !doc.files.some(entry => entry.url === name)) {
+        throw new Error(`Update metadata omits ${name}`)
+      }
       fs.copyFileSync(file, path.join(output, name), fs.constants.COPYFILE_EXCL)
     }
     for (const name of fs.readdirSync(directory)) {
