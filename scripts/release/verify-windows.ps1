@@ -15,7 +15,12 @@ $application = Join-Path $destination 'BridgeClip.exe'
 Assert-Signature $application
 Assert-Signature (Join-Path $destination 'Uninstall BridgeClip.exe')
 $expected = (Get-Content package.json -Raw | ConvertFrom-Json).version
-if ((Get-Item $application).VersionInfo.ProductVersion -ne $expected) { throw 'Installed version mismatch' }
+$actual = (Get-Item $application).VersionInfo.ProductVersion
+# Windows PE version resources use four numeric components; npm semver uses three.
+# Accept only the same version with an optional zero revision.
+if ($actual -ne $expected -and $actual -ne "$expected.0") {
+    throw "Installed version mismatch: expected $expected, found $actual"
+}
 python scripts/release/verify-runtime.py (Join-Path $destination 'resources')
 if ($LASTEXITCODE -ne 0) { throw 'Installed runtime verification failed' }
 $probe = Start-Process -FilePath $application -ArgumentList "--user-data-dir=`"$env:RUNNER_TEMP\bridgeclip-acceptance-profile`"" -PassThru
