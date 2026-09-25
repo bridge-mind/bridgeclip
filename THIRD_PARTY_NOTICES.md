@@ -14,4 +14,6 @@ BridgeClip's [MIT license](LICENSE) covers BridgeClip-owned source. It does not 
 
 The renderer build also generates `RENDERER-THIRD-PARTY-LICENSES.txt` in the packaged resources, containing the installed license texts for the packages included in its JavaScript bundle. This is separate from the production Node inventory because renderer packages are installed as development dependencies. The build fails when a bundled renderer package has no license text.
 
+The OpusClip wordmark in `src/renderer/components/brand/OpusClipLogo.tsx` comes from [opus.pro](https://www.opus.pro/) and identifies the service in comparison details. It remains an OpusClip brand asset; BridgeClip's MIT license does not grant rights to that mark or imply affiliation.
+
 The release packages the clipping engine committed in this repository. `scripts/prepare-resources.sh` and release CI stage the same pinned Python archive and hash-verified FFmpeg source. The final package still needs an asset and dependency license review, a signed/notarized install check, and a review of the generated inventories before publication.
