@@ -36,7 +36,7 @@ Run `npm ci`, application and engine tests, dependency audits, `npm run build`, 
 
 `scripts/release/verify-runtime.py <packaged-resources-directory>` copies resources to a path containing spaces and tests the shipped Python, FFmpeg, framing model, captions, speed, audio, and downloader without relying on the checkout. `scripts/release/collect-artifacts.cjs` rejects missing platforms, mismatched versions, and altered artifacts.
 
-Windows/Linux FFmpeg uses the LGPL shared upstream build, with OpenH264 for CPU encoding. Its LGPL version and dependency set differ from the minimal macOS build. Official publication is blocked until a reviewed corresponding-source distribution, including the exact dependency sources and notices for Windows/Linux and the bundled macOS caption libraries, has a pinned URL and SHA-256 in private publication configuration. A link to upstream build recipes alone is not that distribution.
+Windows/Linux FFmpeg uses the LGPL shared upstream build, with OpenH264 for CPU encoding. Its LGPL version and dependency set differ from the minimal macOS build. macOS release jobs archive the exact FFmpeg source, bundled Homebrew library sources, formulas, patches, and license inventory for each architecture. Windows/Linux publication remains blocked until a reviewed corresponding-source distribution for their exact dependency set has a pinned URL and SHA-256 in private publication configuration. A link to upstream build recipes alone is not that distribution.
 
 ## Verify a download
 
