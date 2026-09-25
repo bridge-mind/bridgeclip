@@ -356,7 +356,7 @@ test('Windows resolves the saved legacy Python default without replacing an inst
   assert.equal(runner.resolvePythonPath(engine, explicit), explicit)
   assert.equal(runner.resolvePythonPath(engine, 'py'), 'py', 'other command settings remain untouched')
   app.isPackaged = true
-  assert.equal(runner.resolvePythonPath(engine, explicit), path.win32.join(winProcess.resourcesPath, 'engine-venv', 'Scripts', 'python.exe'))
+  assert.equal(runner.resolvePythonPath(engine, explicit), path.win32.join(winProcess.resourcesPath, 'engine-venv', 'python.exe'))
 })
 
 test('library rejects parseable but incomplete job output', async (t) => {

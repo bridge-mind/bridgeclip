@@ -183,7 +183,8 @@ export function getBridgeRunnerPath(): string {
  */
 export function resolvePythonPath(enginePath: string, userPythonPath: string): string {
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'engine-venv', ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python3']))
+    // python-build-standalone is a relocatable distribution, not a Windows venv.
+    return join(process.resourcesPath, 'engine-venv', ...(process.platform === 'win32' ? ['python.exe'] : ['bin', 'python3']))
   }
   if (!app.isPackaged && userPythonPath && userPythonPath !== 'python3') {
     if (existsSync(userPythonPath)) return userPythonPath

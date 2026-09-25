@@ -16,8 +16,9 @@ def main() -> int:
         print("Usage: smoke_transcription_audio.py <ffmpeg-directory>", file=sys.stderr)
         return 2
     binary_dir = Path(sys.argv[1]).resolve()
-    ffmpeg = binary_dir / "ffmpeg"
-    ffprobe = binary_dir / "ffprobe"
+    suffix = ".exe" if sys.platform == "win32" else ""
+    ffmpeg = binary_dir / f"ffmpeg{suffix}"
+    ffprobe = binary_dir / f"ffprobe{suffix}"
     if not ffmpeg.is_file() or not ffprobe.is_file():
         print("FFmpeg and FFprobe are required", file=sys.stderr)
         return 2

@@ -1,5 +1,6 @@
 appId: com.bridgemind.bridgeclip
 productName: BridgeClip
+artifactName: BridgeClip-${version}-${os}-${arch}.${ext}
 copyright: Copyright © 2026 BridgeMind LLC
 
 # Disable production debug/code-injection entry points and validate app.asar.
@@ -92,6 +93,9 @@ dmg:
       path: /Applications
 
 win:
+  verifyUpdateCodeSignature: true
+  signtoolOptions:
+    publisherName: BRIDGEMIND LLC
   target:
     - target: nsis
       arch:
@@ -106,8 +110,31 @@ nsis:
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
 
+linux:
+  executableName: bridgeclip
+  category: AudioVideo
+  icon: build/icon.png
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  maintainer: BridgeMind LLC <support@bridgemind.ai>
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnss3
+    - libasound2
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+
 # Auto-updates come from GitHub Releases: electron-updater reads
-# latest-mac.yml / latest.yml from the newest published (non-draft) release.
+# latest-mac.yml / latest.yml / latest-linux.yml from the published release.
 publish:
   provider: github
   owner: bridge-mind

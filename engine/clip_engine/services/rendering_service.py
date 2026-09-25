@@ -189,7 +189,7 @@ class RenderingService:
         logger.info("FFmpeg available")
 
     def _video_codec_args(self, out_w: int = 1080, out_h: int = 1920, fps: str = "30") -> list[str]:
-        """Use the LGPL macOS encoder in BridgeClip; retain server encoding.
+        """Use the bundled LGPL encoders in BridgeClip; retain server encoding.
 
         Keyframes every 2 s keep long clips seekable. Landscape bitrates scale
         with resolution and frame rate (VideoToolbox is bitrate-driven).
@@ -201,6 +201,13 @@ class RenderingService:
                 mbps = LANDSCAPE_BITRATE_MBPS.get(out_h, 12) * (1.5 if rate > 31 else 1)
                 return ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", f"{mbps:g}M", *gop]
             return ["-c:v", "h264_videotoolbox", "-b:v", "8M", *gop]
+        if self.settings.local_mode:
+            # The Windows/Linux LGPL distribution includes OpenH264, not x264.
+            # A CPU encoder also works on machines without an NVIDIA/Intel GPU.
+            mbps = LANDSCAPE_BITRATE_MBPS.get(out_h, 12) if out_w > out_h else 8
+            if rate > 31:
+                mbps *= 1.5
+            return ["-c:v", "libopenh264", "-b:v", f"{mbps:g}M", *gop]
         return ["-c:v", "libx264", "-preset", self.settings.ffmpeg_preset,
                 "-crf", str(self.settings.ffmpeg_crf), *gop]
 

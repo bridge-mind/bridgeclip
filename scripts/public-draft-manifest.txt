@@ -4,8 +4,6 @@
 bridgeclip/.github/ISSUE_TEMPLATE/bug_report.yml
 bridgeclip/.github/PULL_REQUEST_TEMPLATE.md
 bridgeclip/.github/dependabot.yml
-bridgeclip/.github/workflows/ci.yml
-bridgeclip/.github/workflows/release.yml
 bridgeclip/.gitignore
 bridgeclip/CODE_OF_CONDUCT.md
 bridgeclip/CONTRIBUTING.md
@@ -244,7 +242,6 @@ bridgeclip/engine/tests/test_twitch_downloader.py
 bridgeclip/engine/tests/test_visual_fallback.py
 bridgeclip/engine/tests/test_media_process_security.py
 bridgeclip/engine/tests/test_openrouter_security.py
-bridgeclip/scripts/release-ref.test.cjs
 bridgeclip/.github/CODEOWNERS
 bridgeclip/scripts/check-lockfile-integrity.cjs
 bridgeclip/scripts/check-lockfile-integrity.test.cjs
@@ -258,3 +255,16 @@ bridgeclip/tests/main/video-speed.e2e.cjs
 bridgeclip/docs/assets/video-speed.png
 bridgeclip/src/renderer/components/AutomationTikTokReviewDialog.tsx
 bridgeclip/tests/zernio/automation-tiktok.test.cjs
+bridgeclip/bridge/smoke_packaged_runtime.py
+bridgeclip/engine/tests/test_release_encoders.py
+bridgeclip/resources/release-public-key.pub
+bridgeclip/scripts/release-artifacts.test.cjs
+bridgeclip/scripts/release/runtime-lock.json
+bridgeclip/scripts/release/collect-artifacts.cjs
+bridgeclip/scripts/release/refresh-metadata.cjs
+bridgeclip/scripts/release/verify-windows.ps1
+bridgeclip/scripts/release/build-launcher.ps1
+bridgeclip/scripts/release/verify-runtime.py
+bridgeclip/scripts/release/stage-runtime.py
+bridgeclip/scripts/release/windows-config.cjs
+bridgeclip/scripts/release/yt-dlp-launcher.c
