@@ -27,10 +27,14 @@ test('cost is credits at the Pro list price, and the saving is a whole percent',
   assert.equal(percentLessThanOpusClip(Number.NaN, 22 * 60), null)
 })
 
-test('speed is measured against the low end of OpusClip’s stated 20–40 minutes', () => {
-  assert.equal(formatTimes(timesFasterThanOpusClip(238)), '5×', '20 min / 3m 58s, rounded down')
-  assert.equal(formatTimes(timesFasterThanOpusClip(60)), '20×')
-  assert.equal(formatTimes(timesFasterThanOpusClip(420)), '2.8×')
-  assert.equal(timesFasterThanOpusClip(19 * 60), null, 'no claim when not clearly faster')
-  assert.equal(timesFasterThanOpusClip(0), null)
+test('speed is measured against the low end of OpusClip’s stated 20–40 minutes, for sources at least that long', () => {
+  const longSource = 22 * 60 + 53
+  assert.equal(formatTimes(timesFasterThanOpusClip(238, longSource)), '5×', '20 min / 3m 58s, rounded down')
+  assert.equal(formatTimes(timesFasterThanOpusClip(420, longSource)), '2.8×')
+  assert.equal(formatTimes(timesFasterThanOpusClip(113, longSource)), '10×', '10.6× rounds down, not up')
+  assert.equal(timesFasterThanOpusClip(19 * 60, longSource), null, 'no claim when not clearly faster')
+  assert.equal(timesFasterThanOpusClip(0, longSource), null)
+  assert.equal(timesFasterThanOpusClip(60, 60), null, 'a 1-minute source is not held to OpusClip’s 20 minutes')
+  assert.equal(timesFasterThanOpusClip(60, 19 * 60), null)
+  assert.equal(formatTimes(timesFasterThanOpusClip(60, 20 * 60)), '20×')
 })

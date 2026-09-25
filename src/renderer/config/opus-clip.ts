@@ -8,7 +8,8 @@
  * - Speed: "The processing time depends on the length of your raw video,
  *   typically taking around 20-40 minutes"
  *   (https://help.opus.pro/docs/article/clipanything-qa-4). The low end is
- *   used, so "faster" is never overstated.
+ *   used, and only for sources at least that long, since OpusClip's time also
+ *   depends on video length; so "faster" is never overstated.
  */
 export const OPUS_CLIP = {
   checked: 'Sep 2026',
@@ -37,14 +38,20 @@ export function percentLessThanOpusClip(runUsd: number, sourceSeconds: number): 
   return percent > 0 ? percent : null
 }
 
-/** How many times faster this run was than OpusClip's typical processing, or null when it wasn't clearly faster. */
-export function timesFasterThanOpusClip(processingSeconds: number): number | null {
+/**
+ * How many times faster this run was than OpusClip's typical processing, or
+ * null when it wasn't clearly faster or the source is shorter than the typical
+ * time (OpusClip's time depends on video length, so a short video can't be
+ * held to it).
+ */
+export function timesFasterThanOpusClip(processingSeconds: number, sourceSeconds: number): number | null {
   if (!Number.isFinite(processingSeconds) || processingSeconds <= 0) return null
+  if (!Number.isFinite(sourceSeconds) || sourceSeconds < OPUS_CLIP.processingMinutes * 60) return null
   const times = (OPUS_CLIP.processingMinutes * 60) / processingSeconds
   return times >= 1.1 ? times : null
 }
 
-/** "5×", "1.8×", "12×". */
+/** "5×", "1.8×", "12×", always rounded down. */
 export function formatTimes(times: number): string {
-  return `${times >= 10 ? Math.round(times) : Math.floor(times * 10) / 10}×`
+  return `${times >= 10 ? Math.floor(times) : Math.floor(times * 10) / 10}×`
 }
