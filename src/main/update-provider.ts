@@ -15,18 +15,31 @@ interface ReleaseListing {
   assets?: { name?: unknown }[]
 }
 
+function versionOf(tag: string): number[] | null {
+  const match = /^v(\d+)\.(\d+)\.(\d+)$/.exec(tag)
+  return match ? match.slice(1).map(Number) : null
+}
+
+function newer(a: number[], b: number[]): boolean {
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
+  return false
+}
+
 /**
- * The newest published, non-prerelease release whose assets include `channelFile`.
- * GitHub lists releases newest first.
+ * The highest-versioned published, non-prerelease `vX.Y.Z` release whose
+ * assets include `channelFile`. Highest rather than first listed, since
+ * GitHub orders releases by creation date.
  */
 export function newestReleaseWith(releases: unknown, channelFile: string): string | null {
   if (!Array.isArray(releases)) return null
+  let best: { tag: string; version: number[] } | null = null
   for (const release of releases as ReleaseListing[]) {
-    if (release.draft !== false || release.prerelease !== false) continue
-    if (typeof release.tag_name !== 'string' || !/^v\d+\.\d+\.\d+$/.test(release.tag_name)) continue
-    if (Array.isArray(release.assets) && release.assets.some((asset) => asset.name === channelFile)) return release.tag_name
+    if (release.draft !== false || release.prerelease !== false || typeof release.tag_name !== 'string') continue
+    const version = versionOf(release.tag_name)
+    if (!version || !Array.isArray(release.assets) || !release.assets.some((asset) => asset.name === channelFile)) continue
+    if (!best || newer(version, best.version)) best = { tag: release.tag_name, version }
   }
-  return null
+  return best?.tag ?? null
 }
 
 /**
@@ -61,7 +74,9 @@ export class PlatformGitHubProvider extends GitHubProvider {
       if (!tag) throw error
       const channelFileUrl = new URL(`https://github.com/${owner}/${repo}/releases/download/${tag}/${channelFile}`)
       const info = parseUpdateInfo(await this.httpRequest(channelFileUrl), channelFile, channelFileUrl)
-      return { tag, ...info }
+      // A feed must describe its own release; the tag chosen above wins over any `tag:` in it.
+      if (info.version !== tag.slice(1)) throw error
+      return { ...info, tag }
     }
   }
 }

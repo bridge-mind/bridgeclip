@@ -153,6 +153,8 @@ export interface BridgeClipAPI {
     getState: () => Promise<UpdateState>
     /** Every change to the update state, from background checks too. */
     onState: (cb: (state: UpdateState) => void) => () => void
+    /** Help → Check for Updates… asks the window to show the Updates row. */
+    onShow: (cb: () => void) => () => void
     /** Check now; resolves with the state once the check finishes. */
     check: () => Promise<UpdateState>
     /** Quit and install the downloaded update, then reopen BridgeClip. */
@@ -253,6 +255,7 @@ const api: BridgeClipAPI = {
   update: {
     getState: () => ipcRenderer.invoke('update:getState'),
     onState: (callback) => subscribe('update:state', callback),
+    onShow: (callback) => subscribe('update:show', () => callback()),
     check: () => ipcRenderer.invoke('update:check'),
     install: () => ipcRenderer.invoke('update:install'),
     moveToApplications: () => ipcRenderer.invoke('update:moveToApplications'),

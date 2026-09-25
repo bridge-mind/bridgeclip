@@ -21,7 +21,8 @@ import { UpdatesRow } from '../components/Updates'
 type SectionId = 'keys' | 'vocabulary' | 'output' | 'system' | 'about'
 type SectionTone = 'success' | 'warning' | 'danger' | 'idle'
 
-export function SettingsPage(): React.JSX.Element {
+/** `showUpdates` changes each time Help → Check for Updates… asks for the Updates row. */
+export function SettingsPage({ showUpdates = 0 }: { showUpdates?: number }): React.JSX.Element {
   const { outputDirectory, pythonPath, customVocabulary, openrouterConfigured, zernioConfigured, saving, save, toolStatus, toolError, checkTools, checkingTools } =
     useSettingsStore()
   const keys = useApiKeyDrafts()
@@ -60,6 +61,13 @@ export function SettingsPage(): React.JSX.Element {
     { id: 'about', label: 'About', icon: <Info />, tone: 'idle' }
   ]
   const [active, jump] = useActiveSection(sections.map((section) => section.id))
+  useEffect(() => {
+    if (!showUpdates) return
+    // After App's scroll-to-top for a page change, which runs after this effect.
+    const frame = requestAnimationFrame(() => jump('about'))
+    return () => cancelAnimationFrame(frame)
+    // Only a new request scrolls; jump is recreated on every render.
+  }, [showUpdates])
 
   const checks: { label: string; ok: boolean | null; detail: string; section: SectionId; optional?: boolean; tone?: 'danger' }[] = [
     { label: 'OpenRouter', ok: openrouterConfigured, detail: openrouterConfigured ? 'Key saved' : 'Needed to transcribe and pick clips', section: 'keys' },

@@ -31,7 +31,11 @@ export type UpdateState = Base & (
   | { status: 'up-to-date' }
   /** A newer version was found and is downloading in the background. */
   | { status: 'downloading'; version: string; progress: UpdateProgress | null }
-  /** Downloaded and verified: installs on restart, or the next time BridgeClip quits. */
+  /**
+   * Downloaded and checked against its SHA-512 (and on Windows, its signature):
+   * installs on restart, or the next time BridgeClip quits. On macOS, Squirrel
+   * checks the signature just after this; a failure there becomes 'error'.
+   */
   | { status: 'ready'; version: string }
   | { status: 'error'; message: string }
 )

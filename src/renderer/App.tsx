@@ -20,6 +20,8 @@ export default function App(): React.JSX.Element {
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
   const [page, setPage] = useState<Page>('clip')
+  /** Set when Help → Check for Updates… asks for Settings → About. */
+  const [showUpdates, setShowUpdates] = useState(0)
 
   const loadSettings = useSettingsStore((s) => s.load)
   const checkTools = useSettingsStore((s) => s.checkTools)
@@ -43,9 +45,15 @@ export default function App(): React.JSX.Element {
   // background. Subscribe first, then read it, so no change is missed.
   useEffect(() => {
     const api = getApi()
-    const unsubscribe = api.update.onState((state) => useUpdateStore.getState().set(state))
+    const unsubscribes = [
+      api.update.onState((state) => useUpdateStore.getState().set(state)),
+      api.update.onShow(() => {
+        setPage('settings')
+        setShowUpdates((count) => count + 1)
+      })
+    ]
     void api.update.getState().then((state) => useUpdateStore.getState().set(state)).catch(() => {})
-    return unsubscribe
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
   }, [])
 
   // ⌘1 Create, ⌘2 Library, ⌘3 Jobs, ⌘4 Accounts, ⌘5 Posts, ⌘6 Automations, ⌘, Settings,
@@ -85,7 +93,7 @@ export default function App(): React.JSX.Element {
           {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
           {page === 'posts' && <PostsPage onNavigate={setPage} />}
           {page === 'automations' && <AutomationsPage onNavigate={setPage} />}
-          {page === 'settings' && <SettingsPage />}
+          {page === 'settings' && <SettingsPage showUpdates={showUpdates} />}
         </Layout>
       ) : (
         <div className="app-backdrop drag flex h-screen items-center justify-center">

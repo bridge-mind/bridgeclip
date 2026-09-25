@@ -1,8 +1,8 @@
 import { app, BrowserWindow, Menu, shell } from 'electron'
-import { autoUpdater } from 'electron-updater'
 import { is } from '@electron-toolkit/utils'
 import { APP_NAME, ISSUES_URL, REPO_URL } from '../shared/brand'
 import { getLogFilePath } from './logger'
+import { checkForUpdatesFromMenu } from './auto-updater'
 
 export function createMenu(mainWindow: BrowserWindow): void {
   const isMac = process.platform === 'darwin'
@@ -63,9 +63,8 @@ export function createMenu(mainWindow: BrowserWindow): void {
           ? [
               {
                 label: 'Check for Updates…',
-                click: (): void => {
-                  autoUpdater.checkForUpdates().catch(() => {})
-                }
+                // Goes through the app's updater, which respects "updates off".
+                click: (): void => checkForUpdatesFromMenu()
               },
               { type: 'separator' as const }
             ]

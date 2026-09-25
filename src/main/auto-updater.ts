@@ -1,4 +1,4 @@
-import { app, ipcMain, powerMonitor, shell, type BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, powerMonitor, shell, type BrowserWindow, type MessageBoxSyncOptions } from 'electron'
 import { execFile } from 'child_process'
 import { resolve } from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -19,6 +19,8 @@ let getWindow: () => BrowserWindow | null = () => null
 let lastCheckedAt: string | null = null
 let state: UpdateState = { status: 'idle', currentVersion: app.getVersion(), lastCheckedAt }
 let checkInFlight: Promise<void> | null = null
+/** Settles once start() has decided whether this copy updates itself. */
+let started: Promise<void> = Promise.resolve()
 
 function publish(next: UpdateState): void {
   state = next
@@ -44,7 +46,7 @@ function macBundlePath(): string {
 function signedByBridgeMind(): Promise<boolean> {
   return new Promise((done) => {
     execFile('/usr/bin/codesign', ['--display', '--verbose=2', macBundlePath()], { timeout: 10_000 }, (error, _stdout, stderr) => {
-      done(!error && stderr.includes(`TeamIdentifier=${MAC_TEAM_ID}`) && stderr.includes('Authority=Developer ID Application: '))
+      done(!error && new RegExp(`^TeamIdentifier=${MAC_TEAM_ID}$`, 'm').test(stderr) && /^Authority=Developer ID Application: /m.test(stderr))
     })
   })
 }
@@ -63,11 +65,13 @@ async function updatesOffReason(): Promise<UpdatesOffReason | null> {
 }
 
 /**
- * One check at a time. With autoDownload on, a found update starts downloading
+ * One check at a time, and none until start() has decided that this copy
+ * updates itself. With autoDownload on, a found update starts downloading
  * right away; the events below move the state along.
  */
-function check(trigger: 'scheduled' | 'user' | 'resume'): Promise<void> {
-  if (state.status === 'off' || state.status === 'downloading' || state.status === 'ready') return Promise.resolve()
+async function check(trigger: 'scheduled' | 'user' | 'resume' | 'menu'): Promise<void> {
+  await started
+  if (state.status === 'off' || state.status === 'downloading' || state.status === 'ready') return
   if (checkInFlight) return checkInFlight
   logger.info('update.check', { trigger })
   publish({ ...base(), status: 'checking' })
@@ -107,8 +111,23 @@ function registerIpc(): void {
   handle('update:moveToApplications', () => {
     if (process.platform !== 'darwin' || state.status !== 'off' || state.reason !== 'move-to-applications') return false
     try {
-      // Moves the bundle and relaunches from /Applications on success.
-      return app.moveToApplicationsFolder()
+      // Moves the bundle and relaunches from /Applications on success. By
+      // default macOS would trash an existing copy there, which may be newer.
+      return app.moveToApplicationsFolder({
+        conflictHandler: (conflict) => {
+          if (conflict === 'existsAndRunning') return false
+          const options: MessageBoxSyncOptions = {
+            type: 'question',
+            buttons: ['Replace', 'Cancel'],
+            defaultId: 1,
+            cancelId: 1,
+            message: 'Replace the BridgeClip in your Applications folder?',
+            detail: 'Applications already has a copy of BridgeClip. Replacing it moves that copy to the Trash.'
+          }
+          const window = getWindow()
+          return (window ? dialog.showMessageBoxSync(window, options) : dialog.showMessageBoxSync(options)) === 0
+        }
+      })
     } catch (error) {
       logger.warn('update.move_failed', { code: errorCode(error) })
       return false
@@ -125,6 +144,9 @@ function registerIpc(): void {
 async function start(): Promise<void> {
   const reason = await updatesOffReason()
   if (reason) {
+    // Nothing may reach electron-updater's defaults (download, then install on quit).
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = false
     logger.info('update.off', { reason })
     publish({ ...base(), status: 'off', reason })
     return
@@ -162,8 +184,10 @@ async function start(): Promise<void> {
   autoUpdater.on('error', (error) => {
     const httpStatus = error && typeof error === 'object' && 'statusCode' in error ? Number((error as { statusCode: unknown }).statusCode) : null
     logger.warn('update.failed', { code: errorCode(error), httpStatus, during: state.status })
-    // A later failed check must not hide an update that is already downloaded.
-    if (state.status === 'ready') return
+    // Checks don't run once an update is ready, so an error then comes from
+    // installing it: on macOS, Squirrel verifies the signature only after
+    // electron-updater reports the download. Leaving "ready" up would offer a
+    // restart that does nothing, so report it and allow a fresh check.
     publish({ ...base(), status: 'error', message: updateErrorMessage(error) })
   })
 
@@ -182,6 +206,21 @@ async function start(): Promise<void> {
  */
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   getWindow = getMainWindow
+  // electron-updater defaults to downloading and installing on quit. Stay
+  // manual until start() has decided that this copy updates itself.
+  autoUpdater.autoDownload = false
+  autoUpdater.autoInstallOnAppQuit = false
   registerIpc()
-  void start()
+  started = start()
+}
+
+/** Help → Check for Updates…: check now and show the result in Settings → About. */
+export function checkForUpdatesFromMenu(): void {
+  const win = getWindow()
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.webContents.send('update:show')
+  }
+  void check('menu')
 }

@@ -38,7 +38,9 @@ test('update errors become short messages without URLs or paths', () => {
 
 // ---- PlatformGitHubProvider ------------------------------------------------
 
-function loadProvider({ latest, responses }) {
+const parseFeed = (raw, file, url) => ({ version: /version: (\S+)/.exec(raw)[1], files: [], path: file, sha512: 'x', from: url.href })
+
+function loadProvider({ latest, responses, parse = parseFeed }) {
   const requests = []
   class GitHubProvider {
     constructor(options) { this.options = options }
@@ -52,9 +54,7 @@ function loadProvider({ latest, responses }) {
   }
   const provider = loadModule('main/update-provider.ts', {
     'electron-updater/out/providers/GitHubProvider': { GitHubProvider },
-    'electron-updater/out/providers/Provider': {
-      parseUpdateInfo: (raw, file, url) => ({ version: /version: (\S+)/.exec(raw)[1], files: [], path: file, sha512: 'x', from: url.href })
-    }
+    'electron-updater/out/providers/Provider': { parseUpdateInfo: parse }
   })
   return { provider, requests }
 }
@@ -94,6 +94,29 @@ test('a latest release without this platform falls back to the newest release th
   assert.deepEqual(requests, [LISTING, result.from])
 })
 
+test('the fallback takes the highest version, not the first listed', async () => {
+  const { provider } = loadProvider({
+    latest: missingFeed,
+    responses: {
+      // GitHub lists by creation date: a patch for an older line can come first.
+      [LISTING]: JSON.stringify([release('v0.2.10', ['latest-mac.yml']), release('v0.3.0', ['latest.yml']), release('v0.2.9', ['latest-mac.yml']), release('v0.11.0', ['latest-mac.yml'])]),
+      'https://github.com/bridge-mind/bridgeclip/releases/download/v0.11.0/latest-mac.yml': 'version: 0.11.0\n'
+    }
+  })
+  assert.equal((await new provider.PlatformGitHubProvider({}, {}, {}).getLatestVersion()).tag, 'v0.11.0')
+})
+
+test('a fallback feed must describe its own release, and cannot replace its tag', async () => {
+  const listing = { [LISTING]: JSON.stringify([release('v0.2.1', ['latest-mac.yml'])]) }
+  const feedUrl = 'https://github.com/bridge-mind/bridgeclip/releases/download/v0.2.1/latest-mac.yml'
+  const mismatched = loadProvider({ latest: missingFeed, responses: { ...listing, [feedUrl]: 'version: 9.9.9\n' } })
+  await assert.rejects(new mismatched.provider.PlatformGitHubProvider({}, {}, {}).getLatestVersion(), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' })
+
+  // parseUpdateInfo keeps unknown keys, so a `tag:` in the yml must not win.
+  const tagged = loadProvider({ latest: missingFeed, responses: { ...listing, [feedUrl]: '' }, parse: () => ({ version: '0.2.1', tag: 'v6.6.6', files: [] }) })
+  assert.equal((await new tagged.provider.PlatformGitHubProvider({}, {}, {}).getLatestVersion()).tag, 'v0.2.1')
+})
+
 test('the fallback keeps the original error when no release ships this platform', async () => {
   const { provider } = loadProvider({ latest: missingFeed, responses: { [LISTING]: JSON.stringify([release('v0.3.0', ['latest.yml'])]) } })
   await assert.rejects(new provider.PlatformGitHubProvider({}, {}, {}).getLatestVersion(), { code: 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND' })
@@ -107,8 +130,11 @@ test('other update errors are not retried', async () => {
 
 // ---- auto-updater state machine ---------------------------------------------
 
-function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, codesign = 'Authority=Developer ID Application: BRIDGEMIND LLC (9CBJCDR3J2)\nTeamIdentifier=9CBJCDR3J2\n', exe = '/Applications/BridgeClip.app/Contents/MacOS/BridgeClip' } = {}) {
+const SIGNED = 'Executable=/Applications/BridgeClip.app/Contents/MacOS/BridgeClip\nAuthority=Developer ID Application: BRIDGEMIND LLC (9CBJCDR3J2)\nTeamIdentifier=9CBJCDR3J2\n'
+
+function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, codesign = SIGNED, holdCodesign = false, exe = '/Applications/BridgeClip.app/Contents/MacOS/BridgeClip' } = {}) {
   const handlers = {}
+  let releaseCodesign = null
   const sent = []
   const timers = []
   const opened = []
@@ -126,9 +152,16 @@ function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, co
       app: { getVersion: () => '0.1.17', isPackaged: packaged, getPath: () => exe, moveToApplicationsFolder: () => true },
       ipcMain: { handle: (channel, listener) => { handlers[channel] = listener } },
       powerMonitor: { on() {} },
-      shell: { openExternal: async (url) => { opened.push(url) } }
+      shell: { openExternal: async (url) => { opened.push(url) } },
+      dialog: { showMessageBoxSync: () => 1 }
     },
-    child_process: { execFile: (_cmd, _args, _options, callback) => callback(codesign ? null : new Error('not signed'), '', codesign || '') },
+    child_process: {
+      execFile: (_cmd, _args, _options, callback) => {
+        const answer = (result) => callback(result ? null : new Error('not signed'), '', result || '')
+        if (holdCodesign) releaseCodesign = answer
+        else answer(codesign)
+      }
+    },
     'electron-updater': { autoUpdater: updater },
     '@electron-toolkit/utils': { is: { dev } },
     '../shared/brand': brand,
@@ -142,12 +175,21 @@ function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, co
     setInterval: (fn) => { timers.push(fn); return timers.length },
     setImmediate: (fn) => fn()
   })
-  const window = { isDestroyed: () => false, webContents: { send: (channel, state) => sent.push({ channel, state }) } }
+  const window = {
+    shown: 0,
+    isDestroyed: () => false,
+    isMinimized: () => false,
+    restore() {},
+    show() { this.shown++ },
+    webContents: { send: (channel, state) => sent.push({ channel, state }) }
+  }
   return {
-    updater, timers, sent, opened,
+    updater, timers, sent, opened, window,
     init: async () => { moduleExports.initAutoUpdater(() => window); await flush() },
     invoke: (channel, ...args) => handlers[channel]({}, ...args),
-    last: () => sent.at(-1)?.state
+    menu: () => moduleExports.checkForUpdatesFromMenu(),
+    releaseCodesign: (result) => releaseCodesign(result),
+    last: () => sent.filter((message) => message.channel === 'update:state').at(-1)?.state
   }
 }
 
@@ -179,10 +221,43 @@ for (const [name, options, reason] of [
     assert.equal(state.reason, reason)
     assert.equal(t.updater.feed, null)
     assert.equal(t.timers.length, 0)
+    // electron-updater's own defaults would download and install on quit.
+    assert.equal(t.updater.autoDownload, false)
+    assert.equal(t.updater.autoInstallOnAppQuit, false)
     assert.equal((await t.invoke('update:check')).status, 'off')
+    t.menu()
+    await flush()
     assert.equal(t.updater.checks, 0)
+    assert.ok(t.sent.some((message) => message.channel === 'update:show'), 'the menu still opens Settings to say why')
   })
 }
+
+test('a check before the build is vetted waits for the decision, and never downloads', async () => {
+  const t = setup({ holdCodesign: true })
+  t.updater.nextCheck = async () => { throw new Error('checked before the build was vetted') }
+  const init = t.init()
+  assert.equal(t.updater.autoDownload, false)
+  assert.equal(t.updater.autoInstallOnAppQuit, false)
+  const pending = t.invoke('update:check')
+  t.menu()
+  t.releaseCodesign('')
+  await init
+  assert.equal((await pending).status, 'off')
+  await flush()
+  assert.equal(t.updater.checks, 0)
+})
+
+test('Help → Check for Updates… checks and shows the Updates row', async () => {
+  const t = setup()
+  await t.init()
+  t.updater.nextCheck = async () => { t.updater.emit('update-not-available', { version: '0.1.17' }); return {} }
+  t.menu()
+  await flush()
+  assert.equal(t.updater.checks, 1)
+  assert.equal(t.window.shown, 1)
+  assert.ok(t.sent.some((message) => message.channel === 'update:show'))
+  assert.equal(t.last().status, 'up-to-date')
+})
 
 test('Windows and Linux packages update without the macOS signature check', async () => {
   for (const platform of ['win32', 'linux']) {
@@ -216,15 +291,28 @@ test('a check that finds an update downloads it, then it is ready to install', a
   t.updater.emit('update-downloaded', { version: '0.1.18' })
   assert.equal(t.last().status, 'ready')
 
-  // A later failure (say, offline) must not hide the downloaded update.
-  t.updater.emit('error', Object.assign(new Error('offline'), { code: 'ENOTFOUND' }))
-  assert.equal((await t.invoke('update:getState')).status, 'ready')
-
   assert.equal(await t.invoke('update:install'), true)
   assert.deepEqual(t.updater.installs, [[false, true]])
 
   await t.invoke('update:openReleaseNotes')
   assert.deepEqual(t.opened, ['https://github.com/bridge-mind/bridgeclip/releases/tag/v0.1.18'])
+})
+
+test('an install failure after "ready" (Squirrel rejecting the signature) is reported and can be retried', async () => {
+  const t = setup()
+  await t.init()
+  t.updater.nextCheck = async () => {
+    t.updater.emit('update-available', { version: '0.1.18' })
+    t.updater.emit('update-downloaded', { version: '0.1.18' })
+    return { downloadPromise: Promise.resolve() }
+  }
+  assert.equal((await t.invoke('update:check')).status, 'ready')
+  t.updater.emit('error', Object.assign(new Error('Code signature did not pass validation'), { code: 'SQRLCodeSignatureErrorDomain' }))
+  const failed = await t.invoke('update:getState')
+  assert.equal(failed.status, 'error')
+  await assert.rejects(async () => t.invoke('update:install'), /No update is ready/)
+  await t.invoke('update:check')
+  assert.equal(t.updater.checks, 2)
 })
 
 test('up to date and failed checks report their result', async () => {
