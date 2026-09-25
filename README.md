@@ -84,6 +84,17 @@ BridgeClip finds its in-repo engine and virtual environment automatically. **Set
 
 On Linux, use system FFmpeg with the libass-backed `ass` filter (`ffmpeg -hide_banner -filters | grep -E '[[:space:]]ass[[:space:]]'`) and Python 3.12. Arch: `sudo pacman -S ffmpeg`. Skip `scripts/prepare-resources.sh` during development; it prepares macOS release resources. Linux development and tests are supported, but a self-contained Linux package is not yet available.
 
+For experimental Windows development, install Python 3.12 and FFmpeg with the `ass` filter on `PATH`, then use PowerShell:
+
+```powershell
+python -m venv engine/.venv
+engine/.venv/Scripts/python.exe -m pip install --require-hashes -r engine/requirements.lock
+npm ci
+npm run dev
+```
+
+The in-repo Windows virtual environment is detected automatically. Native Windows CI checks the engine, desktop modules, renderer, and production build. Tests that create file symlinks report a skip if Windows denies symlink creation; they run when the account has the required capability. Release-helper tests use Git Bash. Windows installers and signed updates remain outside the supported release workflow.
+
 The release workflow packages the in-repo engine and media tools into signed macOS builds. For local packaging, first run `bash scripts/prepare-resources.sh arm64` (or `x64` on Intel), then follow [the release guide](docs/RELEASING.md). Signing credentials are still required for a distributable build.
 
 ### First run and troubleshooting

@@ -257,7 +257,7 @@ TEST_FFMPEG_DIR = os.environ.get("TEST_FFMPEG_DIR") or os.path.dirname(shutil.wh
 
 
 def _ffmpeg_has(kind: str, name: str) -> bool:
-    binary = os.path.join(TEST_FFMPEG_DIR, "ffmpeg")
+    binary = os.path.join(TEST_FFMPEG_DIR, "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if not os.path.isfile(binary):
         return False
     listing = subprocess.run([binary, "-hide_banner", f"-{kind}"], capture_output=True, text=True).stdout
