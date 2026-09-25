@@ -2,7 +2,7 @@
   "name": "bridgeclip",
   "private": true,
   "productName": "BridgeClip",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "BridgeClip: open-source AI video clipping by BridgeMind. Turn long videos into captioned short-form clips, locally, with your own API keys.",
   "main": "./out/main/index.js",
   "author": "BridgeMind",
