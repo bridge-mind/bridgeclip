@@ -248,3 +248,6 @@ bridgeclip/scripts/release-ref.test.cjs
 bridgeclip/.github/CODEOWNERS
 bridgeclip/scripts/check-lockfile-integrity.cjs
 bridgeclip/scripts/check-lockfile-integrity.test.cjs
+bridgeclip/scripts/run-bridge-tests.cjs
+bridgeclip/scripts/run-bridge-tests.test.cjs
+bridgeclip/tests/support/symlinks.cjs
