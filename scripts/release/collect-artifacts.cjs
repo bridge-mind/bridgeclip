@@ -20,11 +20,15 @@ async function collect(root, output, version, sourceSha) {
     const directory = path.join(root, target)
     const doc = yaml.load(fs.readFileSync(path.join(directory, contract.metadata), 'utf8'))
     if (doc.version !== version) throw new Error(`Wrong ${target} version`)
+    const platform = target.startsWith('mac-') ? 'mac' : target.startsWith('windows-') ? 'win' : 'linux'
+    const expectedNames = new Set(contract.extensions.map(extension => `BridgeClip-${version}-${platform}-${target.split('-').at(-1)}.${extension}`))
+    for (const file of doc.files || []) {
+      if (!expectedNames.has(file.url)) throw new Error(`Unexpected ${target} updater entry: ${file.url}`)
+    }
     await verifyArtifacts(doc, directory)
     const docs = metadata.get(contract.metadata) || []
     docs.push(doc); metadata.set(contract.metadata, docs)
     for (const extension of contract.extensions) {
-      const platform = target.startsWith('mac-') ? 'mac' : target.split('-')[0] === 'windows' ? 'win' : 'linux'
       const name = `BridgeClip-${version}-${platform}-${target.split('-').at(-1)}.${extension}`
       const file = path.join(directory, name)
       if (!fs.lstatSync(file).isFile()) throw new Error(`Missing release asset ${name}`)

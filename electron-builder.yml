@@ -69,15 +69,12 @@ mac:
   identity: "BRIDGEMIND LLC (9CBJCDR3J2)"
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Each native CI job stages one architecture's Python and media binaries.
+  # Let the CLI architecture select these targets; an explicit arch list here
+  # would override it and package incompatible resources into the other app.
   target:
-    - target: dmg
-      arch:
-        - arm64
-        - x64
-    - target: zip
-      arch:
-        - arm64
-        - x64
+    - dmg
+    - zip
   # Credentials and APPLE_TEAM_ID are supplied by the protected release job.
   notarize: true
 
@@ -111,6 +108,9 @@ nsis:
   installerHeaderIcon: build/icon.ico
 
 linux:
+  # Builder otherwise expands x64 as x86_64 for AppImage and amd64 for DEB.
+  # Linux currently supports x64 only; keep one stable release naming contract.
+  artifactName: BridgeClip-${version}-linux-x64.${ext}
   executableName: bridgeclip
   category: AudioVideo
   icon: build/icon.png
