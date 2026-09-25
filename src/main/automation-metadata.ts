@@ -177,6 +177,7 @@ export async function generateAutomationMetadata(transcript: string, title: stri
     }, required: ['platform', 'caption', 'title', 'tags', 'categoryId', 'topicTag', 'evidence'] } } }, required: ['posts']
   }
   const rules = {
+    tiktok: 'No separate title. Write a specific, accurate video caption ≤2200 characters with the subject or payoff in the first sentence. Use at most 3 relevant hashtags, never generic FYP promises. No topicTag. The user will review and may edit this caption before it is queued.',
     youtube: 'Separate accurate title ≤100 characters (aim 40–70 only when natural), unique description ≤5000 UTF-8 bytes. Put one or two principal topic terms naturally in the title and opening description lines; no keyword stuffing. Use 0–5 accurate backend tags, mainly variants/misspellings, and select the truthful categoryId: 1 Film, 10 Music, 20 Gaming, 22 People & Blogs, 24 Entertainment, 27 Education, 28 Science & Technology. If uncertain use 22. No topicTag.',
     instagram: 'No separate title. Reel caption ≤2200 characters. Put the specific point in the first 125 characters; use 1–3 short sentences when sufficient (roughly 100–300 characters is a starting point). At most 3 relevant hashtags; no generic discovery promises. No topicTag.',
     twitter: 'No separate title. One conversational, self-contained point ≤280 X-weighted characters; aim shorter when possible. Use 0–2 relevant hashtags only if useful. No topicTag.',

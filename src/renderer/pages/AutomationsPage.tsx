@@ -1,7 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, Clock3, FileVideo2, Globe2, Pencil, Play, Plus, RefreshCw, Sparkles, Trash2, Workflow, X } from 'lucide-react'
-import { AUTOMATION_PLATFORMS, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate } from '../../shared/automations'
+import { AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate } from '../../shared/automations'
 import { isPostableAccount, isValidProfileName } from '../../shared/zernio'
+import { AutomationTikTokReviewDialog } from '../components/AutomationTikTokReviewDialog'
 import { PlatformIcon, platformName } from '../components/PlatformIcon'
 import { Badge, StatusDot } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -71,7 +72,7 @@ const CONTENT_STATUS: Record<AutomationContentStatus, { label: string; tone: 'id
   needs_review: { label: 'Needs review', tone: 'warning' }
 }
 
-type ContentFilter = 'all' | 'queued' | 'posted' | 'needs_review'
+type ContentFilter = 'all' | 'queued' | 'ready' | 'tiktok_review' | 'posted' | 'needs_review'
 
 interface ConfirmRequest {
   title: string
@@ -99,8 +100,10 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: string; title: string; caption: string } | null>(null)
+  const [tiktokReview, setTiktokReview] = useState<AutomationContent | null>(null)
   const [filter, setFilter] = useState<ContentFilter>('all')
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
+  const closeConfirm = useCallback(() => setConfirm(null), [])
   const selected = automations.find((automation) => automation.id === selectedId) ?? null
   const aiKeysMissing = !writingConfigured
 
@@ -140,7 +143,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
     setSelectedId(automation?.id ?? null)
     rememberSelection(automation?.id ?? null)
     setDraft(automation ? draftFor(automation) : null)
-    setEditing(null); setFilter('all'); setNewProfileOpen(false)
+    setEditing(null); setTiktokReview(null); setFilter('all'); setNewProfileOpen(false)
   }
 
   const mutate = async (action: string, request: () => Promise<Automation[]>, success?: string): Promise<Automation[] | null> => {
@@ -179,7 +182,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
 
   const runNow = async (): Promise<void> => {
     if (!selected) return
-    const nextClip = selected.content.find((item) => item.status === 'queued')
+    const nextClip = nextAutomationContent(selected)
     if (!nextClip) return
     const result = await mutate('run', () => getApi().automations.run(selected.id))
     const updated = result?.find((automation) => automation.id === selected.id)
@@ -272,15 +275,21 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
     )
   }
 
+  const nextClip = selected ? nextAutomationContent(selected) : undefined
   const queued = selected?.content.filter((item) => item.status === 'queued') ?? []
   const counts: Record<ContentFilter, number> = {
     all: selected?.content.length ?? 0,
     queued: queued.length,
+    ready: queued.filter((item) => !needsTikTokReview(selected!, item)).length,
+    tiktok_review: queued.filter((item) => needsTikTokReview(selected!, item)).length,
     posted: selected?.content.filter((item) => item.status === 'posted').length ?? 0,
     needs_review: selected?.content.filter((item) => item.status === 'needs_review').length ?? 0
   }
-  const visibleContent = selected?.content.filter((item) => filter === 'all' || item.status === filter ||
-    (filter === 'queued' && item.status === 'posting')) ?? []
+  const visibleContent = selected?.content.filter((item) => {
+    if (filter === 'ready') return item.status === 'queued' && !needsTikTokReview(selected, item)
+    if (filter === 'tiktok_review') return item.status === 'queued' && needsTikTokReview(selected, item)
+    return filter === 'all' || item.status === filter || (filter === 'queued' && item.status === 'posting')
+  }) ?? []
   const savedReady = selected ? !missingSetup(selected) && !(selected.metadataMode === 'ai' && aiKeysMissing) : false
   const profileName = profiles.find((profile) => profile.id === selected?.profileId)?.name
 
@@ -369,8 +378,8 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                       variant="secondary"
                       icon={<Play className="h-3.5 w-3.5" />}
                       loading={busy === 'run'}
-                      disabled={Boolean(busy) || queued.length === 0}
-                      title={queued.length === 0 ? 'Add a clip to the content bank first' : 'Post the next queued clip now'}
+                      disabled={Boolean(busy) || !nextClip || dirty}
+                      title={dirty ? 'Save automation changes first' : !nextClip ? 'Add a clip and complete any TikTok reviews first' : 'Post the next ready clip now'}
                       onClick={() => void runNow()}
                     >Run now</Button>
                     <Button variant="ghost" iconOnly aria-label={`Delete ${selected.name}`} title="Delete automation" icon={<Trash2 className="h-4 w-4" />} disabled={Boolean(busy)} onClick={remove} />
@@ -378,7 +387,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                 </div>
 
                 <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Stat label="Queued" value={String(counts.queued)} hint={counts.queued === 1 ? 'clip' : 'clips'} />
+                  <Stat label="Ready to post" value={String(counts.ready)} hint={counts.tiktok_review ? `${counts.tiktok_review} need TikTok review` : `${counts.queued} queued`} hintTone={counts.tiktok_review ? 'warning' : undefined} />
                   <Stat label="Submitted" value={String(counts.posted)} hint={counts.needs_review ? `${counts.needs_review} to review` : undefined} hintTone={counts.needs_review ? 'warning' : undefined} />
                   <Stat label="Next run" value={selected.enabled ? nextRunLabel(selected.times, selected.timezone) ?? '—' : 'Paused'} />
                   <Stat label="Last run" value={selected.lastRunAt ? formatRelativeDate(selected.lastRunAt) : 'Never'} />
@@ -433,7 +442,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                         <Button size="sm" variant="ghost" icon={<Plus className="h-3.5 w-3.5" />} disabled={Boolean(busy)} onClick={() => void connectAccount()}>Connect</Button>
                       </div>
                       {connected.length === 0 ? (
-                        <p className="mt-2 rounded-xl glass-well px-3 py-3 text-xs text-ink-muted">No supported accounts in this profile yet. Connect Instagram, YouTube, X, Facebook, LinkedIn or Threads.</p>
+                        <p className="mt-2 rounded-xl glass-well px-3 py-3 text-xs text-ink-muted">No supported accounts in this profile yet. Connect TikTok, Instagram, YouTube, X, Facebook, LinkedIn or Threads.</p>
                       ) : (
                         <div className="mt-2 grid gap-1.5">
                           {connected.map((account) => {
@@ -464,7 +473,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                         </div>
                       )}
                       {accounts.some((account) => account.profileId === draft.profileId && account.platform === 'tiktok') && (
-                        <p className="mt-2 text-2xs text-ink-subtle">TikTok needs choices and consent for every post, so post to it from the manual flow.</p>
+                        <p className="mt-2 text-2xs text-ink-subtle">TikTok is supported. Review each clip in the content bank once; approved clips post automatically at your daily times.</p>
                       )}
                     </div>
                   )}
@@ -508,7 +517,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                   <SettingRow
                     className="mt-3"
                     title="Write captions with AI"
-                    description="When enabled, OpenRouter transcribes each clip with MAI Transcribe 2 and writes captions that publish automatically without review. AI can make mistakes; leave this off to use your own captions."
+                    description="When enabled, OpenRouter transcribes each clip with MAI Transcribe 2 and writes platform-specific captions. TikTok captions are prepared for your review before the clip can post; other platforms publish automatically. AI can make mistakes; leave this off to use your own captions."
                     control={<Switch checked={draft.metadataMode === 'ai'} onChange={(on) => setDraft({ ...draft, metadataMode: on ? 'ai' : 'manual' })} label="Write captions with AI" />}
                   />
                   {draft.metadataMode === 'ai' && aiKeysMissing && (
@@ -535,7 +544,7 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                 <PanelHeader
                   icon={<IconTile><FileVideo2 /></IconTile>}
                   title="Content bank"
-                  description="The oldest queued clip posts first. Clips stay here after they post."
+                  description="The oldest ready clip posts first. Clips awaiting TikTok review are skipped until approved."
                   action={<Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} loading={busy === 'upload'} onClick={() => void mutate('upload', () => getApi().automations.addContent(selected.id), 'Clips added to the bank.')} disabled={Boolean(busy)}>Add clips</Button>}
                 />
                 {selected.content.length > 0 && (
@@ -547,7 +556,8 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                     onChange={setFilter}
                     options={[
                       { value: 'all', label: `All ${counts.all}` },
-                      { value: 'queued', label: `Queued ${counts.queued}` },
+                      { value: 'ready', label: `Ready ${counts.ready}` },
+                      ...((counts.tiktok_review || filter === 'tiktok_review') ? [{ value: 'tiktok_review' as const, label: `TikTok review ${counts.tiktok_review}` }] : []),
                       { value: 'posted', label: `Submitted ${counts.posted}` },
                       ...(counts.needs_review ? [{ value: 'needs_review' as const, label: `Review ${counts.needs_review}` }] : [])
                     ]}
@@ -565,7 +575,11 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                     <ContentRow
                       key={item.id}
                       item={item}
-                      nextUp={item.id === queued[0]?.id}
+                      nextUp={item.id === nextClip?.id}
+                      tiktokReviewNeeded={item.status === 'queued' && needsTikTokReview(selected, item)}
+                      tiktokSelected={selected.accounts.some((account) => account.platform === 'tiktok')}
+                      onReviewTikTok={() => setTiktokReview(item)}
+                      reviewDisabled={dirty || editing?.id === item.id}
                       editing={editing?.id === item.id ? editing : null}
                       busy={Boolean(busy)}
                       onEdit={() => setEditing(editing?.id === item.id ? null : { id: item.id, title: item.title, caption: item.caption })}
@@ -593,7 +607,11 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
         </div>
       )}
 
-      {confirm && <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />}
+      {selected && tiktokReview && <AutomationTikTokReviewDialog key={tiktokReview.id} automationId={selected.id} contentId={tiktokReview.id} title={tiktokReview.title}
+        onPrepared={() => setAutomations((current) => current.map((automation) => automation.id === selected.id
+          ? { ...automation, content: automation.content.map((item) => item.id === tiktokReview.id ? { ...item, tiktokApproval: null } : item) } : automation))}
+        onClose={() => { setTiktokReview(null); void mutate('refresh', () => getApi().automations.list()); }} onApproved={(result) => { setAutomations(result); setTiktokReview(null); setNotice('TikTok review saved. This clip is ready for the automation.'); }} />}
+      {confirm && <ConfirmDialog request={confirm} onClose={closeConfirm} />}
     </Page>
   )
 }
@@ -612,7 +630,9 @@ function AutomationBadge({ automation }: { automation: Automation }): React.JSX.
 
 function AutomationRow({ automation, selected, onSelect }: { automation: Automation; selected: boolean; onSelect: () => void }): React.JSX.Element {
   const state = automationState(automation)
-  const queued = automation.content.filter((item) => item.status === 'queued').length
+  const queued = automation.content.filter((item) => item.status === 'queued')
+  const ready = queued.filter((item) => !needsTikTokReview(automation, item)).length
+  const pending = queued.length - ready
   const next = automation.enabled ? nextRunLabel(automation.times, automation.timezone) : null
   return (
     <button
@@ -625,7 +645,7 @@ function AutomationRow({ automation, selected, onSelect }: { automation: Automat
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-ink">{automation.name}</span>
         <span className="mt-0.5 block truncate text-2xs text-ink-subtle">
-          {state.label} · {queued} queued{next ? ` · ${next}` : ''}
+          {state.label} · {ready} ready{pending ? ` · ${pending} to review` : next ? ` · ${next}` : ''}
         </span>
       </span>
     </button>
@@ -692,9 +712,13 @@ function SetupChecklist({ steps }: { steps: { label: string; done: boolean; acti
   )
 }
 
-function ContentRow({ item, nextUp, editing, busy, onEdit, onChange, onSave, onReturnToQueue, onRemove, onCheckPosts }: {
+function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReviewTikTok, reviewDisabled, editing, busy, onEdit, onChange, onSave, onReturnToQueue, onRemove, onCheckPosts }: {
   item: AutomationContent
   nextUp: boolean
+  tiktokReviewNeeded: boolean
+  tiktokSelected: boolean
+  onReviewTikTok: () => void
+  reviewDisabled: boolean
   editing: { id: string; title: string; caption: string } | null
   busy: boolean
   onEdit: () => void
@@ -705,12 +729,12 @@ function ContentRow({ item, nextUp, editing, busy, onEdit, onChange, onSave, onR
   onCheckPosts: () => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const status = CONTENT_STATUS[item.status]
+  const status = tiktokReviewNeeded ? { label: 'Needs TikTok review', tone: 'warning' as const } : CONTENT_STATUS[item.status]
   const hasDetails = Boolean(item.generatedMetadata || item.transcript)
   return (
     <li className={cn('glass-tile rounded-2xl p-2', (editing || open) && 'bg-white/[0.06]')}>
       <div className="flex items-center gap-3">
-        <IconTile size="lg" tone={item.status === 'needs_review' ? 'warning' : 'neutral'}><FileVideo2 /></IconTile>
+        <IconTile size="lg" tone={item.status === 'needs_review' || tiktokReviewNeeded ? 'warning' : 'neutral'}><FileVideo2 /></IconTile>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-medium text-ink">{item.title}</p>
@@ -718,12 +742,15 @@ function ContentRow({ item, nextUp, editing, busy, onEdit, onChange, onSave, onR
           </div>
           <p className="mt-0.5 flex items-center gap-1.5 text-2xs text-ink-subtle">
             <StatusDot tone={status.tone} pulse={item.status === 'posting'} className="h-1.5 w-1.5 [&>span]:h-1.5 [&>span]:w-1.5" />
-            <span className={cn(item.status === 'needs_review' ? 'text-warning' : 'text-ink-muted')}>{status.label}</span>
+            <span className={cn(item.status === 'needs_review' || tiktokReviewNeeded ? 'text-warning' : 'text-ink-muted')}>{status.label}</span>
+            {item.status === 'queued' && tiktokSelected && !tiktokReviewNeeded && item.tiktokApproval && <span>· TikTok approved</span>}
+            {item.status === 'posted' && item.tiktokApproval?.options.draft && <span>· Sent to TikTok inbox</span>}
             <span aria-hidden>·</span>
             <span className="truncate">{item.postedAt ? `Posted ${formatRelativeDate(item.postedAt)}` : `Added ${formatRelativeDate(item.addedAt)}`}</span>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          {item.status === 'queued' && tiktokSelected && <Button size="sm" variant="secondary" onClick={onReviewTikTok} disabled={busy || reviewDisabled} title={reviewDisabled ? 'Save automation changes and finish editing this clip first' : undefined}>{tiktokReviewNeeded ? 'Review TikTok' : 'Edit TikTok'}</Button>}
           {hasDetails && <Button size="sm" variant="ghost" aria-expanded={open} trailingIcon={<ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />} onClick={() => setOpen(!open)}>AI details</Button>}
           <Button size="sm" variant="ghost" iconOnly aria-label={editing ? 'Close editor' : `Edit ${item.title}`} title="Edit title and caption" icon={editing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />} onClick={onEdit} />
           <Button size="sm" variant="ghost" iconOnly aria-label={`Remove ${item.title}`} title="Remove from bank" icon={<Trash2 className="h-3.5 w-3.5" />} disabled={busy} onClick={onRemove} />
