@@ -80,6 +80,28 @@ test('automation imports require prior media authorization for files outside the
   } finally { cleanup() }
 })
 
+test('a failed batch import leaves no copied clips to duplicate on retry', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-bank-batch-')
+  try {
+    const library = path.join(dir, 'library')
+    fs.mkdirSync(library)
+    const clip = path.join(library, 'clip.mp4')
+    const unsupported = path.join(library, 'notes.txt')
+    fs.writeFileSync(clip, 'clip bytes')
+    fs.writeFileSync(unsupported, 'not a clip')
+    const main = loadMain("export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'; export { workspaceId } from './src/main/zernio/workspace-cache'", { electron: fakeElectron(dir).electron })
+    main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3', customVocabulary: '' })
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    const [automation] = main.automations.createAutomation('Batch import')
+    await assert.rejects(main.automations.addAutomationContent(automation.id, [clip, unsupported]), /Invalid media path/)
+    assert.equal(main.automations.listAutomations()[0].content.length, 0)
+    const bank = path.join(dir, 'userData', 'automation-bank', main.workspaceId(KEY), automation.id)
+    assert.deepEqual(fs.readdirSync(bank), [])
+    await main.automations.addAutomationContent(automation.id, [clip])
+    assert.equal(main.automations.listAutomations()[0].content.length, 1)
+  } finally { cleanup() }
+})
+
 test('a key switch during an automation import cannot overwrite the old workspace', async () => {
   const { dir, cleanup } = tempDir('bridgeclip-bank-key-switch-')
   try {
@@ -191,7 +213,7 @@ test('a reviewed uncertain post can return to the queue after its replay window 
     await main.automations.runAutomation(created.id)
     assert.equal(mock.requestsTo('POST', '/api/v1/posts').length, 3, 'uncertain posts never retry automatically')
     const oldAttemptId = uncertain.content[0].id
-    const journal = path.join(dir, 'userData', 'zernio-post-attempts.json')
+    const journal = path.join(dir, 'userData', `zernio-post-attempts-${require('node:crypto').createHash('sha256').update(KEY).digest('hex')}.json`)
     assert.ok(JSON.parse(fs.readFileSync(journal, 'utf8')).attempts.some(([id]) => id === oldAttemptId))
 
     Date.now = () => realNow() + 5 * 60_000
@@ -345,7 +367,7 @@ test('bank clips publish once to selected accounts and keep their used state aft
     assert.ok(partial.content[1].postId, 'the partial post is linked for review')
     assert.throws(() => restarted.automations.updateAutomationContent(created.id, partial.content[1].id, {
       title: partial.content[1].title, caption: 'Must not be saved', returnToQueue: true
-    }), /Use Posts on Accounts/)
+    }), /Open Posts/)
     assert.equal(restarted.automations.listAutomations()[0].content[1].caption, partial.content[1].caption,
       'a rejected return does not change the clip in memory')
     await restarted.automations.runAutomation(created.id)

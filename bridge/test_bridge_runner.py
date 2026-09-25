@@ -133,6 +133,34 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(bridge.main(), 1)
         self.assertEqual(json.loads(output.getvalue())["type"], "error")
 
+    def test_advanced_models_are_applied_before_cached_settings_load(self):
+        observed = []
+        keys = ("CLIPPING_MODE", "PLANNER_MODEL", "ADVANCED_TRANSCRIPTION_MODEL", "PLANNER_FALLBACK_MODELS", "PLANNER_MAX_OUTPUT_TOKENS", "PLANNER_SUPPORTS_IMAGES")
+        def get_settings():
+            observed.append({key: os.environ.get(key) for key in keys})
+            return types.SimpleNamespace(openrouter_api_key=None)
+        modules = {
+            "clip_engine.config": types.SimpleNamespace(get_settings=get_settings, get_caption_preset=lambda name: None),
+            "clip_engine.bridge_contract": types.SimpleNamespace(BRIDGE_CONTRACT_VERSION=2),
+            "clip_engine.logging_safety": types.SimpleNamespace(install_safe_logging=lambda: None),
+            "clip_engine.services.ai_clipping_pipeline": types.SimpleNamespace(AIClippingPipeline=None, ClippingJobRequest=None, JobStatus=None),
+        }
+        config = self.config(clipping_mode="advanced", planner_model="vendor/planner", transcription_model="vendor/speech",
+                             planner_max_output_tokens=8192, planner_supports_images=False)
+        with patch.dict(sys.modules, modules), patch.dict(os.environ, {}, clear=True), redirect_stdout(io.StringIO()):
+            self.assertFalse(asyncio.run(bridge.run(config)))
+        self.assertEqual(observed, [dict(zip(keys, ["advanced", "vendor/planner", "vendor/speech", "", "8192", "false"]))])
+
+    def test_advanced_model_ids_and_capabilities_are_validated(self):
+        config = self.config(clipping_mode="advanced", planner_model="vendor/planner", transcription_model="vendor/speech")
+        self.assertEqual(bridge.validate_config(config), config)
+        for patch_values in [{"planner_model": ""}, {"transcription_model": None}, {"planner_model": "a/b,c/d"},
+                             {"planner_model": "vendor/model\n"}, {"planner_model": "https://example.com/model"},
+                             {"planner_max_output_tokens": 32001}, {"planner_supports_images": "true"},
+                             {"planner_input_price": float("nan")}, {"clipping_mode": "quality"}]:
+            with self.subTest(patch=patch_values), self.assertRaises(ValueError):
+                bridge.validate_config({**config, **patch_values})
+
     def test_stdin_transport_and_size_limit(self):
         async def success(config):
             return True
@@ -172,7 +200,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(empty["message"], "BridgeClip couldn't find any clips in this video.")
         self.assertEqual(bridge.describe_failure("Transcription authentication failed")["message"], "OpenRouter rejected the transcription request.")
         self.assertEqual(bridge.describe_failure("Transcription account credit limit reached")["message"], "OpenRouter could not transcribe the video because the account has insufficient credit or a spending limit.")
-        self.assertEqual(bridge.describe_failure("Transcription providers are temporarily rate limited")["message"], "Transcription providers are busy after automatic retries and fallback attempts.")
+        self.assertEqual(bridge.describe_failure("Transcription providers are temporarily rate limited")["message"], "Transcription providers are busy after automatic recovery attempts.")
         self.assertEqual(bridge.describe_failure("Transcription service unavailable")["message"], "OpenRouter could not be reached for transcription.")
         self.assertEqual(bridge.describe_failure("Transcription request rejected by provider")["message"], "OpenRouter rejected the transcription audio request.")
         self.assertEqual(bridge.describe_failure("Transcription response lacked word timestamps")["message"], "OpenRouter returned a transcript without word timestamps.")

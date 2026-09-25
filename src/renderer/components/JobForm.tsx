@@ -16,6 +16,9 @@ import { IconTile } from './ui/IconTile'
 import { SettingRow } from './ui/SettingRow'
 import { onRadioKeyDown } from './ui/Segmented'
 import { DURATION_OPTIONS, VIDEO_SPEED_OPTIONS } from '../../shared/job-contract'
+import { isModelId } from '../../shared/openrouter-models'
+import { useModelStore } from '../store/use-model-store'
+import { ModelPicker } from './ModelPicker'
 
 const DURATIONS = DURATION_OPTIONS
 
@@ -58,12 +61,13 @@ export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; 
   return {
     videoUrl: normalizeVideoSource(draft.source),
     clippingMode: draft.clippingMode,
+    ...(draft.clippingMode === 'advanced' ? { plannerModel: draft.plannerModel, transcriptionModel: draft.transcriptionModel } : {}),
     maxClips: draft.autoClipCount ? null : draft.maxClips,
     autoClipCount: draft.autoClipCount,
     durationRanges: draft.durations.length > 0 ? draft.durations : null,
     aspectRatio: draft.aspectRatio,
     layoutStyle: draft.layoutStyle,
-    layoutVision: draft.clippingMode === 'quality' && draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
+    layoutVision: draft.clippingMode !== 'economy' && draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
     pacing: draft.pacing,
     videoSpeed: draft.videoSpeed ?? 1,
     includeCaptions: draft.includeCaptions,
@@ -105,8 +109,9 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
   const meta = WIZARD_STEPS[index]
   const sourceError = twitchSourceError(draft.source)
   const hasSource = Boolean(draft.source.trim()) && !sourceError
-  const stepValid = step === 'video' ? hasSource && !trim.error : true
-  const canSubmit = hasSource && !blockedReason && !trim.error && !submitting && !draft.started
+  const modelsValid = draft.clippingMode !== 'advanced' || (isModelId(draft.plannerModel) && isModelId(draft.transcriptionModel))
+  const stepValid = step === 'video' ? hasSource && !trim.error : step !== 'clips' || modelsValid
+  const canSubmit = hasSource && modelsValid && !blockedReason && !trim.error && !submitting && !draft.started
 
   const submit = (): void => {
     if (canSubmit) onSubmit(buildJobRequest(draft, trim))
@@ -160,7 +165,7 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
           </Button>
         ) : <span />}
         <p className="min-w-0 flex-1 truncate text-center text-2xs text-ink-subtle">
-          {blockedReason ?? (step === 'video' && !hasSource ? 'Add a video to continue.' : `${MOD_KEY}↵ generates from any step`)}
+          {blockedReason ?? (!modelsValid ? 'Choose both models in Advanced mode.' : step === 'video' && !hasSource ? 'Add a video to continue.' : `${MOD_KEY}↵ generates from any step`)}
         </p>
         {next && step !== 'review' ? (
           <div className="flex items-center gap-2">
@@ -336,7 +341,7 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
           {draft.layoutStyle === 'auto' && draft.clippingMode === 'economy' && (
             <p className="mt-2 text-2xs text-ink-subtle">AI vision checks are off in Economy mode.</p>
           )}
-          {draft.layoutStyle === 'auto' && draft.clippingMode === 'quality' && (
+          {draft.layoutStyle === 'auto' && draft.clippingMode !== 'economy' && (
             <SettingRow
               className="mt-2"
               title="Check tricky shots with AI vision"
@@ -386,10 +391,11 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
   return (
     <div className="space-y-4">
       <Group label="Clipping mode">
-        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Clipping mode">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Clipping mode">
           {([
             { id: 'quality', label: 'Quality', hint: 'Opus 5.5 planning · MAI Transcribe 2' },
-            { id: 'economy', label: 'Economy', hint: 'GLM 5.3 Flash planning · Whisper Turbo' }
+            { id: 'economy', label: 'Economy', hint: 'GLM 5.3 Flash planning · Whisper Turbo' },
+            { id: 'advanced', label: 'Advanced', hint: 'Choose your OpenRouter models' }
           ] as const).map((mode) => {
             const selected = draft.clippingMode === mode.id
             return <button key={mode.id} type="button" role="radio" aria-checked={selected} tabIndex={selected ? 0 : -1}
@@ -400,7 +406,8 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
             </button>
           })}
         </div>
-        <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. Transcription retries temporary errors and can fall back to Whisper Large V3, then MAI Transcribe 2. Clip choices and captions may be less accurate.</p>
+        {draft.clippingMode === 'advanced' ? <AdvancedModels draft={draft} update={update} /> :
+          <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. Transcription retries temporary errors and can fall back to Whisper Large V3, then MAI Transcribe 2. Clip choices and captions may be less accurate.</p>}
       </Group>
       <Group label="Clip length" aside={draft.durations.length === 0 ? 'Any length' : `${draft.durations.length} selected`}>
         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7" role="group" aria-label="Clip length options">
@@ -499,7 +506,7 @@ function ReviewStep({ draft, trim, onEdit }: {
     ? 'Any length'
     : DURATIONS.filter((d) => draft.durations.includes(d.id)).map((d) => d.range).join(', ')
   const framing = draft.aspectRatio === '9:16'
-    ? `${LAYOUT_STYLES.find((s) => s.id === draft.layoutStyle)?.label ?? 'Smart'} framing${draft.clippingMode === 'quality' && draft.layoutStyle === 'auto' && draft.layoutVision ? ' · AI vision' : ''}`
+    ? `${LAYOUT_STYLES.find((s) => s.id === draft.layoutStyle)?.label ?? 'Smart'} framing${draft.clippingMode !== 'economy' && draft.layoutStyle === 'auto' && draft.layoutVision ? ' · AI vision' : ''}`
     : 'Whole frame'
   const trimLabel = draft.trimOpen && (trim.start != null || trim.end != null)
     ? ` · ${trim.start != null ? formatSeconds(trim.start) : 'start'} to ${trim.end != null ? formatSeconds(trim.end) : 'end'}`
@@ -510,10 +517,13 @@ function ReviewStep({ draft, trim, onEdit }: {
     { step: 'format', label: 'Format', value: `${FORMATS.find((f) => f.id === draft.aspectRatio)?.label ?? draft.aspectRatio} ${draft.aspectRatio} · ${framing}` },
     { step: 'format', label: 'Pacing', value: draft.pacing === 'tight' ? 'Cut dead air' : 'Keep pauses' },
     { step: 'format', label: 'Speed', value: `${draft.videoSpeed ?? 1}×${(draft.videoSpeed ?? 1) === 1 ? ' · Normal' : ' · All exported clips'}` },
-    { step: 'clips', label: 'Mode', value: draft.clippingMode === 'economy' ? 'Economy · lower cost' : 'Quality · higher accuracy' },
+    { step: 'clips', label: 'Mode', value: draft.clippingMode === 'advanced' ? 'Advanced · custom models' : draft.clippingMode === 'economy' ? 'Economy · lower cost' : 'Quality · higher accuracy' },
     { step: 'clips', label: 'Clips', value: `${lengths}${(draft.videoSpeed ?? 1) > 1 && draft.durations.length > 0 ? ' of source footage' : ''} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
     { step: 'captions', label: 'Captions', value: draft.includeCaptions ? CAPTION_PRESET_NAMES[draft.captionPreset] ?? draft.captionPreset : 'Off' }
   ]
+  if (draft.clippingMode === 'advanced') rows.splice(5, 0,
+    { step: 'clips', label: 'Transcribe', value: draft.transcriptionModel || 'Choose a model' },
+    { step: 'clips', label: 'Plan', value: draft.plannerModel || 'Choose a model' })
 
   return (
     <div className="space-y-3">
@@ -568,6 +578,23 @@ function StartedPanel({ className, onViewJob }: { className?: string; onViewJob?
       </div>
     </Panel>
   )
+}
+
+function AdvancedModels({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
+  const { catalog, loading, error, load } = useModelStore()
+  useEffect(() => { void load() }, [load])
+  return <div className="mt-3 space-y-4 rounded-xl border border-white/10 p-3">
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-xs text-ink-muted">Search OpenRouter’s live model catalog.</p>
+      <Button size="sm" variant="ghost" loading={loading} disabled={loading} onClick={() => void load(true)}>Refresh models</Button>
+    </div>
+    {error && <p role="alert" className="text-xs text-danger">{error}</p>}
+    <ModelPicker task="transcription" models={catalog?.transcription ?? []} value={draft.transcriptionModel} loading={loading}
+      onChange={(transcriptionModel) => update({ transcriptionModel })} />
+    <ModelPicker task="planning" models={catalog?.planning ?? []} value={draft.plannerModel} loading={loading}
+      onChange={(plannerModel) => update({ plannerModel })} />
+    <p className="text-2xs text-ink-subtle">Temporary errors are retried with your selected models. No automatic model switching. Usage bills your OpenRouter account. Optional AI framing checks use Gemini and can be changed in Format.</p>
+  </div>
 }
 
 function formatSeconds(total: number): string {

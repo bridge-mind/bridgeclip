@@ -1,12 +1,12 @@
 import lockupUrl from '../../../../resources/bridgeclip-logo.svg'
-import iconUrl from '../../../../resources/bridgeclip-icon.svg'
+import iconUrl from '../../../../resources/bridgeclip-icon-small.svg'
 import markUrl from '../../../../resources/bridgemind-mark.svg'
 import { cn } from '../../lib/utils'
 
 interface BridgeClipLogoProps {
   /**
    * lockup: BridgeMind mark + "BridgeClip" wordmark (artwork is for dark surfaces).
-   * icon:   the app icon tile, crop brackets and trim bar around the mark.
+   * icon:   the app icon tile, a clip/play emblem in BridgeMind gold and cyan.
    * mark:   the mark alone, for tight spaces such as the collapsed sidebar.
    */
   variant?: 'lockup' | 'icon' | 'mark'
@@ -16,7 +16,7 @@ interface BridgeClipLogoProps {
 }
 
 /**
- * BridgeClip brand artwork. Regenerate the SVGs with
+ * BridgeClip brand artwork. Regenerate the exports with
  * scripts/icon/build-logo.py (lockup) and scripts/icon/build-icons.sh (icon).
  */
 export function BridgeClipLogo({ variant = 'lockup', className, alt = 'BridgeClip' }: BridgeClipLogoProps): React.JSX.Element {

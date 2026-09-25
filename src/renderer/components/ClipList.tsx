@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, Check, Clapperboard, CircleDollarSign, Clock3, Download, FolderOpen, ListPlus, Plus, Send, Timer } from 'lucide-react'
-import { basename, cn, errorMessage, formatDuration, formatTimecode, formatUsd } from '../lib/utils'
+import { ArrowLeft, Check, Clapperboard, Download, FolderOpen, ListPlus, Plus, Send } from 'lucide-react'
+import { basename, cn, errorMessage } from '../lib/utils'
 import { getApi } from '../lib/ipc'
 import { clipFilePath } from '../lib/thumbnails'
 import type { ApiCosts, ClipArtifact, JobOutput } from '../store/use-job-store'
 import { ClipCard } from './ClipCard'
+import { RunStats } from './RunStats'
 import { AddToAutomationDialog } from './AddToAutomationDialog'
 import { PostDialog, type PostableClip } from './PostDialog'
 import { Page } from './ui/Page'
@@ -13,7 +14,6 @@ import { Button } from './ui/Button'
 import { Checkbox } from './ui/Checkbox'
 import { EmptyState } from './ui/EmptyState'
 import { Callout } from './ui/Callout'
-import { IconTile } from './ui/IconTile'
 import { Segmented } from './ui/Segmented'
 import type { Page as AppPage } from './Sidebar'
 
@@ -127,7 +127,6 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
   }
 
   const costs = readCosts(output.metrics?.api_costs)
-  const hasCosts = costs !== null
   const framingNotice = framingProblem(output, vertical)
   const analysisNotice = sourceAnalysisNotice(output)
 
@@ -137,20 +136,15 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
         leading={leading}
         eyebrow={leading ? undefined : 'Your clips'}
         title={output.source_video_title || 'Untitled video'}
-        description={
-          output.created_at
-            ? `Generated ${new Date(output.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`
-            : undefined
-        }
         actions={
           <>
             {outputDir && (
-              <Button icon={<FolderOpen className="h-4 w-4" />} onClick={() => getApi().shell.openPath(outputDir)}>
+              <Button icon={<FolderOpen className="h-3.5 w-3.5" />} onClick={() => getApi().shell.openPath(outputDir)}>
                 Open folder
               </Button>
             )}
             {onNewClip && (
-              <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={onNewClip}>
+              <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />} onClick={onNewClip}>
                 New clip
               </Button>
             )}
@@ -163,22 +157,14 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
       )}
 
       {exportError && (
-        <Callout tone="danger" className="mt-4" onDismiss={() => setExportError(null)}>
+        <Callout tone="danger" className="mt-3" onDismiss={() => setExportError(null)}>
           {exportError}
         </Callout>
       )}
 
-      <dl className="glass mt-5 grid grid-cols-2 overflow-hidden rounded-3xl min-[900px]:grid-cols-4 [&>div:nth-child(-n+2)]:border-b [&>div:nth-child(odd)]:border-r min-[900px]:[&>div:nth-child(-n+2)]:border-b-0 min-[900px]:[&>div:not(:last-child)]:border-r">
-        <Stat icon={<Clapperboard />} label="Clips" value={String(output.total_clips)} />
-        <Stat icon={<Timer />} label="Source length" value={formatTimecode(output.source_video_duration_seconds * 1000)} />
-        <Stat icon={<Clock3 />} label="Processing time" value={formatDuration(output.processing_time_seconds * 1000)} />
-        <Stat
-          icon={<CircleDollarSign />}
-          label="API cost"
-          value={hasCosts ? formatUsd(costs!.total_estimated_cost_usd) : '—'}
-          detail={hasCosts ? <CostDetail costs={costs!} /> : 'Not recorded for this run'}
-        />
-      </dl>
+      <div className="mt-4">
+        <RunStats key={output.job_id} output={output} costs={costs} videoSpeed={typeof videoSpeed === 'number' && videoSpeed > 1 ? videoSpeed : null} />
+      </div>
 
       {framingNotice && (
         <Callout tone="warning" className="mt-3">
@@ -193,7 +179,7 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
       )}
 
       {/* Floating glass toolbar; sticks just below the 40px title-bar strip. */}
-      <div className="glass-thick sticky top-12 z-10 mt-3 flex items-center justify-between gap-3 rounded-2xl py-2 pl-3 pr-2">
+      <div className="glass-thick sticky top-12 z-10 mt-4 flex items-center justify-between gap-3 rounded-2xl py-1.5 pl-3 pr-1.5">
         <div className="flex min-w-0 items-center gap-3">
           <Checkbox
             checked={allSelected}
@@ -277,10 +263,10 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
       ) : (
         <div
           className={cn(
-            'mt-4 grid gap-4',
+            'mt-3 grid gap-3',
             vertical
-              ? 'grid-cols-[repeat(auto-fill,minmax(160px,1fr))]'
-              : 'grid-cols-[repeat(auto-fill,minmax(260px,1fr))]'
+              ? 'grid-cols-[repeat(auto-fill,minmax(140px,1fr))]'
+              : 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
           )}
         >
           {clips.map((clip) => (
@@ -318,12 +304,12 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
   )
 }
 
-/** Small glass capsule that returns from a run to the list it was opened from (ClipList's `leading`). */
+/** Quiet link that returns from a run to the list it was opened from (ClipList's `leading`). */
 export function BackLink({ label, onClick }: { label: string; onClick: () => void }): React.JSX.Element {
   return (
     <button
       onClick={onClick}
-      className="btn-glass inline-flex h-[30px] items-center gap-1.5 rounded-full pl-2.5 pr-3.5 text-xs font-medium text-ink-muted transition-[background,box-shadow,color] duration-200 hover:text-ink"
+      className="-ml-2 inline-flex h-6 items-center gap-1 rounded-full pl-1.5 pr-2.5 text-xs font-medium text-ink-muted transition-colors duration-150 hover:bg-white/[0.06] hover:text-ink"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
       {label}
@@ -343,7 +329,7 @@ function readCosts(value: unknown): ApiCosts | null {
   }
   const validMoney = (value: unknown): value is number =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0
-  const result: ApiCosts = { total_estimated_cost_usd: amount }
+  const result: ApiCosts = { total_estimated_cost_usd: amount, ...(raw.cost_incomplete === true ? { cost_incomplete: true } : {}) }
   const transcription = section('transcription')
   if (transcription && typeof transcription.provider === 'string' && typeof transcription.model === 'string' &&
       validMoney(transcription.audio_duration_seconds) && validMoney(transcription.estimated_cost_usd)) {
@@ -405,35 +391,4 @@ export function sourceAnalysisNotice(output: JobOutput): string | null {
     return 'Transcription failed. Clips were selected from sampled video frames, and spoken-word captions are unavailable for this run.'
   }
   return null
-}
-
-function Stat({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail?: ReactNode }): React.JSX.Element {
-  return (
-    <div className="min-w-0 px-4 py-4">
-      <dt className="flex items-center gap-2">
-        <IconTile size="sm" className="h-6 w-6 rounded-lg [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:text-ink-muted">{icon}</IconTile>
-        <span className="eyebrow">{label}</span>
-      </dt>
-      <dd className="mt-3 font-mono text-xl font-medium tabular tracking-[-0.03em] text-ink">{value}</dd>
-      {detail && <dd className="mt-1 truncate text-2xs text-ink-subtle">{detail}</dd>}
-    </div>
-  )
-}
-
-function CostDetail({ costs }: { costs: ApiCosts }): React.JSX.Element {
-  const parts: string[] = []
-  if (costs.transcription) parts.push(`Transcribe ${formatUsd(costs.transcription.estimated_cost_usd)}`)
-  if (costs.planning) parts.push(`Plan ${formatUsd(costs.planning.estimated_cost_usd)}`)
-  if (costs.layout_vision) parts.push(`Framing ${formatUsd(costs.layout_vision.estimated_cost_usd)}`)
-  const title = [
-    costs.transcription &&
-      `Transcription: ${costs.transcription.provider}/${costs.transcription.model}, ${formatDuration(costs.transcription.audio_duration_seconds * 1000)} of audio${(costs.transcription.attempts ?? 0) > 1 ? `, ${costs.transcription.attempts} attempts` : ''}`,
-    costs.planning &&
-      `Planning: ${costs.planning.model}, ${costs.planning.total_tokens.toLocaleString()} tokens${costs.planning.attempts > 1 ? `, ${costs.planning.attempts} attempts` : ''}`,
-    costs.layout_vision && `Framing: ${costs.layout_vision.model} checked webcam and screen positions`,
-    'Rendering: local FFmpeg (free)'
-  ]
-    .filter(Boolean)
-    .join('\n')
-  return <span title={title}>{parts.join(' · ')}</span>
 }

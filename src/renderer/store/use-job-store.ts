@@ -29,6 +29,7 @@ export interface LayoutVisionCost {
 }
 
 export interface ApiCosts {
+  cost_incomplete?: boolean
   transcription?: TranscriptionCost
   planning?: PlanningCost
   layout_vision?: LayoutVisionCost

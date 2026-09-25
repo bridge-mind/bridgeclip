@@ -138,7 +138,8 @@ def test_visual_only_planner_uses_duration_and_rejects_unsupported_clip(monkeypa
 
 @pytest.mark.parametrize("no_audio", [False, True])
 @pytest.mark.parametrize("speed", [1, 1.5])
-def test_visual_fallback_completes_without_captions_and_discloses_status(monkeypatch, tmp_path, no_audio, speed):
+@pytest.mark.parametrize("trim", [(None, None, 60), (10, 50, 40), (10, 90, 50)])
+def test_visual_fallback_completes_without_captions_and_discloses_status(monkeypatch, tmp_path, no_audio, speed, trim):
     monkeypatch.setattr(RenderingService, "_verify_ffmpeg", lambda self: None)
     settings = pipeline_module.get_settings()
     monkeypatch.setattr(settings, "local_mode", True)
@@ -181,11 +182,12 @@ def test_visual_fallback_completes_without_captions_and_discloses_status(monkeyp
     monkeypatch.setattr(pipeline.intelligence_planner, "plan_clips", plan)
     monkeypatch.setattr(pipeline.rendering_service, "render_clip", render)
 
-    result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url="x", job_id="visual-test", video_speed=speed)))
+    result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url="x", job_id="visual-test", video_speed=speed, start_time_seconds=trim[0], end_time_seconds=trim[1])))
     assert result.status == JobStatus.COMPLETED
     assert result.output.metrics["transcription_status"] == "no_speech"
     assert result.output.metrics["planning_source"] == "visual"
     assert result.output.metrics["requested_settings"]["video_speed"] == speed
+    assert result.output.metrics["analysis_duration_seconds"] == trim[2]
     assert len(result.output.clips) == 2
     assert all(clip.duration_ms == round(20_000 / speed) for clip in result.output.clips)
     assert result.output.metrics["captions_status"] == "unavailable_without_transcript"

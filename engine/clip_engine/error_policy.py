@@ -37,6 +37,8 @@ def safe_processing_error(error: Exception) -> str:
         return "Not enough disk space to save clips"
     if isinstance(error, TimeoutError):
         return "Processing timed out"
+    if type(error).__name__ == "VisualPlanningUnsupportedError":
+        return "Selected planner requires a video with speech"
     if type(error).__name__ == "VideoDownloadError":
         return TWITCH_ERRORS.get(getattr(error, "reason", None), "Video download failed")
     if type(error).__name__ == "TranscriptionProviderError":
@@ -74,6 +76,8 @@ def safe_failure_code(error: Exception) -> str:
     """Small fixed code suitable for job records and logs; never include raw provider text."""
     if is_disk_full(error):
         return "storage.full"
+    if type(error).__name__ == "VisualPlanningUnsupportedError":
+        return "planning.images_unsupported"
     if type(error).__name__ in {"TranscriptionError", "TranscriptionProviderError"}:
         reason = getattr(error, "reason", "unknown")
         if reason in {
@@ -101,6 +105,7 @@ def safe_job_error_text(error: str | None) -> str | None:
         return error
     if error in {
         "Processing timed out", "Video download failed", "No clip-worthy moments found",
+        "Selected planner requires a video with speech",
         "Processing failed", "Job cancelled", "Transcription authentication failed",
         "Transcription quota or rate limit reached", "Transcription service unavailable",
         "Transcription providers are temporarily rate limited",

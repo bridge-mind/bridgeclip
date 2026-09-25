@@ -113,6 +113,20 @@ async function start(t, { titles, key = true, tiktokLane = null } = {}) {
   return { ...app, mock, posting, accounts, userDataDir, clipPaths, openRun }
 }
 
+/** Picks an option from one of the app's dropdowns (a combobox button with a listbox menu). */
+async function choose(page, combobox, name) {
+  await combobox.click()
+  await page.getByRole('listbox').getByRole('option', { name, exact: true }).click()
+}
+
+/** The options a dropdown offers, read from its open menu, which is then closed again. */
+async function menuOptions(page, combobox) {
+  await combobox.click()
+  const options = await page.getByRole('listbox').getByRole('option').allTextContents()
+  await combobox.press('Escape')
+  return options
+}
+
 async function shot(page, name) {
   if (!SHOTS) return
   fs.mkdirSync(SHOTS, { recursive: true })
@@ -137,18 +151,26 @@ test('post a Library clip now and on a schedule, then cancel the scheduled one',
   await dialog.getByRole('checkbox', { name: /^YouTube/ }).click()
   const privacy = dialog.getByLabel('Who can view this video')
   await privacy.waitFor()
-  assert.equal(await privacy.inputValue(), '', 'TikTok privacy starts unselected')
+  assert.equal(await privacy.textContent(), 'Choose who can view', 'TikTok privacy starts unselected')
   await dialog.getByText('Direct video posts from this TikTok Business connection are public.', { exact: false }).waitFor()
-  assert.equal(await privacy.locator('option[value="SELF_ONLY"]').isDisabled(), true, 'Business direct video cannot be private')
+  await privacy.click()
+  assert.equal(await page.getByRole('option', { name: /^Only me/ }).getAttribute('aria-disabled'), 'true', 'Business direct video cannot be private')
+  await page.getByRole('option', { name: /^Only me/ }).click({ force: true })
+  assert.equal(await privacy.textContent(), 'Choose who can view', 'a disabled option cannot be chosen')
+  await privacy.press('Escape')
+  await page.getByRole('listbox').waitFor({ state: 'detached' })
+  assert.equal(await dialog.isVisible(), true, 'Escape closes only the menu, not the dialog')
   await dialog.getByRole('switch', { name: 'Send to your TikTok inbox' }).click()
-  assert.equal(await privacy.locator('option[value="SELF_ONLY"]').isDisabled(), false, 'inbox delivery allows a private audience')
-  await privacy.selectOption('SELF_ONLY')
+  await privacy.click()
+  assert.equal(await page.getByRole('option', { name: 'Only me', exact: true }).getAttribute('aria-disabled'), null, 'inbox delivery allows a private audience')
+  await page.getByRole('option', { name: 'Only me', exact: true }).click()
+  assert.equal(await privacy.textContent(), 'Only me')
   await dialog.getByRole('switch', { name: 'Send to your TikTok inbox' }).click()
   await dialog.getByText('Choose who can view the TikTok post.').waitFor()
-  assert.equal(await privacy.inputValue(), '', 'switching back to direct posting clears a private choice')
+  assert.equal(await privacy.textContent(), 'Choose who can view', 'switching back to direct posting clears a private choice')
   assert.equal(await dialog.getByRole('button', { name: 'Post now' }).isDisabled(), true, 'nothing is posted before TikTok choices are made')
   assert.equal(await dialog.getByRole('checkbox', { name: 'Stitch' }).isDisabled(), true, 'the creator turned Stitch off')
-  await privacy.selectOption('PUBLIC_TO_EVERYONE')
+  await choose(page, privacy, 'Everyone')
   await dialog.getByRole('checkbox', { name: 'Comment' }).click()
   assert.equal(await dialog.getByRole('button', { name: 'Post now' }).isDisabled(), true, 'consent is still required')
   await dialog.getByRole('checkbox', { name: "By posting, you agree to TikTok's Music Usage Confirmation." }).click()
@@ -209,18 +231,18 @@ test('post a Library clip now and on a schedule, then cancel the scheduled one',
   assert.notEqual(scheduled.requestId, now.requestId, 'each post gets its own x-request-id')
   assert.equal(posting.state.uploads.length, 2, 'a new dialog uploads again')
 
-  // Accounts → Posts: both entries, then cancel the scheduled one.
+  // The Posts page: both entries, then cancel the scheduled one.
   await dialog.getByRole('button', { name: 'View posts' }).click()
   const scheduledGroup = page.getByRole('region', { name: 'Scheduled' })
   await scheduledGroup.getByText(CLIP_TITLE).waitFor({ timeout: 15_000 })
   const recentGroup = page.getByRole('region', { name: 'Recent' })
   await recentGroup.getByText(CLIP_TITLE).waitFor()
   await recentGroup.getByRole('button', { name: /Open on YouTube/ }).waitFor()
-  // "View posts" brings the panel into view.
-  assert.ok(await page.getByRole('heading', { name: 'Posts', level: 2 }).evaluate((el) => {
+  // "View posts" opens the Posts page at the top.
+  assert.ok(await page.getByRole('heading', { name: 'Posts', level: 1 }).evaluate((el) => {
     const box = el.getBoundingClientRect()
     return box.top >= 0 && box.bottom <= window.innerHeight
-  }), 'the Posts panel is scrolled into view')
+  }), 'the Posts page is in view')
   await shot(page, '06-posts-panel')
 
   const scheduledId = [...posting.state.posts.values()].find((p) => p.status === 'scheduled')._id
@@ -313,14 +335,14 @@ test('many accounts across profiles: several TikToks with their own privacy choi
   const block = (heading) => dialog.getByRole('group', { name: `TikTok ${heading}` })
   const brandCBlock = block('@brand_c · Brand C')
   await brandCBlock.getByLabel('Who can view this video').waitFor()
-  const offered = await brandCBlock.getByLabel('Who can view this video').locator('option').allTextContents()
-  assert.deepEqual(offered.slice(1), ['Only me', 'Followers'])
+  const offered = await menuOptions(page, brandCBlock.getByLabel('Who can view this video'))
+  assert.deepEqual(offered, ['Only me', 'Followers'])
   assert.equal(await brandCBlock.getByRole('checkbox', { name: 'Comment' }).isDisabled(), true)
-  await block('@clipper · Default').getByLabel('Who can view this video').selectOption('PUBLIC_TO_EVERYONE')
-  await block('@brand_b · Brand B').getByLabel('Who can view this video').selectOption('MUTUAL_FOLLOW_FRIENDS')
+  await choose(page, block('@clipper · Default').getByLabel('Who can view this video'), 'Everyone')
+  await choose(page, block('@brand_b · Brand B').getByLabel('Who can view this video'), 'Friends')
   await dialog.getByRole('checkbox', { name: "By posting, you agree to TikTok's Music Usage Confirmation." }).click()
   assert.equal(await dialog.getByRole('button', { name: 'Post now' }).isDisabled(), true, 'Brand C still needs its own choice')
-  await brandCBlock.getByLabel('Who can view this video').selectOption('FOLLOWER_OF_CREATOR')
+  await choose(page, brandCBlock.getByLabel('Who can view this video'), 'Followers')
   await shot(page, '10-many-accounts')
   await dialog.getByRole('button', { name: 'Post now' }).click()
   await dialog.getByRole('status').getByText('Posted', { exact: true }).waitFor({ timeout: 30_000 })

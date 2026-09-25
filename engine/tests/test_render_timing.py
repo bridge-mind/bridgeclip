@@ -1,9 +1,11 @@
 """The export guard must fail closed when media timing cannot be verified."""
 
 import asyncio
+import io
 import json
 import os
 import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -52,7 +54,52 @@ def test_accepts_codec_and_frame_rounding(monkeypatch, with_audio, fps, video_du
         returncode=0, stdout=json.dumps({"streams": streams}).encode(),
     ))
     service = RenderingService.__new__(RenderingService)
+    monkeypatch.setattr(service, "_validate_audio_packets", lambda *_: None)
     asyncio.run(service._validate_output_timing("output.mp4", 10000, fps, with_audio))
+
+
+@pytest.mark.parametrize("packets", [
+    b"",
+    b"pts_time=nan|duration_time=0.021333\n",
+    b"pts_time=0|duration_time=nan\n",
+    b"pts_time=0|duration_time=0\n",
+    b"pts_time=0|duration_time=0.101333\n",  # loudnorm's 80 ms tail delay
+    b"pts_time=0|duration_time=0.021333\npts_time=0.101333|duration_time=0.021333\n",
+    b"pts_time=0|duration_time=0.021333\npts_time=0|duration_time=0.021333\n",
+    b"pts_time=0|duration_time=0.021333\npts_time=-0.021333|duration_time=0.021333\n",
+    b"pts_time=N/A|duration_time=N/A\n",
+    b"duration_time=0.021333\n",
+])
+def test_rejects_audio_packet_timing_even_when_stream_endpoints_match(monkeypatch, packets):
+    @contextmanager
+    def probe(*args, **kwargs):
+        yield SimpleNamespace(stdout=io.BytesIO(packets), returncode=0), bytearray()
+
+    monkeypatch.setattr(module, "media_process", probe)
+    monkeypatch.setattr(module, "run_media", lambda *a, **kw: SimpleNamespace(
+        returncode=0, stdout=json.dumps({"streams": [stream("video"), stream("audio")]}).encode(),
+    ))
+    service = RenderingService.__new__(RenderingService)
+    with pytest.raises(RenderingError, match="timing validation failed"):
+        asyncio.run(service._validate_output_timing("output.mp4", 10000, "30", True))
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_audio_packet_probe_preserves_priming_and_final_partial_packet(monkeypatch, returncode):
+    @contextmanager
+    def probe(*args, **kwargs):
+        yield SimpleNamespace(stdout=io.BytesIO(
+            b"pts_time=-0.021333|duration_time=0.021333|\n"
+            b"pts_time=0.000000|duration_time=0.021333\n"
+            b"pts_time=0.021333|duration_time=0.005000\n"
+        ), returncode=returncode), bytearray()
+
+    monkeypatch.setattr(module, "media_process", probe)
+    if returncode:
+        with pytest.raises(ValueError, match="could not verify"):
+            RenderingService._validate_audio_packets("output.mp4")
+    else:
+        RenderingService._validate_audio_packets("output.mp4")
 
 
 def test_failed_probe_does_not_silently_drop_audio(monkeypatch):

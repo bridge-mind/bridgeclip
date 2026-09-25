@@ -1,34 +1,25 @@
 #!/usr/bin/env bash
 # Regenerates the BridgeClip app icon: build/icon.png, build/icon.icns,
-# build/icon.ico and the SVG masters in resources/. macOS only (sips + iconutil).
+# build/icon.ico and SVG compatibility exports in resources/.
+# Source: resources/bridgeclip-icon.png (imagegen). macOS only (sips + iconutil).
 #
 #   bash scripts/icon/build-icons.sh
 #
-# Each size uses the variant drawn for it: "full" (crop brackets + trim bar)
-# from 128px up, "compact" (brackets only) at 32-64px, "tiny" (mark only)
-# at 16-24px, where thin strokes would turn to noise.
+# The same simple artwork is used at every size, preserving the source alpha.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-"$ROOT/node_modules/.bin/electron" "$ROOT/scripts/icon/render.js" "$WORK"
+node "$ROOT/scripts/icon/render.js" "$WORK"
 
 cp "$WORK/full.svg" "$ROOT/resources/bridgeclip-icon.svg"
 cp "$WORK/compact.svg" "$ROOT/resources/bridgeclip-icon-small.svg"
 
-variant_for() {
-  local size=$1
-  if [ "$size" -ge 128 ]; then echo full
-  elif [ "$size" -ge 32 ]; then echo compact
-  else echo tiny
-  fi
-}
-
 resize() {
   local size=$1 out=$2
-  sips -z "$size" "$size" "$WORK/$(variant_for "$size").png" --out "$out" >/dev/null
+  cp "$WORK/icon-$size.png" "$out"
 }
 
 resize 1024 "$ROOT/build/icon.png"

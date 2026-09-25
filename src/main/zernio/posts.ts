@@ -147,14 +147,33 @@ interface Attempt {
 const attempts = new Map<string, Attempt>()
 const MAX_ATTEMPT_BYTES = 1024 * 1024
 let attemptsWorkspace: string | null = null
-function attemptPath(): string { return join(app.getPath('userData'), 'zernio-post-attempts.json') }
 function currentWorkspace(): string { return workspaceId(loadSettings().zernioApiKey) }
+function legacyAttemptPath(): string { return join(app.getPath('userData'), 'zernio-post-attempts.json') }
+function attemptPath(workspace = currentWorkspace()): string { return join(app.getPath('userData'), `zernio-post-attempts-${workspace}.json`) }
+function migrateLegacyAttempts(workspace: string): void {
+  const legacy = legacyAttemptPath()
+  const scoped = attemptPath(workspace)
+  if (existsSync(scoped) || !existsSync(legacy)) return
+  if (!readableCache(legacy, MAX_ATTEMPT_BYTES)) throw new Error('Pending post attempts could not be migrated. The file was preserved.')
+  let raw: { version?: unknown; workspace?: unknown; attempts?: unknown }
+  try { raw = JSON.parse(readFileSync(legacy, 'utf8')) }
+  catch { quarantineUnbound(legacy); return }
+  if (raw.version !== 1 || typeof raw.workspace !== 'string' || !Array.isArray(raw.attempts)) {
+    quarantineUnbound(legacy)
+    return
+  }
+  // A different key may belong to a different Zernio workspace. Keep its
+  // unresolved request ids until that exact key is selected again.
+  if (raw.workspace !== workspace) return
+  renameSync(legacy, scoped)
+}
 function loadAttempts(): void {
   const workspace = currentWorkspace()
   if (attemptsWorkspace === workspace) return
   attempts.clear()
+  migrateLegacyAttempts(workspace)
   attemptsWorkspace = workspace
-  const path = attemptPath()
+  const path = attemptPath(workspace)
   if (!existsSync(path)) return
   if (!readableCache(path, MAX_ATTEMPT_BYTES)) { quarantineUnbound(path); return }
   try {
@@ -174,7 +193,8 @@ function loadAttempts(): void {
   } catch { quarantineUnbound(path) }
 }
 function saveAttempts(): void {
-  const path = attemptPath()
+  if (!attemptsWorkspace || attemptsWorkspace !== currentWorkspace()) throw new Error('The Zernio API key changed. Review your accounts and post again.')
+  const path = attemptPath(attemptsWorkspace)
   const temp = `${path}.${randomUUID()}.tmp`
   try {
     writeFileSync(temp, JSON.stringify({ version: 1, workspace: currentWorkspace(), attempts: [...attempts].slice(-300) }), { flag: 'wx', mode: 0o600 })
@@ -192,7 +212,6 @@ onZernioReset(() => {
   for (const controller of running.values()) controller.abort()
   attempts.clear()
   attemptsWorkspace = null
-  quarantineUnbound(attemptPath())
   creatorInfoCache.clear()
   store = null
   storeWorkspace = null

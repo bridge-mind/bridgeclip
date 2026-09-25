@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from clip_engine.services.layout_analyzer import ClipLayoutPlan, LayoutType, ShotLayout
-from clip_engine.services.layout_renderer import build_layout_graph
+from clip_engine.services.layout_renderer import build_layout_graph, measured_loudness_filter
 from clip_engine.services.rendering_service import RenderingService
 from clip_engine.services.transcription_service import TranscriptionService
 
@@ -72,7 +72,6 @@ def onsets(active, rate):
 def events(path):
     streams = probe(path)["streams"]
     video = next(s for s in streams if s["codec_type"] == "video")
-    audio = next(s for s in streams if s["codec_type"] == "audio")
     frames = np.frombuffer(run(FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0",
                               "-vf", "scale=8:8", "-pix_fmt", "gray", "-f", "rawvideo", "-"), np.uint8)
     samples = np.frombuffer(run(FFMPEG, "-v", "error", "-i", path, "-map", "0:a:0",
@@ -84,16 +83,16 @@ def events(path):
     rms = np.sqrt(np.mean(samples[:len(samples) // 240 * 240].reshape(-1, 240) ** 2, axis=1))
     flashes = onsets(frames.reshape(-1, 64).mean(axis=1) > 150, float(Fraction(video["avg_frame_rate"])))
     beeps = onsets(rms > max(0.02, float(rms.max()) * 0.2), 200)
-    return flashes + float(video.get("start_time", 0)), beeps + float(audio.get("start_time", 0))
+    return flashes + float(video.get("start_time", 0)), beeps
 
 
 def render(path, tmp_path, *, duration=12, start=0, keeps=None, shots=None, fps="30", audio=True,
-           encoder=None, overlay=False):
+           encoder=None, overlay=False, loudness_filter=None):
     service = RenderingService.__new__(RenderingService)
     # FFV1 source + MPEG-4 output run on both the LGPL bundle and local builds.
     service._video_codec_args = lambda *args: encoder or ["-c:v", "mpeg4", "-q:v", "2", "-bf", "2"]
-    plan = ClipLayoutPlan(shots or [ShotLayout(0, duration * 1000, LayoutType.TALKING_HEAD)], 64, 64)
-    graph = build_layout_graph(plan, 64, 64, keeps, with_audio=audio, fps=fps)
+    plan = ClipLayoutPlan(shots or [ShotLayout(0, round(duration * 1000), LayoutType.TALKING_HEAD)], 64, 64)
+    graph = build_layout_graph(plan, 64, 64, keeps, with_audio=audio, fps=fps, loudness_filter=loudness_filter)
     extra_inputs = None
     if overlay:
         from PIL import Image
@@ -303,3 +302,34 @@ def test_three_minute_edit_does_not_accumulate_drift(tmp_path):
     # the 180 cuts. Check the last event as strictly as the first.
     assert np.max(np.abs(flashes - expected)) <= 2 / (30000 / 1001) + 0.006
     assert float(probe(out)["format"]["duration"]) == pytest.approx(127.8, abs=0.034)
+
+
+@pytest.mark.parametrize("duration_ms", [12001, 12020, 12051, 12099])
+@pytest.mark.parametrize("overlay", [False, True])
+def test_fractional_duration_preserves_audio_playback_clock(tmp_path, duration_ms, overlay):
+    # loudnorm buffers 100 ms blocks. A partial final block previously left
+    # a timestamp jump before its final ~3 seconds, even though every decoded
+    # sample was present. With an overlay, -shortest hid the extra duration.
+    path = source(tmp_path, duration=14)
+    out = render(path, tmp_path, duration=duration_ms / 1000, overlay=overlay)
+    flashes, beeps = events(out)
+    assert len(flashes) == len(beeps) == 12
+    assert np.max(np.abs(beeps - (np.arange(12) + 0.5))) <= 0.012, beeps
+    assert np.max(np.abs(flashes - beeps)) <= 1 / 30 + 0.006
+
+
+@pytest.mark.parametrize("measured_peak", [None, -10, -1])
+def test_fractional_cut_timeline_with_dynamic_linear_and_fallback_normalization(tmp_path, measured_peak):
+    path = source(tmp_path, duration=14)
+    # With a -1 dB measured peak, loudnorm falls back to dynamic mode because
+    # raising -20 LUFS to -14 LUFS would exceed the -1.5 dB true-peak limit.
+    loudness = None if measured_peak is None else measured_loudness_filter({
+        "input_i": -20, "input_tp": measured_peak, "input_lra": 6,
+        "input_thresh": -30, "target_offset": 0,
+    })
+    out = render(path, tmp_path, keeps=[(100, 4013), (5013, 11120)],
+                 overlay=True, loudness_filter=loudness)
+    flashes, beeps = events(out)
+    assert len(flashes) == len(beeps) == 10
+    assert np.max(np.abs(beeps - (np.arange(10) + 0.4))) <= 0.012, beeps
+    assert np.max(np.abs(flashes - beeps)) <= 1 / 30 + 0.006

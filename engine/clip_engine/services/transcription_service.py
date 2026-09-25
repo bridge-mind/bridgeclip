@@ -55,6 +55,7 @@ class TranscriptionApiCosts:
     audio_duration_seconds: float = 0.0
     estimated_cost_usd: float = 0.0
     attempts: int = 0
+    cost_incomplete: bool = False
 
 
 TRANSCRIPTION_MODEL = "microsoft/mai-transcribe-2"
@@ -580,6 +581,8 @@ class TranscriptionService:
         # Keep the recovered model for the rest of this run. Retrying an
         # unavailable model for each chunk causes repeated failures and costs.
         models = list(dict.fromkeys((primary, BUDGET_FALLBACK_MODEL, TRANSCRIPTION_MODEL, BUDGET_TRANSCRIPTION_MODEL)))
+        if getattr(self.settings, "clipping_mode", "quality") == "advanced":
+            models = [primary]
         chunk_count = max(1, math.ceil(duration / TRANSCRIPTION_CHUNK_SECONDS))
         with tempfile.TemporaryDirectory(prefix="clip-transcribe-", dir=os.path.dirname(audio_path)) as work:
             for index in range(chunk_count):
@@ -640,6 +643,7 @@ class TranscriptionService:
                     # Include that cost before parsing or trying another model.
                     charge = self._response_cost(response, duration, model)
                     costs.estimated_cost_usd += charge.estimated_cost_usd
+                    costs.cost_incomplete = costs.cost_incomplete or charge.cost_incomplete
                     costs.audio_duration_seconds += charge.audio_duration_seconds
                     seen = costs.model.split(" + ") if costs.model else []
                     if model not in seen:
@@ -675,9 +679,11 @@ class TranscriptionService:
         if not _nonnegative_number(billed):
             billed = duration
         cost = usage.get("cost")
+        incomplete = False
         if not _nonnegative_number(cost):
-            cost = _estimate_transcription_cost(billed, model)
-        return TranscriptionApiCosts(model=model, audio_duration_seconds=billed, estimated_cost_usd=cost)
+            incomplete = model not in (TRANSCRIPTION_MODEL, BUDGET_TRANSCRIPTION_MODEL, BUDGET_FALLBACK_MODEL)
+            cost = 0.0 if incomplete else _estimate_transcription_cost(billed, model)
+        return TranscriptionApiCosts(model=model, audio_duration_seconds=billed, estimated_cost_usd=cost, cost_incomplete=incomplete)
 
     @staticmethod
     def _audio_duration(path: str) -> float:
@@ -723,7 +729,7 @@ class TranscriptionService:
             if phrases:
                 azure["phraseList"] = {"phrases": phrases}
             payload["provider"] = {"options": {"azure": azure}}
-        elif phrases:
+        elif phrases and model in (BUDGET_TRANSCRIPTION_MODEL, BUDGET_FALLBACK_MODEL, "openai/whisper-1"):
             # Groq accepts a prompt hint for Whisper. Other providers may
             # ignore this option; word timings remain required either way.
             payload["provider"] = {"options": {"groq": {"prompt": "Expected vocabulary: " + ", ".join(phrases)}}}

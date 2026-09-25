@@ -1,5 +1,10 @@
 # Audio/video synchronization review — September 24, 2026
 
+**Follow-up:** the [remaining audio-delay review](AV_SYNC_FOLLOWUP_2026-09-24.md)
+reproduced an additional end-of-clip timestamp gap in actual exports. It also
+corrects a blind spot in the raw-PCM measurements used below and adds packet
+validation; start/end metadata alone did not detect that defect.
+
 BridgeClip could introduce real synchronization errors. This review reproduced
 them with generated flashes and matching audio pulses, then fixed the active
 engine. The fixes are in the local source checkout; no release was published.

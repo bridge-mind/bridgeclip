@@ -79,6 +79,11 @@ function safeMetrics(value: unknown): Record<string, unknown> | null {
   if (record(value.requested_settings)) {
     const requested = value.requested_settings
     const safe: Record<string, unknown> = {}
+    if (['quality', 'economy', 'advanced'].includes(requested.clipping_mode as string)) safe.clipping_mode = requested.clipping_mode
+    for (const field of ['planner_model', 'transcription_model']) {
+      const model = boundedText(requested[field], 120)
+      if (model !== null) safe[field] = model
+    }
     if (requested.aspect_ratio === '9:16' || requested.aspect_ratio === '16:9') safe.aspect_ratio = requested.aspect_ratio
     if (['auto', 'fill', 'fit'].includes(requested.layout_style as string)) safe.layout_style = requested.layout_style
     if (typeof requested.layout_vision_enabled === 'boolean') safe.layout_vision_enabled = requested.layout_vision_enabled
@@ -87,7 +92,7 @@ function safeMetrics(value: unknown): Record<string, unknown> | null {
     result.requested_settings = safe
   }
   for (const field of ['planned_clip_count', 'rendered_clip_count', 'failed_clip_count', 'uploaded_clip_count',
-    'source_video_size_bytes', 'rendered_output_bytes', 'peak_rss_mb']) {
+    'source_video_size_bytes', 'rendered_output_bytes', 'peak_rss_mb', 'analysis_duration_seconds']) {
     if (nonNegative(value[field])) result[field] = value[field]
   }
   const stageDurations = value.stage_durations_seconds
@@ -120,10 +125,12 @@ function safeMetrics(value: unknown): Record<string, unknown> | null {
   const costs = value.api_costs
   if (record(costs) && finite(costs.total_estimated_cost_usd) && costs.total_estimated_cost_usd >= 0) {
     const safeCosts: Record<string, unknown> = { total_estimated_cost_usd: costs.total_estimated_cost_usd }
+    if (typeof costs.cost_incomplete === 'boolean') safeCosts.cost_incomplete = costs.cost_incomplete
     for (const name of ['transcription', 'planning', 'layout_vision']) {
       const section = costs[name]
       if (!record(section)) continue
       const safe: Record<string, unknown> = {}
+      if (typeof section.cost_incomplete === 'boolean') safe.cost_incomplete = section.cost_incomplete
       for (const field of ['provider', 'model']) {
         const text = boundedText(section[field], 120)
         if (text !== null) safe[field] = text

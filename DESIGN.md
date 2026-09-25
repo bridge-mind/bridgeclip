@@ -95,7 +95,8 @@ Depth, back to front: `app-backdrop` → `glass` panel → `glass-tile` / `glass
 │ │  ≡ Jobs          ⌘3              │
 │ │ WORKSPACE                        │
 │ │  ⋈ Accounts      ⌘4              │
-│ │  ⇄ Automations   ⌘5              │
+│ │  ➤ Posts         ⌘5              │
+│ │  ⇄ Automations   ⌘6              │
 │ │  ⚙ Settings      ⌘,              │
 │ │ [running job card]               │
 │ │ ● Ready to clip           v0.x   │
@@ -106,7 +107,7 @@ Depth, back to front: `app-backdrop` → `glass` panel → `glass-tile` / `glass
 - The sidebar is collapsible: a 200px column, or a 72px icon rail (mark-only logo, icons with `aria-label`/tooltips, group labels hidden). The toggle lives inside the sidebar: expanded, it sits at the right of the logo row; in the rail, the brand mark is the toggle and shows the expand icon on hover or focus. ⌘\ also toggles it, and the choice is remembered (`store/use-sidebar-store.ts`). Windows narrower than 1024px always get the rail, where the mark is only a mark. The app version sits in the footer beside the setup status. It has no background of its own: it shares `app-backdrop` with the page and is separated by a `border-white/[0.06]` hairline. The macOS traffic lights sit in its top 40px strip (`trafficLightPosition` 16,12). The window's minimum size is 720×520.
 - Pages scroll under a solid 40px title-bar strip (`scroll-edge`). The strip and the backdrop are drag handles; interactive elements opt out with `.no-drag`.
 - Sticky elements inside a page use `top-12`, because sticky ignores the scroll container's padding.
-- Wrap every page in `<Page width>`: `focus` 720 (progress, failure), `narrow` 880 (Settings, Accounts), `default` 1280, `wide` 1680 (Library, Jobs, results). Create uses `narrow`. Gutters are `px-4`, `sm:px-6`, `xl:px-8`.
+- Wrap every page in `<Page width>`: `focus` 720 (progress, failure), `narrow` 880 (Settings, Accounts, Posts), `default` 1280 (Jobs), `wide` 1680 (Library, results). Create uses `narrow`. Gutters are `px-4`, `sm:px-6`, `xl:px-8`.
 - **Compact by default.** Panels pad `p-4` (`xl:p-5`), stacks use `space-y-3`/`gap-3`, sections `mt-4`/`mt-5`. Don't reintroduce `p-6`+ or `mt-8`+. Media grids use `repeat(auto-fill, minmax(…))` so column count follows the window.
 - **Create is a wizard**: Video → Format → Clips → Captions → Review, one compact panel per step under a clickable stepper, with Back/Next (and Generate) pinned to the bottom edge on a solid strip. ⌘↵ generates from any step once a video is chosen. After Generate the job is queued and the wizard offers "Clip another video", so several runs can be queued back to back. Step and draft live in `use-draft-store`.
 
@@ -120,7 +121,8 @@ Depth, back to front: `app-backdrop` → `glass` panel → `glass-tile` / `glass
 | `PageHeader` | Optional `eyebrow` and `leading` (back link), title, description, right-aligned actions. |
 | `Panel` / `PanelHeader` | `glass rounded-3xl p-6`. The header takes an `icon` (an `IconTile`), a title, a description and an action. |
 | `Button` | Capsules. `primary` (solid accent) · `secondary` (glass) · `ghost` · `danger`. Sizes `sm` 28px, `md` 32px, `lg` 40px. `iconOnly` makes it round (needs `aria-label`). `loading`. |
-| `TextInput` · `Select` · `TextArea` | Recessed `glass-well`s with a crisp accent focus ring. `TextInput` `md` is 32px and `lg` 40px, matching Button heights, with `leading`/`trailing` slots and `mono`. `Select` wraps a native `<select>`. |
+| `TextInput` · `TextArea` | Recessed `glass-well`s with a crisp accent focus ring. `TextInput` `sm` is 28px, `md` 32px and `lg` 40px, matching Button heights, with `leading`/`trailing` slots and `mono`. |
+| `Select` | The app's dropdown (never a native `<select>`): a `glass-well` combobox button (`md` 32px, `sm` 28px) that opens a `glass-thick` menu with a check on the chosen option, muted `detail` text and disabled rows. Takes `options`, `placeholder`, `emptyText`, and `searchable` for long lists (time zones). Keyboard: arrows, Home/End, Page Up/Down, type-ahead, Enter/Space, Escape (closes only the menu, never the dialog around it). The menu is a top-layer popover, so panels and dialogs never clip it. `MENU_SURFACE` and `menuOptionClass` style any other menu (the model picker uses them). |
 | `Field` | Label, optional `aside` (e.g. "Get a key"), hint. |
 | `Segmented` | Single choice in a glass track, with the chosen option as a raised pill. Roving tab stop. Also exports `onRadioKeyDown` for custom radio groups. |
 | `SettingRow` | Title and description with a control (usually `Switch`) on a `glass-tile`. `bare` drops the tile. |
@@ -131,9 +133,10 @@ Depth, back to front: `app-backdrop` → `glass` panel → `glass-tile` / `glass
 | `ProgressBar` / `ProgressRing` | Solid accent fill, red when failed. The ring renders its children in the centre. |
 | `EmptyState` | Glass panel with an icon tile, title, one sentence and one action. |
 | `Skeleton` | Flat loading block that pulses. |
+| `HoverCard` | A read-only rich tooltip: hover or focus shows a `glass-thick` card under the trigger (above it when there's no room), as a top-layer popover. Escape closes it. |
 | `Dialog` / `DialogFooter` | Dimmed, blurred backdrop and a `glass-thick` panel (`layer="system"` for the update prompt). Callers own focus trapping and Escape. |
 
-Brand: `components/brand/BridgeClipLogo` renders the lockup (`variant="lockup"`, size by height), the app-icon tile (`variant="icon"`) or the mark alone (`variant="mark"`, for the icon rail). The mark is the one exception to the flat rule: `resources/bridgemind-mark.svg` embeds the official BridgeMind symbol, the same shaded artwork bridgemind.ai uses, and is the single source, and `scripts/icon/build-logo.py` and `scripts/icon/build-icons.sh` regenerate the lockups and app icons from it. Edit the source, not the outputs.
+Brand: `components/brand/BridgeClipLogo` renders the lockup (`variant="lockup"`, size by height), the app-icon tile (`variant="icon"`) or the family mark alone (`variant="mark"`, for the icon rail). `resources/bridgemind-mark.svg` embeds the official BridgeMind symbol and is the source for the lockups generated by `scripts/icon/build-logo.py`. The app icon has its own simple clip/play emblem in BridgeMind gold and cyan on a charcoal tile. Its imagegen master is `resources/bridgeclip-icon.png`; `npm run icons` exports PNG, ICNS, ICO and self-contained raster-backed SVGs from that master, preserving transparency. The icon uses the same silhouette at every size. See `scripts/icon/README.md` for the generation prompt and `scripts/icon/icon.html` for the size preview. Edit the sources, not the exports.
 
 ---
 
@@ -141,11 +144,11 @@ Brand: `components/brand/BridgeClipLogo` renders the lockup (`variant="lockup"`,
 
 - **Option cards** (format, framing, caption style): `glass-tile glass-tile-hover` at rest, plus `glass-selected` when chosen. Visual tiles also get a check badge.
 - **Chips** (clip length, job filters): capsules. Chosen chips use the accent tint.
-- **Media cards** (clips, runs): `glass` card with the media inset concentrically. Overlays are `glass-chip`s (no gradient scrims over media). On hover the card lifts 2px and a frosted play lens appears; selected cards get `shadow-accent-ring`.
+- **Media cards** (clips, runs): `glass` card with the media inset concentrically, and only a title and one line of metadata under it. Overlays are `glass-chip`s (no gradient scrims over media). The media is the play button. On hover the card lifts 2px, a frosted play lens appears, and the card's actions (post, add to automation, show in Finder) show as small frosted buttons on the media; selected cards get `shadow-accent-ring`. A run opens with a stats bar (`RunStats`): clips, processing time, API cost and when it was created. Numbers count up once, with one quiet line under each. When a run beat OpusClip, processing and cost say so in green ("5× faster than OpusClip", "94% less than OpusClip") and hovering shows a small card with OpusClip's logo, that one number and its basis. OpusClip's numbers live in `config/opus-clip.ts` (update them with their `checked` date); no claim is shown when the run didn't win.
 - **Floating toolbars** (clip selection): `glass-thick` bar, sticky at `top-12`.
 - **Caption previews** mirror the clipping engine presets in `engine/clip_engine/config.py` (colours, outline, glow, casing, spacing, box and karaoke effects). If a preset changes in the engine, update `CaptionPresetPicker.tsx`.
 - **Autosave**: Settings has no Save button. Keys save 600ms after typing stops and on blur, and paths save on blur or Enter. A "Saved" pill confirms it in the header.
-- **Long work**: clipping runs in the main process's job queue (`src/main/job-manager.ts`): up to `MAX_PARALLEL_JOBS` (2) run at once and the rest wait in FIFO order. The Jobs page shows Active jobs (live progress, queue position, view, cancel) above Previous jobs (run history on disk). Opening a job shows the progress ring with the four pipeline steps, its clips, or the failure with Run again. The sidebar shows a live count on Jobs and a card with the running jobs' progress.
+- **Long work**: clipping runs in the main process's job queue (`src/main/job-manager.ts`): up to `MAX_PARALLEL_JOBS` (2) run at once and the rest wait in FIFO order. The Jobs page shows Active jobs (a small progress ring or queue position, stage, elapsed time, cancel) above Previous jobs (run history on disk, one line each: status dot, title, clips, run time, cost, date; the row opens the run, and the folder button shows on hover). Opening a job shows the progress ring with the four pipeline steps, its clips, or the failure with Run again. The sidebar shows a live count on Jobs and a card with the running jobs' progress.
 - **Thumbnails** go through `lib/thumbnails.ts`, a one-at-a-time queue, because each one is a synchronous ffmpeg call in the main process.
 
 ---
@@ -163,7 +166,7 @@ Brand: `components/brand/BridgeClipLogo` renders the lockup (`variant="lockup"`,
 - A focus ring (`:focus-visible`, accent at 75%) appears on every control. Icon-only buttons carry `aria-label`.
 - Radio-like groups use `role="radiogroup"`/`role="radio"` with `aria-checked` and a roving tab stop; toggles use `aria-pressed`; switches use `role="switch"`.
 - Critical text is `ink` or `ink-muted`. `ink-subtle` is for secondary metadata only, and `ink-faint` is never for anything the user must read.
-- Keyboard: ⌘1–⌘5 and ⌘, switch pages, ⌘\ collapses or expands the sidebar, and ⌘↵ generates clips (Ctrl on Windows and Linux).
+- Keyboard: ⌘1–⌘6 and ⌘, switch pages, ⌘\ collapses or expands the sidebar, and ⌘↵ generates clips (Ctrl on Windows and Linux).
 
 ---
 

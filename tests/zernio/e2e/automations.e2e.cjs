@@ -12,6 +12,12 @@ const { buildApp, launchApp, ROOT } = require('../support/electron-app.cjs')
 const KEY = 'automation-e2e-key'
 const FFMPEG = fs.existsSync(path.join(ROOT, 'engine-bin', 'ffmpeg')) ? path.join(ROOT, 'engine-bin', 'ffmpeg') : 'ffmpeg'
 
+/** Picks an option from one of the app's dropdowns (a combobox button with a listbox menu). */
+async function choose(page, combobox, name) {
+  await combobox.click()
+  await page.getByRole('listbox').getByRole('option', { name, exact: true }).click()
+}
+
 test('add library clips, review TikTok, and run a mixed-platform automation', { timeout: 180_000 }, async (t) => {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-automation-e2e-'))
   const clip = path.join(work, 'new_clip.mp4')
@@ -57,12 +63,12 @@ test('add library clips, review TikTok, and run a mixed-platform automation', { 
   await page.getByLabel('New profile name').fill('Another profile')
   await page.locator('form').getByRole('button', { name: 'Create', exact: true }).click()
   await page.getByText('Profile “Another profile” created.').waitFor()
-  await page.getByLabel('Zernio profile').selectOption(profile._id)
+  await choose(page, page.getByLabel('Zernio profile'), profile.name)
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await page.getByRole('heading', { name: 'Accounts', exact: true }).waitFor()
   await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /Automations/ }).click()
   await page.getByRole('heading', { name: 'Content bank' }).waitFor()
-  assert.equal(await page.getByLabel('Zernio profile').inputValue(), profile._id)
+  assert.equal(await page.getByLabel('Zernio profile').textContent(), profile.name)
 
   await page.getByRole('checkbox', { name: /@channel/ }).check()
   await page.getByRole('checkbox', { name: /@creator/ }).check()
@@ -112,11 +118,11 @@ test('add library clips, review TikTok, and run a mixed-platform automation', { 
   const review = page.getByRole('dialog', { name: 'Review for TikTok' })
   const audience = review.getByLabel('Who can view this video')
   await audience.waitFor()
-  assert.equal(await audience.inputValue(), '', 'privacy has no default')
+  assert.equal(await audience.textContent(), 'Choose who can view', 'privacy has no default')
   assert.equal(await review.getByRole('button', { name: 'Approve for automation' }).isDisabled(), true)
   assert.equal(posting.state.uploads.length, 0)
   await review.getByLabel('TikTok caption').fill('Reviewed TikTok caption #Clips')
-  await audience.selectOption('PUBLIC_TO_EVERYONE')
+  await choose(page, audience, 'Everyone')
   const consent = review.getByRole('checkbox', { name: /By posting, you agree/ })
   const previewConsent = review.getByRole('checkbox', { name: 'I reviewed this clip and caption for TikTok' })
   await consent.check()
@@ -135,7 +141,7 @@ test('add library clips, review TikTok, and run a mixed-platform automation', { 
   await page.getByRole('button', { name: 'Edit TikTok', exact: true }).click()
   await audience.waitFor()
   assert.equal(await review.getByLabel('TikTok caption').inputValue(), 'Reviewed TikTok caption #Clips')
-  assert.equal(await audience.inputValue(), '', 'reopened reviews require a fresh audience choice')
+  assert.equal(await audience.textContent(), 'Choose who can view', 'reopened reviews require a fresh audience choice')
   await review.getByRole('button', { name: 'Cancel', exact: true }).click()
   const firstClipRow = page.locator('li').filter({ has: page.getByText('First library clip', { exact: true }) })
   await firstClipRow.getByRole('button', { name: 'Review TikTok', exact: true }).waitFor()
@@ -143,7 +149,7 @@ test('add library clips, review TikTok, and run a mixed-platform automation', { 
   await firstClipRow.getByRole('button', { name: 'Review TikTok', exact: true }).click()
   await audience.waitFor()
   assert.equal(await review.getByLabel('TikTok caption').inputValue(), 'Reviewed TikTok caption #Clips', 'cancelling preserves the last reviewed caption')
-  await audience.selectOption('PUBLIC_TO_EVERYONE')
+  await choose(page, audience, 'Everyone')
   await review.getByRole('checkbox', { name: /By posting, you agree/ }).check()
   await review.getByRole('checkbox', { name: 'I reviewed this clip and caption for TikTok' }).check()
   await review.getByRole('button', { name: 'Approve for automation' }).click()

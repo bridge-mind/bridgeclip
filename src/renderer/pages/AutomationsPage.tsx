@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Clock3, FileVideo2, Globe2, Pencil, Play, Plus, RefreshCw, Sparkles, Trash2, Workflow, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Pencil, Play, Plus, RefreshCw, Trash2, Workflow, X } from 'lucide-react'
 import { AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate } from '../../shared/automations'
 import { isPostableAccount, isValidProfileName } from '../../shared/zernio'
 import { AutomationTikTokReviewDialog } from '../components/AutomationTikTokReviewDialog'
@@ -7,20 +7,18 @@ import { PlatformIcon, platformName } from '../components/PlatformIcon'
 import { Badge, StatusDot } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Callout } from '../components/ui/Callout'
-import { Dialog, DialogFooter } from '../components/ui/Dialog'
+import { ConfirmDialog, type ConfirmRequest } from '../components/ui/ConfirmDialog'
 import { EmptyState } from '../components/ui/EmptyState'
-import { Field, Select, TextArea, TextInput } from '../components/ui/Field'
-import { IconTile } from '../components/ui/IconTile'
+import { TextArea, TextInput } from '../components/ui/Field'
+import { Select } from '../components/ui/Select'
 import { Page } from '../components/ui/Page'
 import { PageHeader } from '../components/ui/PageHeader'
-import { Panel, PanelHeader } from '../components/ui/Panel'
+import { Panel } from '../components/ui/Panel'
 import { Segmented } from '../components/ui/Segmented'
-import { SettingRow } from '../components/ui/SettingRow'
 import { Skeleton } from '../components/ui/Skeleton'
 import { Switch } from '../components/ui/Switch'
 import { useAccountsStore } from '../store/use-accounts-store'
 import { useSettingsStore } from '../store/use-settings-store'
-import { usePostsStore } from '../store/use-posts-store'
 import { getApi } from '../lib/ipc'
 import { cn, errorMessage, formatRelativeDate } from '../lib/utils'
 import type { Page as PageName } from '../components/Sidebar'
@@ -74,12 +72,7 @@ const CONTENT_STATUS: Record<AutomationContentStatus, { label: string; tone: 'id
 
 type ContentFilter = 'all' | 'queued' | 'ready' | 'tiktok_review' | 'posted' | 'needs_review'
 
-interface ConfirmRequest {
-  title: string
-  body: ReactNode
-  confirmLabel: string
-  onConfirm: () => void
-}
+const LIST_FORMAT = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' })
 
 export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) => void }): React.JSX.Element {
   const configured = useSettingsStore((state) => state.zernioConfigured)
@@ -263,9 +256,9 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
   if (!configured) {
     return (
       <Page width="narrow">
-        <PageHeader eyebrow="Workspace" title="Automations" description="Post the next clip from a content bank at set times each day." />
+        <PageHeader title="Automations" description="Post the next clip from a content bank at set times each day." />
         <EmptyState
-          className="mt-6"
+          className="mt-4"
           icon={<Workflow />}
           title="Connect Zernio first"
           description="Automations post through Zernio. Add your API key and connect the accounts you want to post to."
@@ -291,38 +284,40 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
     return filter === 'all' || item.status === filter || (filter === 'queued' && item.status === 'posting')
   }) ?? []
   const savedReady = selected ? !missingSetup(selected) && !(selected.metadataMode === 'ai' && aiKeysMissing) : false
-  const profileName = profiles.find((profile) => profile.id === selected?.profileId)?.name
+  const setupTodo = draft ? [
+    !draft.profileId && 'choose a profile',
+    draft.accounts.length === 0 && 'select an account',
+    draft.times.length === 0 && 'add a daily time',
+    counts.queued === 0 && 'add clips',
+    draft.metadataMode === 'ai' && aiKeysMissing && 'add an OpenRouter key'
+  ].filter((step): step is string => Boolean(step)) : []
 
   return (
-    <Page width="default">
+    <Page width="narrow">
       <PageHeader
-        eyebrow="Workspace"
         title="Automations"
         description="Post the next clip from a content bank at set times each day."
-        actions={automations.length > 0 && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)} disabled={creating}>New automation</Button>}
+        actions={automations.length > 0 && <Button size="sm" variant="primary" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setCreating(true)} disabled={creating}>New automation</Button>}
       />
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-subtle">
-        <Clock3 className="h-3.5 w-3.5 shrink-0" />
-        BridgeClip must be open at a scheduled time. After sleep or reopening, a run can start up to five minutes late.
-      </p>
 
       {(error || notice) && (
-        <div className="mt-4 space-y-2">
+        <div className="mt-3 space-y-2">
           {error && <Callout tone="danger" onDismiss={() => setError(null)}>{error}</Callout>}
           {notice && <Callout tone="success" onDismiss={() => setNotice(null)}>{notice}</Callout>}
         </div>
       )}
 
       {!loaded && (
-        <div className="mt-5 grid gap-4 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <div className="space-y-2">{[0, 1, 2].map((key) => <Skeleton key={key} className="h-[58px] rounded-2xl" />)}</div>
-          <div className="space-y-4"><Skeleton className="h-[148px] rounded-3xl" /><Skeleton className="h-[240px] rounded-3xl" /></div>
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-1">{[0, 1].map((key) => <Skeleton key={key} className="h-7 w-28 rounded-full" />)}</div>
+          <Skeleton className="h-[260px] rounded-3xl" />
+          <Skeleton className="h-[160px] rounded-3xl" />
         </div>
       )}
 
       {loaded && automations.length === 0 && (
         <EmptyState
-          className="mt-6"
+          className="mt-4"
           icon={<Workflow />}
           title="Create your first automation"
           description="Pick a Zernio profile and its accounts, fill a content bank with clips, and choose daily posting times."
@@ -331,41 +326,48 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
       )}
 
       {loaded && automations.length > 0 && (
-        <div className="mt-5 grid items-start gap-4 lg:grid-cols-[248px_minmax(0,1fr)]">
-          <nav aria-label="Automations" className="space-y-1.5 lg:sticky lg:top-12">
-            {creating && (
-              <div className="glass-tile rounded-2xl p-2">
-                <CreateForm busy={busy === 'create'} onCreate={create} onCancel={() => setCreating(false)} autoFocus />
-              </div>
-            )}
+        <>
+          <nav aria-label="Automations" className="mt-3 flex flex-wrap items-center gap-1">
             {automations.map((automation) => (
-              <AutomationRow
+              <AutomationTab
                 key={automation.id}
                 automation={automation}
                 selected={automation.id === selectedId}
                 onSelect={() => select(automation)}
               />
             ))}
+            {creating && <CreateForm size="sm" busy={busy === 'create'} onCreate={create} onCancel={() => setCreating(false)} autoFocus className="w-[280px] max-w-full" />}
           </nav>
 
           {selected && draft && (
-            <div className="min-w-0 space-y-4">
-              <Panel>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <IconTile size="lg" tone={selected.enabled ? 'accent' : 'neutral'}><Workflow /></IconTile>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-lg font-semibold text-ink">{selected.name}</h2>
-                        <AutomationBadge automation={selected} />
-                      </div>
-                      <p className="mt-0.5 truncate text-xs text-ink-muted">
-                        {profileName ?? 'No profile'} · {selected.accounts.length} account{selected.accounts.length === 1 ? '' : 's'} · {selected.timezone}
-                      </p>
+            <div className="mt-2 space-y-2">
+              <Panel padded={false}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h2 className="truncate text-sm font-semibold text-ink">{selected.name}</h2>
+                      <AutomationBadge automation={selected} />
                     </div>
+                    {!selected.enabled && setupTodo.length > 0 ? (
+                      <p className="text-2xs text-ink-muted">
+                        <span className="text-warning">Finish setup:</span> {LIST_FORMAT.format(setupTodo)}.
+                      </p>
+                    ) : (
+                      <p className="flex flex-wrap gap-x-1.5 text-2xs text-ink-muted">
+                        <span><span className="tabular text-ink">{counts.ready}</span> ready</span>
+                        {counts.tiktok_review > 0 && <><Sep /><span className="text-warning">{counts.tiktok_review} need TikTok review</span></>}
+                        {counts.needs_review > 0 && <><Sep /><span className="text-warning">{counts.needs_review} to check</span></>}
+                        <Sep />
+                        {selected.enabled
+                          ? <span>Next run <span className="text-ink">{nextRunLabel(selected.times, selected.timezone) ?? '—'}</span></span>
+                          : <span>Paused</span>}
+                        <Sep />
+                        <span>Last run <span className="text-ink">{selected.lastRunAt ? formatRelativeDate(selected.lastRunAt) : 'never'}</span></span>
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className={cn('flex items-center gap-2 text-sm text-ink-muted', !selected.enabled && !savedReady && 'opacity-60')} title={!selected.enabled && !savedReady ? 'Finish setup and save before turning this on' : undefined}>
+                  <div className="flex items-center gap-1">
+                    <label className={cn('mr-1 flex items-center gap-1.5 text-2xs text-ink-muted', !selected.enabled && !savedReady && 'opacity-60')} title={!selected.enabled && !savedReady ? 'Finish setup and save before turning this on' : undefined}>
                       {selected.enabled ? 'On' : 'Off'}
                       <Switch
                         checked={selected.enabled}
@@ -375,202 +377,194 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                       />
                     </label>
                     <Button
-                      variant="secondary"
-                      icon={<Play className="h-3.5 w-3.5" />}
+                      size="sm"
+                      icon={<Play className="h-3 w-3" />}
                       loading={busy === 'run'}
                       disabled={Boolean(busy) || !nextClip || dirty}
                       title={dirty ? 'Save automation changes first' : !nextClip ? 'Add a clip and complete any TikTok reviews first' : 'Post the next ready clip now'}
                       onClick={() => void runNow()}
                     >Run now</Button>
-                    <Button variant="ghost" iconOnly aria-label={`Delete ${selected.name}`} title="Delete automation" icon={<Trash2 className="h-4 w-4" />} disabled={Boolean(busy)} onClick={remove} />
+                    <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${selected.name}`} title="Delete automation" icon={<Trash2 className="h-3.5 w-3.5" />} disabled={Boolean(busy)} onClick={remove} />
                   </div>
+                  {selected.lastError && (
+                    <p role="alert" className="basis-full text-2xs text-danger" data-selectable>
+                      <span className="font-medium">The last run failed:</span> {selected.lastError}
+                    </p>
+                  )}
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Stat label="Ready to post" value={String(counts.ready)} hint={counts.tiktok_review ? `${counts.tiktok_review} need TikTok review` : `${counts.queued} queued`} hintTone={counts.tiktok_review ? 'warning' : undefined} />
-                  <Stat label="Submitted" value={String(counts.posted)} hint={counts.needs_review ? `${counts.needs_review} to review` : undefined} hintTone={counts.needs_review ? 'warning' : undefined} />
-                  <Stat label="Next run" value={selected.enabled ? nextRunLabel(selected.times, selected.timezone) ?? '—' : 'Paused'} />
-                  <Stat label="Last run" value={selected.lastRunAt ? formatRelativeDate(selected.lastRunAt) : 'Never'} />
-                </dl>
+                <div className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
+                  <Row label="Profile" htmlFor="automation-profile">
+                    <div className="flex items-center gap-1">
+                      <Select
+                        id="automation-profile"
+                        aria-label="Zernio profile"
+                        size="sm"
+                        className="min-w-0 flex-1 sm:max-w-[240px]"
+                        value={draft.profileId ?? ''}
+                        onChange={(profileId) => setDraft({ ...draft, profileId: profileId || null, accounts: [], enabled: false })}
+                        options={profiles.map((profile) => ({ value: profile.id, label: profile.name, detail: profile.isOverLimit ? 'over limit' : undefined }))}
+                        placeholder="Choose a profile"
+                        emptyText="No profiles yet. Create one with New profile."
+                      />
+                      {!newProfileOpen && <Button size="sm" variant="ghost" onClick={() => setNewProfileOpen(true)}>New profile</Button>}
+                    </div>
+                    {newProfileOpen && (
+                      <form onSubmit={(event) => void addProfile(event)} className="mt-1.5 flex gap-1 sm:max-w-[380px]">
+                        <TextInput inputSize="sm" className="flex-1" autoFocus aria-label="New profile name" placeholder="New profile name" value={newProfileName} maxLength={80} onChange={(event) => setNewProfileName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setNewProfileOpen(false) }} />
+                        <Button size="sm" type="submit" loading={busy === 'profile'} disabled={!isValidProfileName(newProfileName) || Boolean(busy)}>Create</Button>
+                        <Button size="sm" type="button" variant="ghost" iconOnly aria-label="Cancel" icon={<X className="h-3.5 w-3.5" />} onClick={() => setNewProfileOpen(false)} />
+                      </form>
+                    )}
+                  </Row>
 
-                {selected.lastError && <Callout tone="danger" title="The last run failed" className="mt-3">{selected.lastError}</Callout>}
-              </Panel>
-
-              {!selected.enabled && (
-                <SetupChecklist
-                  steps={[
-                    { label: 'Choose a profile', done: Boolean(draft.profileId) },
-                    { label: 'Select an account', done: draft.accounts.length > 0 },
-                    { label: 'Add a daily time', done: draft.times.length > 0 },
-                    { label: 'Add clips', done: counts.queued > 0 },
-                    ...(draft.metadataMode === 'ai' ? [{ label: 'Add OpenRouter key', done: !aiKeysMissing, action: () => onNavigate('settings') }] : [])
-                  ]}
-                />
-              )}
-
-              <div className="grid items-start gap-4 xl:grid-cols-2">
-                <Panel>
-                  <PanelHeader
-                    icon={<IconTile><Globe2 /></IconTile>}
-                    title="Where it posts"
-                    description="One Zernio profile. Each run posts to every selected account."
-                    action={<Button size="sm" variant="ghost" iconOnly aria-label="Refresh accounts" title="Refresh accounts" loading={accountsLoading} onClick={() => void loadAccounts()} icon={<RefreshCw className="h-3.5 w-3.5" />} />}
-                  />
-                  <Field
-                    className="mt-4"
-                    label="Zernio profile"
-                    htmlFor="automation-profile"
-                    aside={!newProfileOpen && <button type="button" className="text-xs text-ink-muted hover:text-ink" onClick={() => setNewProfileOpen(true)}>New profile</button>}
+                  <Row
+                    label="Accounts"
+                    labelId="automation-accounts"
+                    hint={connected.some((account) => account.platform === 'tiktok') && 'TikTok clips need a one-time review in the content bank before they post.'}
                   >
-                    <Select id="automation-profile" value={draft.profileId ?? ''} onChange={(event) => setDraft({ ...draft, profileId: event.target.value || null, accounts: [], enabled: false })}>
-                      <option value="">Choose a profile</option>
-                      {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.isOverLimit ? ' · over limit' : ''}</option>)}
-                    </Select>
-                  </Field>
-                  {newProfileOpen && (
-                    <form onSubmit={(event) => void addProfile(event)} className="mt-2 flex gap-2">
-                      <TextInput className="flex-1" autoFocus aria-label="New profile name" placeholder="New profile name" value={newProfileName} maxLength={80} onChange={(event) => setNewProfileName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setNewProfileOpen(false) }} />
-                      <Button type="submit" loading={busy === 'profile'} disabled={!isValidProfileName(newProfileName) || Boolean(busy)}>Create</Button>
-                      <Button type="button" variant="ghost" iconOnly aria-label="Cancel" icon={<X className="h-4 w-4" />} onClick={() => setNewProfileOpen(false)} />
-                    </form>
-                  )}
-
-                  {draft.profileId && (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-ink">Accounts</p>
-                        <Button size="sm" variant="ghost" icon={<Plus className="h-3.5 w-3.5" />} disabled={Boolean(busy)} onClick={() => void connectAccount()}>Connect</Button>
-                      </div>
-                      {connected.length === 0 ? (
-                        <p className="mt-2 rounded-xl glass-well px-3 py-3 text-xs text-ink-muted">No supported accounts in this profile yet. Connect TikTok, Instagram, YouTube, X, Facebook, LinkedIn or Threads.</p>
-                      ) : (
-                        <div className="mt-2 grid gap-1.5">
-                          {connected.map((account) => {
-                            const available = isPostableAccount(account)
-                            const checked = draft.accounts.some((item) => item.accountId === account.id)
-                            const handle = account.username ? `@${account.username}` : account.displayName || 'Connected account'
-                            return (
-                              <button
-                                key={account.id}
-                                type="button"
-                                role="checkbox"
-                                aria-checked={checked}
-                                disabled={!available}
-                                onClick={() => setDraft({ ...draft, accounts: checked ? draft.accounts.filter((item) => item.accountId !== account.id) : [...draft.accounts, { accountId: account.id, platform: account.platform as AutomationUpdate['accounts'][number]['platform'] }] })}
-                                className={cn('glass-tile flex items-center gap-3 rounded-xl p-2 pr-3 text-left transition-colors', available && 'glass-tile-hover', checked && 'glass-selected', !available && 'cursor-not-allowed opacity-60')}
-                              >
-                                <PlatformIcon platform={account.platform} className="h-8 w-8 rounded-lg" />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium text-ink">{handle}</span>
-                                  <span className="block text-2xs text-ink-subtle">{available ? platformName(account.platform) : `${platformName(account.platform)} · reconnect in Accounts`}</span>
-                                </span>
-                                <span aria-hidden className={cn('flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[6px]', checked ? 'bg-accent text-accent-ink' : 'bg-black/25 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.22)]')}>
-                                  {checked && <Check className="h-3 w-3" strokeWidth={3} />}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                      {accounts.some((account) => account.profileId === draft.profileId && account.platform === 'tiktok') && (
-                        <p className="mt-2 text-2xs text-ink-subtle">TikTok is supported. Review each clip in the content bank once; approved clips post automatically at your daily times.</p>
-                      )}
-                    </div>
-                  )}
-                </Panel>
-
-                <Panel>
-                  <PanelHeader icon={<IconTile><Clock3 /></IconTile>} title="When it posts" description="One queued clip posts at each time, every day." />
-                  <div className="mt-4">
-                    <p className="text-sm font-medium text-ink">Daily times</p>
-                    {draft.times.length > 0 ? (
-                      <ul className="mt-2 flex flex-wrap gap-1.5">
-                        {draft.times.map((time) => (
-                          <li key={time} className="glass-tile inline-flex h-8 items-center gap-1 rounded-full pl-3 pr-1 font-mono text-xs tabular text-ink">
-                            {formatTime(time)}
-                            <button type="button" aria-label={`Remove ${formatTime(time)}`} className="flex h-6 w-6 items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-white/[0.08] hover:text-ink" onClick={() => setDraft({ ...draft, times: draft.times.filter((item) => item !== time) })}>
-                              <X className="h-3 w-3" />
+                    {!draft.profileId ? (
+                      <p className="flex h-7 items-center text-2xs text-ink-subtle">Choose a profile first.</p>
+                    ) : (
+                      <div role="group" aria-labelledby="automation-accounts" className="flex flex-wrap items-center gap-1">
+                        {connected.length === 0 && <p className="mr-1 text-2xs text-ink-muted">No supported accounts in this profile yet.</p>}
+                        {connected.map((account) => {
+                          const available = isPostableAccount(account)
+                          const checked = draft.accounts.some((item) => item.accountId === account.id)
+                          const handle = account.username ? `@${account.username}` : account.displayName || 'Connected account'
+                          return (
+                            <button
+                              key={account.id}
+                              type="button"
+                              role="checkbox"
+                              aria-checked={checked}
+                              aria-label={`${handle} on ${platformName(account.platform)}`}
+                              title={available ? platformName(account.platform) : `${platformName(account.platform)}: reconnect in Accounts`}
+                              disabled={!available}
+                              onClick={() => setDraft({ ...draft, accounts: checked ? draft.accounts.filter((item) => item.accountId !== account.id) : [...draft.accounts, { accountId: account.id, platform: account.platform as AutomationUpdate['accounts'][number]['platform'] }] })}
+                              className={cn(
+                                'group/chip inline-flex h-7 max-w-[200px] items-center gap-1.5 rounded-full border pl-0.5 pr-2.5 text-xs transition-colors duration-150',
+                                checked
+                                  ? 'border-accent/60 bg-accent/[0.14] text-ink'
+                                  : 'border-white/[0.08] bg-white/[0.03] text-ink-muted hover:border-white/[0.14] hover:text-ink',
+                                !available && 'cursor-not-allowed opacity-50 hover:border-white/[0.08] hover:text-ink-muted'
+                              )}
+                            >
+                              <PlatformIcon
+                                platform={account.platform}
+                                className={cn('h-[22px] w-[22px] rounded-full transition-[filter,opacity] duration-150 [&_svg]:h-3 [&_svg]:w-3', !checked && 'opacity-70 grayscale group-hover/chip:opacity-100 group-hover/chip:grayscale-0')}
+                              />
+                              <span className="truncate">{handle}</span>
+                              {checked && <Check aria-hidden className="-mr-0.5 h-3 w-3 shrink-0 text-accent-hover" strokeWidth={3} />}
                             </button>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : <p className="mt-2 text-xs text-ink-muted">No times yet.</p>}
-                    <div className="mt-2 flex gap-2">
-                      <TextInput type="time" aria-label="New daily time" mono className="w-[132px] [color-scheme:dark]" value={newTime} onChange={(event) => setNewTime(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTime() }} />
-                      <Button icon={<Plus className="h-3.5 w-3.5" />} onClick={addTime} disabled={!newTime || draft.times.includes(newTime) || draft.times.length >= 24}>Add time</Button>
-                    </div>
-                  </div>
-                  <Field className="mt-4" label="Time zone" htmlFor="automation-timezone">
-                    <Select id="automation-timezone" value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })}>
-                      {timeZones(draft.timezone).map((zone) => <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>)}
-                    </Select>
-                  </Field>
-                </Panel>
-              </div>
+                          )
+                        })}
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => void connectAccount()}
+                          className="inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-white/[0.16] px-2.5 text-xs text-ink-muted transition-colors duration-150 hover:border-white/[0.3] hover:text-ink disabled:opacity-50"
+                        >
+                          <Plus aria-hidden className="h-3 w-3" />Connect
+                        </button>
+                        <Button size="sm" variant="ghost" iconOnly aria-label="Refresh accounts" title="Refresh accounts" loading={accountsLoading} onClick={() => void loadAccounts()} icon={<RefreshCw className="h-3 w-3" />} />
+                      </div>
+                    )}
+                  </Row>
 
-              <Panel>
-                <PanelHeader icon={<IconTile><Sparkles /></IconTile>} title="Post details" description="How each clip is named and described when it posts." />
-                <div className="mt-4 space-y-2">
-                  <Field label="Automation name" htmlFor="automation-name">
-                    <TextInput id="automation-name" value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-                  </Field>
-                  <SettingRow
-                    className="mt-3"
-                    title="Write captions with AI"
-                    description="When enabled, OpenRouter transcribes each clip with MAI Transcribe 2 and writes platform-specific captions. TikTok captions are prepared for your review before the clip can post; other platforms publish automatically. AI can make mistakes; leave this off to use your own captions."
-                    control={<Switch checked={draft.metadataMode === 'ai'} onChange={(on) => setDraft({ ...draft, metadataMode: on ? 'ai' : 'manual' })} label="Write captions with AI" />}
-                  />
-                  {draft.metadataMode === 'ai' && aiKeysMissing && (
-                    <Callout tone="warning" action={<Button size="sm" onClick={() => onNavigate('settings')}>Open Settings</Button>}>
-                      Add an OpenRouter key before turning this automation on.
-                    </Callout>
-                  )}
-                  {draft.accounts.some((account) => account.platform === 'youtube') && (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <SettingRow
-                        title="YouTube visibility"
-                        control={<Segmented size="sm" label="YouTube visibility" value={draft.youtubeVisibility} onChange={(value) => setDraft({ ...draft, youtubeVisibility: value })} options={[{ value: 'public', label: 'Public' }, { value: 'unlisted', label: 'Unlisted' }, { value: 'private', label: 'Private' }]} />}
-                      />
-                      <SettingRow
-                        title="Made for kids"
-                        control={<Switch checked={draft.youtubeMadeForKids} onChange={(value) => setDraft({ ...draft, youtubeMadeForKids: value })} label="Made for kids" />}
+                  <Row
+                    label="Schedule"
+                    labelId="automation-schedule"
+                    hint="One clip posts at each time, daily. BridgeClip must be open; after sleep, a run can start up to 5 minutes late."
+                  >
+                    <div role="group" aria-labelledby="automation-schedule" className="flex flex-wrap items-center gap-1">
+                      {draft.times.map((time) => (
+                        <span key={time} className="inline-flex h-7 items-center rounded-full border border-white/[0.08] bg-white/[0.03] pl-2.5 pr-0.5 font-mono text-2xs tabular text-ink">
+                          {formatTime(time)}
+                          <button type="button" aria-label={`Remove ${formatTime(time)}`} className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-white/[0.08] hover:text-ink" onClick={() => setDraft({ ...draft, times: draft.times.filter((item) => item !== time) })}>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <TextInput type="time" inputSize="sm" aria-label="New daily time" mono className="w-[120px] [color-scheme:dark]" value={newTime} onChange={(event) => setNewTime(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addTime() }} />
+                      <Button size="sm" variant="ghost" icon={<Plus className="h-3 w-3" />} onClick={addTime} disabled={!newTime || draft.times.includes(newTime) || draft.times.length >= 24}>Add time</Button>
+                      <Select
+                        id="automation-timezone"
+                        aria-label="Time zone"
+                        title="Time zone"
+                        size="sm"
+                        className="w-[190px] max-w-full"
+                        value={draft.timezone}
+                        onChange={(timezone) => setDraft({ ...draft, timezone })}
+                        options={timeZones(draft.timezone).map((zone) => ({ value: zone, label: zone.replace(/_/g, ' ') }))}
+                        searchable
+                        searchPlaceholder="Search time zones"
                       />
                     </div>
+                  </Row>
+
+                  <Row
+                    label="Captions"
+                    hint="Uses OpenRouter and MAI Transcribe 2. TikTok captions wait for your review. AI can make mistakes."
+                  >
+                    <label className="flex h-7 items-center gap-2 text-xs text-ink">
+                      <Switch checked={draft.metadataMode === 'ai'} onChange={(on) => setDraft({ ...draft, metadataMode: on ? 'ai' : 'manual' })} label="Write captions with AI" />
+                      Write captions with AI
+                    </label>
+                    {draft.metadataMode === 'ai' && aiKeysMissing && (
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2 text-2xs text-warning">
+                        Add an OpenRouter key before turning this automation on.
+                        <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => onNavigate('settings')}>Open Settings</button>
+                      </p>
+                    )}
+                  </Row>
+
+                  {draft.accounts.some((account) => account.platform === 'youtube') && (
+                    <Row label="YouTube">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                        <Segmented size="sm" label="YouTube visibility" value={draft.youtubeVisibility} onChange={(value) => setDraft({ ...draft, youtubeVisibility: value })} options={[{ value: 'public', label: 'Public' }, { value: 'unlisted', label: 'Unlisted' }, { value: 'private', label: 'Private' }]} />
+                        <label className="flex items-center gap-2 text-xs text-ink-muted">
+                          <Switch checked={draft.youtubeMadeForKids} onChange={(value) => setDraft({ ...draft, youtubeMadeForKids: value })} label="Made for kids" />
+                          Made for kids
+                        </label>
+                      </div>
+                    </Row>
                   )}
+
+                  <Row label="Name" htmlFor="automation-name">
+                    <TextInput id="automation-name" inputSize="sm" className="sm:max-w-[240px]" value={draft.name} maxLength={80} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                  </Row>
                 </div>
               </Panel>
 
-              <Panel>
-                <PanelHeader
-                  icon={<IconTile><FileVideo2 /></IconTile>}
-                  title="Content bank"
-                  description="The oldest ready clip posts first. Clips awaiting TikTok review are skipped until approved."
-                  action={<Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} loading={busy === 'upload'} onClick={() => void mutate('upload', () => getApi().automations.addContent(selected.id), 'Clips added to the bank.')} disabled={Boolean(busy)}>Add clips</Button>}
-                />
-                {selected.content.length > 0 && (
-                  <Segmented
-                    className="mt-4"
-                    size="sm"
-                    label="Filter clips"
-                    value={filter}
-                    onChange={setFilter}
-                    options={[
-                      { value: 'all', label: `All ${counts.all}` },
-                      { value: 'ready', label: `Ready ${counts.ready}` },
-                      ...((counts.tiktok_review || filter === 'tiktok_review') ? [{ value: 'tiktok_review' as const, label: `TikTok review ${counts.tiktok_review}` }] : []),
-                      { value: 'posted', label: `Submitted ${counts.posted}` },
-                      ...(counts.needs_review ? [{ value: 'needs_review' as const, label: `Review ${counts.needs_review}` }] : [])
-                    ]}
-                  />
-                )}
-                <ul className="mt-3 space-y-1.5">
+              <Panel padded={false}>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-2">
+                  <h2 className="mr-auto text-sm font-semibold text-ink" title="The oldest ready clip posts next. Clips awaiting TikTok review are skipped.">Content bank</h2>
+                  {selected.content.length > 0 && (
+                    <Segmented
+                      size="sm"
+                      label="Filter clips"
+                      value={filter}
+                      onChange={setFilter}
+                      options={[
+                        { value: 'all', label: `All ${counts.all}` },
+                        { value: 'ready', label: `Ready ${counts.ready}` },
+                        ...((counts.tiktok_review || filter === 'tiktok_review') ? [{ value: 'tiktok_review' as const, label: `TikTok review ${counts.tiktok_review}` }] : []),
+                        { value: 'posted', label: `Submitted ${counts.posted}` },
+                        ...(counts.needs_review ? [{ value: 'needs_review' as const, label: `Review ${counts.needs_review}` }] : [])
+                      ]}
+                    />
+                  )}
+                  <Button size="sm" icon={<Plus className="h-3 w-3" />} loading={busy === 'upload'} onClick={() => void mutate('upload', () => getApi().automations.addContent(selected.id), 'Clips added to the bank.')} disabled={Boolean(busy)}>Add clips</Button>
+                </div>
+                <ul className="divide-y divide-white/[0.06] border-t border-white/[0.06]">
                   {selected.content.length === 0 && (
-                    <li className="glass-well rounded-xl px-4 py-6 text-center">
-                      <p className="text-sm text-ink">No clips yet</p>
-                      <p className="mt-1 text-xs text-ink-muted">Add MP4, MOV, M4V or WebM files, or send clips here from the Library.</p>
+                    <li className="px-3.5 py-4 text-center">
+                      <p className="text-xs text-ink">No clips yet</p>
+                      <p className="mt-0.5 text-2xs text-ink-muted">Add MP4, MOV, M4V or WebM files, or send clips here from the Library.</p>
                     </li>
                   )}
-                  {selected.content.length > 0 && visibleContent.length === 0 && <li className="py-4 text-center text-xs text-ink-muted">No clips match this filter.</li>}
+                  {selected.content.length > 0 && visibleContent.length === 0 && <li className="px-3.5 py-3 text-center text-2xs text-ink-muted">No clips match this filter.</li>}
                   {visibleContent.map((item) => (
                     <ContentRow
                       key={item.id}
@@ -587,24 +581,24 @@ export function AutomationsPage({ onNavigate }: { onNavigate: (page: PageName) =
                       onSave={() => void saveContent(item)}
                       onReturnToQueue={() => requestReturnToQueue(item)}
                       onRemove={() => removeContent(item)}
-                      onCheckPosts={() => { usePostsStore.getState().requestReveal(); onNavigate('accounts') }}
+                      onCheckPosts={() => onNavigate('posts')}
                     />
                   ))}
                 </ul>
               </Panel>
 
               {dirty && (
-                <div className="glass-thick sticky bottom-4 z-10 flex items-center justify-between gap-3 rounded-full py-2 pl-5 pr-2 animate-fade-in" role="region" aria-label="Unsaved changes">
-                  <p className="flex items-center gap-2 text-sm text-ink"><StatusDot tone="warning" />Unsaved changes</p>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" disabled={Boolean(busy)} onClick={() => setDraft(draftFor(selected))}>Discard</Button>
-                    <Button variant="primary" loading={busy === 'save'} disabled={Boolean(busy)} onClick={() => void save()}>Save changes</Button>
+                <div className="glass-thick sticky bottom-3 z-10 flex items-center justify-between gap-3 rounded-full py-1.5 pl-4 pr-1.5 animate-fade-in" role="region" aria-label="Unsaved changes">
+                  <p className="flex items-center gap-2 text-xs text-ink"><StatusDot tone="warning" className="h-1.5 w-1.5 [&>span]:h-1.5 [&>span]:w-1.5" />Unsaved changes</p>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => setDraft(draftFor(selected))}>Discard</Button>
+                    <Button size="sm" variant="primary" loading={busy === 'save'} disabled={Boolean(busy)} onClick={() => void save()}>Save changes</Button>
                   </div>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {selected && tiktokReview && <AutomationTikTokReviewDialog key={tiktokReview.id} automationId={selected.id} contentId={tiktokReview.id} title={tiktokReview.title}
@@ -628,87 +622,74 @@ function AutomationBadge({ automation }: { automation: Automation }): React.JSX.
   return <Badge tone={state.tone === 'idle' ? 'neutral' : state.tone}>{state.label}</Badge>
 }
 
-function AutomationRow({ automation, selected, onSelect }: { automation: Automation; selected: boolean; onSelect: () => void }): React.JSX.Element {
+function Sep(): React.JSX.Element {
+  return <span aria-hidden className="text-ink-faint">·</span>
+}
+
+/** One labelled line of the automation's settings: label on the left, controls on the right. */
+function Row({ label, htmlFor, labelId, hint, children }: {
+  label: string
+  /** The control the label names. */
+  htmlFor?: string
+  /** Lets a group of controls use the label as its name. */
+  labelId?: string
+  hint?: React.ReactNode
+  children: React.ReactNode
+}): React.JSX.Element {
+  const labelClass = 'text-xs font-medium leading-7 text-ink-muted'
+  return (
+    <div className="grid gap-x-3 gap-y-0.5 px-3.5 py-1.5 sm:grid-cols-[80px_minmax(0,1fr)]">
+      {htmlFor
+        ? <label htmlFor={htmlFor} className={labelClass}>{label}</label>
+        : <p id={labelId} className={labelClass}>{label}</p>}
+      <div className="min-w-0">
+        {children}
+        {hint && <p className="mt-1 text-2xs leading-snug text-ink-subtle">{hint}</p>}
+      </div>
+    </div>
+  )
+}
+
+function AutomationTab({ automation, selected, onSelect }: { automation: Automation; selected: boolean; onSelect: () => void }): React.JSX.Element {
   const state = automationState(automation)
-  const queued = automation.content.filter((item) => item.status === 'queued')
-  const ready = queued.filter((item) => !needsTikTokReview(automation, item)).length
-  const pending = queued.length - ready
-  const next = automation.enabled ? nextRunLabel(automation.times, automation.timezone) : null
+  const ready = automation.content.filter((item) => item.status === 'queued' && !needsTikTokReview(automation, item)).length
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      className={cn('glass-tile glass-tile-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left', selected && 'glass-selected')}
+      title={`${state.label} · ${ready} ready`}
+      className={cn(
+        'inline-flex h-7 max-w-[220px] items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors duration-150',
+        selected
+          ? 'border-white/[0.16] bg-white/[0.1] font-medium text-ink'
+          : 'border-transparent text-ink-muted hover:bg-white/[0.05] hover:text-ink'
+      )}
     >
-      <StatusDot tone={state.tone} pulse={state.tone === 'success'} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-ink">{automation.name}</span>
-        <span className="mt-0.5 block truncate text-2xs text-ink-subtle">
-          {state.label} · {ready} ready{pending ? ` · ${pending} to review` : next ? ` · ${next}` : ''}
-        </span>
-      </span>
+      <StatusDot tone={state.tone} pulse={state.tone === 'success' && selected} className="h-1.5 w-1.5 [&>span]:h-1.5 [&>span]:w-1.5" />
+      <span className="truncate">{automation.name}</span>
     </button>
   )
 }
 
-function CreateForm({ busy, onCreate, onCancel, autoFocus, className }: {
+function CreateForm({ busy, onCreate, onCancel, autoFocus, size = 'md', className }: {
   busy: boolean
   onCreate: (name: string) => Promise<boolean>
   onCancel?: () => void
   autoFocus?: boolean
+  size?: 'sm' | 'md'
   className?: string
 }): React.JSX.Element {
   const [name, setName] = useState('')
   return (
     <form
-      className={cn('flex gap-1.5', className)}
+      className={cn('flex gap-1', className)}
       onSubmit={(event) => { event.preventDefault(); if (name.trim()) void onCreate(name).then((ok) => { if (ok) setName('') }) }}
     >
-      <TextInput className="flex-1" autoFocus={autoFocus} aria-label="Automation name" placeholder="Automation name" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') onCancel?.() }} />
-      <Button type="submit" variant="primary" loading={busy} disabled={!name.trim() || busy}>Create</Button>
-      {onCancel && <Button type="button" variant="ghost" iconOnly aria-label="Cancel" icon={<X className="h-4 w-4" />} onClick={onCancel} />}
+      <TextInput inputSize={size} className="flex-1" autoFocus={autoFocus} aria-label="Automation name" placeholder="Automation name" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') onCancel?.() }} />
+      <Button size={size} type="submit" variant="primary" loading={busy} disabled={!name.trim() || busy}>Create</Button>
+      {onCancel && <Button size={size} type="button" variant="ghost" iconOnly aria-label="Cancel" icon={<X className="h-3.5 w-3.5" />} onClick={onCancel} />}
     </form>
-  )
-}
-
-function Stat({ label, value, hint, hintTone }: { label: string; value: string; hint?: string; hintTone?: 'warning' }): React.JSX.Element {
-  return (
-    <div className="glass-tile rounded-xl px-3 py-2">
-      <dt className="text-2xs text-ink-subtle">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-medium tabular text-ink">
-        {value}{hint && <span className={cn('ml-1.5 text-2xs font-normal', hintTone === 'warning' ? 'text-warning' : 'text-ink-subtle')}>{hint}</span>}
-      </dd>
-    </div>
-  )
-}
-
-function SetupChecklist({ steps }: { steps: { label: string; done: boolean; action?: () => void }[] }): React.JSX.Element | null {
-  const remaining = steps.filter((step) => !step.done).length
-  if (remaining === 0) return null
-  return (
-    <div className="glass rounded-3xl p-4 xl:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-ink">Finish setup</p>
-        <p className="text-xs text-ink-subtle">{steps.length - remaining} of {steps.length} done</p>
-      </div>
-      <ol className="mt-3 flex flex-wrap gap-1.5">
-        {steps.map((step) => {
-          const content = <>
-            <span className={cn('flex h-4 w-4 items-center justify-center rounded-full', step.done ? 'bg-success/20 text-success' : 'shadow-[inset_0_0_0_1px_rgb(255_255_255/0.22)]')}>
-              {step.done && <Check className="h-2.5 w-2.5" strokeWidth={3.5} />}
-            </span>
-            {step.label}
-          </>
-          const className = cn('inline-flex h-7 items-center gap-2 rounded-full pl-1.5 pr-3 text-xs', step.done ? 'text-ink-subtle line-through decoration-ink-faint' : 'glass-tile text-ink')
-          return <li key={step.label}>
-            {step.action && !step.done
-              ? <button type="button" className={cn(className, 'glass-tile-hover')} onClick={step.action}>{content}</button>
-              : <span className={className}>{content}</span>}
-          </li>
-        })}
-      </ol>
-    </div>
   )
 }
 
@@ -730,102 +711,73 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const status = tiktokReviewNeeded ? { label: 'Needs TikTok review', tone: 'warning' as const } : CONTENT_STATUS[item.status]
+  const attention = item.status === 'needs_review' || tiktokReviewNeeded
   const hasDetails = Boolean(item.generatedMetadata || item.transcript)
+  const note = item.status === 'queued' && tiktokSelected && !tiktokReviewNeeded && item.tiktokApproval ? 'TikTok approved'
+    : item.status === 'posted' && item.tiktokApproval?.options.draft ? 'Sent to TikTok inbox' : null
+  const problem = item.error ?? (item.status === 'needs_review' ? 'Confirm whether this clip posted before running it again.' : null)
   return (
-    <li className={cn('glass-tile rounded-2xl p-2', (editing || open) && 'bg-white/[0.06]')}>
-      <div className="flex items-center gap-3">
-        <IconTile size="lg" tone={item.status === 'needs_review' || tiktokReviewNeeded ? 'warning' : 'neutral'}><FileVideo2 /></IconTile>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium text-ink">{item.title}</p>
-            {nextUp && <Badge tone="accent">Next up</Badge>}
-          </div>
-          <p className="mt-0.5 flex items-center gap-1.5 text-2xs text-ink-subtle">
-            <StatusDot tone={status.tone} pulse={item.status === 'posting'} className="h-1.5 w-1.5 [&>span]:h-1.5 [&>span]:w-1.5" />
-            <span className={cn(item.status === 'needs_review' || tiktokReviewNeeded ? 'text-warning' : 'text-ink-muted')}>{status.label}</span>
-            {item.status === 'queued' && tiktokSelected && !tiktokReviewNeeded && item.tiktokApproval && <span>· TikTok approved</span>}
-            {item.status === 'posted' && item.tiktokApproval?.options.draft && <span>· Sent to TikTok inbox</span>}
-            <span aria-hidden>·</span>
-            <span className="truncate">{item.postedAt ? `Posted ${formatRelativeDate(item.postedAt)}` : `Added ${formatRelativeDate(item.addedAt)}`}</span>
-          </p>
+    <li className={cn('group/row px-3.5 py-1 transition-colors', (editing || open) && 'bg-white/[0.025]')}>
+      <div className="flex min-h-7 items-center gap-2.5">
+        <StatusDot tone={status.tone} pulse={item.status === 'posting'} className="h-1.5 w-1.5 [&>span]:h-1.5 [&>span]:w-1.5" />
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <p className="truncate text-xs text-ink">{item.title}</p>
+          {nextUp && <Badge tone="accent" className="h-4 px-1.5 text-[10px]">Next up</Badge>}
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {item.status === 'queued' && tiktokSelected && <Button size="sm" variant="secondary" onClick={onReviewTikTok} disabled={busy || reviewDisabled} title={reviewDisabled ? 'Save automation changes and finish editing this clip first' : undefined}>{tiktokReviewNeeded ? 'Review TikTok' : 'Edit TikTok'}</Button>}
-          {hasDetails && <Button size="sm" variant="ghost" aria-expanded={open} trailingIcon={<ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />} onClick={() => setOpen(!open)}>AI details</Button>}
-          <Button size="sm" variant="ghost" iconOnly aria-label={editing ? 'Close editor' : `Edit ${item.title}`} title="Edit title and caption" icon={editing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />} onClick={onEdit} />
-          <Button size="sm" variant="ghost" iconOnly aria-label={`Remove ${item.title}`} title="Remove from bank" icon={<Trash2 className="h-3.5 w-3.5" />} disabled={busy} onClick={onRemove} />
+        <p className="shrink-0 truncate text-2xs text-ink-subtle">
+          <span className={attention ? 'text-warning' : 'text-ink-muted'}>{status.label}</span>
+          {note && <span className="hidden lg:inline"> · {note}</span>}
+          <span className="hidden md:inline"> · {item.postedAt ? `Posted ${formatRelativeDate(item.postedAt)}` : `Added ${formatRelativeDate(item.addedAt)}`}</span>
+        </p>
+        <div className="-mr-1.5 flex shrink-0 items-center">
+          {item.status === 'queued' && tiktokSelected && <Button size="sm" variant={tiktokReviewNeeded ? 'secondary' : 'ghost'} className="h-6 px-2" onClick={onReviewTikTok} disabled={busy || reviewDisabled} title={reviewDisabled ? 'Save automation changes and finish editing this clip first' : undefined}>{tiktokReviewNeeded ? 'Review TikTok' : 'Edit TikTok'}</Button>}
+          {hasDetails && <Button size="sm" variant="ghost" className="h-6 px-2" aria-expanded={open} trailingIcon={<ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />} onClick={() => setOpen(!open)}>AI details</Button>}
+          <div className={cn('flex items-center transition-opacity duration-150', !editing && 'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100')}>
+            <Button size="sm" variant="ghost" iconOnly className="h-6 w-6" aria-label={editing ? 'Close editor' : `Edit ${item.title}`} title="Edit title and caption" icon={editing ? <X className="h-3 w-3" /> : <Pencil className="h-3 w-3" />} onClick={onEdit} />
+            <Button size="sm" variant="ghost" iconOnly className="h-6 w-6" aria-label={`Remove ${item.title}`} title="Remove from bank" icon={<Trash2 className="h-3 w-3" />} disabled={busy} onClick={onRemove} />
+          </div>
         </div>
       </div>
 
-      {item.error && (
-        <Callout tone={item.status === 'needs_review' ? 'warning' : 'danger'} className="mt-2" action={item.status === 'needs_review' && <Button size="sm" onClick={onCheckPosts}>Check posts</Button>}>
-          {item.error}
-        </Callout>
-      )}
-      {!item.error && item.status === 'needs_review' && (
-        <Callout tone="warning" className="mt-2" action={<Button size="sm" onClick={onCheckPosts}>Check posts</Button>}>Confirm whether this clip posted before running it again.</Callout>
+      {problem && (
+        <p role={item.status === 'needs_review' ? 'status' : 'alert'} className={cn('mb-1 ml-4 flex flex-wrap items-baseline gap-x-2 text-2xs', item.status === 'needs_review' ? 'text-warning' : 'text-danger')}>
+          <span data-selectable>{problem}</span>
+          {item.status === 'needs_review' && <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={onCheckPosts}>Check posts</button>}
+        </p>
       )}
 
       {open && hasDetails && (
-        <div className="mt-2 space-y-1.5 px-1 pb-1">
+        <div className="mb-1.5 mt-0.5 space-y-1 pl-4">
           {item.generatedMetadata?.map((post) => (
-            <div key={post.platform} className="glass-well rounded-xl p-3 text-xs text-ink-muted">
-              <p className="flex items-center gap-2 font-medium text-ink"><PlatformIcon platform={post.platform} variant="glyph" />{platformName(post.platform)}{post.title ? ` · ${post.title}` : ''}</p>
-              <p className="mt-1.5 whitespace-pre-wrap leading-relaxed" data-selectable>{post.caption}</p>
+            <div key={post.platform} className="glass-well rounded-lg px-2.5 py-2 text-2xs text-ink-muted">
+              <p className="flex items-center gap-1.5 font-medium text-ink"><PlatformIcon platform={post.platform} variant="glyph" />{platformName(post.platform)}{post.title ? ` · ${post.title}` : ''}</p>
+              <p className="mt-1 whitespace-pre-wrap leading-relaxed" data-selectable>{post.caption}</p>
               {(post.tags.length > 0 || post.categoryId || post.topicTag) && (
-                <p className="mt-1.5 text-2xs text-ink-subtle">
+                <p className="mt-1 text-ink-subtle">
                   {[post.tags.length > 0 && `Tags: ${post.tags.join(', ')}`, post.categoryId && `Category ${post.categoryId}`, post.topicTag && `Topic: ${post.topicTag}`].filter(Boolean).join(' · ')}
                 </p>
               )}
             </div>
           ))}
           {item.transcript && (
-            <details className="glass-well rounded-xl p-3 text-xs text-ink-muted">
+            <details className="glass-well rounded-lg px-2.5 py-2 text-2xs text-ink-muted">
               <summary className="cursor-pointer font-medium text-ink">Transcript</summary>
-              <p className="mt-1.5 whitespace-pre-wrap leading-relaxed" data-selectable>{item.transcript}</p>
+              <p className="mt-1 whitespace-pre-wrap leading-relaxed" data-selectable>{item.transcript}</p>
             </details>
           )}
         </div>
       )}
 
       {editing && (
-        <div className="mt-2 space-y-3 px-1 pb-1">
-          <Field label="Title">
-            <TextInput value={editing.title} maxLength={500} onChange={(event) => onChange({ ...editing, title: event.target.value })} />
-          </Field>
-          <Field label="Caption">
-            <TextArea className="min-h-[86px]" value={editing.caption} onChange={(event) => onChange({ ...editing, caption: event.target.value })} />
-          </Field>
-          <div className="flex flex-wrap justify-end gap-2">
+        <div className="mb-1.5 mt-1 space-y-1.5 pl-4">
+          <TextInput inputSize="sm" aria-label="Title" placeholder="Title" value={editing.title} maxLength={500} onChange={(event) => onChange({ ...editing, title: event.target.value })} />
+          <TextArea aria-label="Caption" placeholder="Caption" className="min-h-[64px] text-xs" value={editing.caption} onChange={(event) => onChange({ ...editing, caption: event.target.value })} />
+          <div className="flex flex-wrap justify-end gap-1">
             {item.status === 'needs_review' && !item.postId && <Button size="sm" variant="secondary" onClick={onReturnToQueue} disabled={busy}>Return to queue</Button>}
             <Button size="sm" variant="primary" onClick={onSave} disabled={busy}>Save clip</Button>
           </div>
         </div>
       )}
     </li>
-  )
-}
-
-function ConfirmDialog({ request, onClose }: { request: ConfirmRequest; onClose: () => void }): React.JSX.Element {
-  const titleId = useId()
-  const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    cancelRef.current?.focus()
-    const onKeyDown = (event: KeyboardEvent): void => { if (event.key === 'Escape') { event.preventDefault(); onClose() } }
-    document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown); previousFocus?.focus() }
-  }, [onClose])
-  return (
-    <Dialog role="alertdialog" aria-labelledby={titleId} onBackdropMouseDown={onClose} panelClassName="max-w-[420px]">
-      <div className="px-5 pb-5 pt-5">
-        <h2 id={titleId} className="text-base font-semibold text-ink">{request.title}</h2>
-        <p className="mt-1.5 text-sm text-ink-muted">{request.body}</p>
-      </div>
-      <DialogFooter>
-        <Button ref={cancelRef} onClick={onClose}>Cancel</Button>
-        <Button variant="danger" onClick={() => { onClose(); request.onConfirm() }}>{request.confirmLabel}</Button>
-      </DialogFooter>
-    </Dialog>
   )
 }
