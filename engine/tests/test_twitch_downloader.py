@@ -150,9 +150,13 @@ def test_real_native_hls_download_and_probe(service, monkeypatch, tmp_path):
         pytest.skip('FFmpeg and ffprobe required for native HLS fixture')
     media = tmp_path / 'hls'
     media.mkdir()
+    encoders = subprocess.check_output(['ffmpeg', '-hide_banner', '-encoders'], text=True)
+    # Exercise the same H.264 HLS path with the release's LGPL encoder too.
+    # x264 is available in development FFmpeg, but deliberately absent on Macs.
+    encoder = next(name for name in ['libx264', 'libopenh264', 'h264_videotoolbox'] if name in encoders)
     subprocess.run([
         'ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:r=10:d=2',
-        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+        '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-c:v', encoder, '-pix_fmt', 'yuv420p',
         '-g', '10', '-c:a', 'aac', '-f', 'hls', '-hls_time', '1', '-hls_list_size', '0',
         str(media / 'vod.m3u8'),
     ], check=True, capture_output=True)
