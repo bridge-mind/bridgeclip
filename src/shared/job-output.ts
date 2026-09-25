@@ -83,6 +83,7 @@ function safeMetrics(value: unknown): Record<string, unknown> | null {
     if (['auto', 'fill', 'fit'].includes(requested.layout_style as string)) safe.layout_style = requested.layout_style
     if (typeof requested.layout_vision_enabled === 'boolean') safe.layout_vision_enabled = requested.layout_vision_enabled
     if (requested.pacing === 'tight' || requested.pacing === 'natural') safe.pacing = requested.pacing
+    if (typeof requested.video_speed === 'number' && Number.isFinite(requested.video_speed) && requested.video_speed >= 1 && requested.video_speed <= 2) safe.video_speed = requested.video_speed
     result.requested_settings = safe
   }
   for (const field of ['planned_clip_count', 'rendered_clip_count', 'failed_clip_count', 'uploaded_clip_count',

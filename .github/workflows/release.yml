@@ -173,7 +173,7 @@ jobs:
           engine-venv/bin/python3 -m pip install --require-hashes -r engine/requirements.lock
 
           # Verify it works standalone (no framework deps)
-          PYTHONPATH=engine engine-venv/bin/python3 -c "import cv2; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 1; assert LayoutAnalyzer().available"
+          PYTHONPATH=engine engine-venv/bin/python3 -c "import cv2; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 2; assert LayoutAnalyzer().available"
           PYTHONPATH=engine engine-venv/bin/python3 -m unittest discover -s bridge -p 'test_*.py'
           file engine-venv/bin/python3 | grep -q '${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}'
 

@@ -79,7 +79,7 @@ for binary in "$resources/engine-bin/ffmpeg" "$resources/engine-bin/ffprobe" \
 done
 
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$resources/engine" "$resources/engine-venv/bin/python3" -c \
-  'import cv2, yt_dlp; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 1; assert LayoutAnalyzer().available'
+  'import cv2, yt_dlp; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 2; assert LayoutAnalyzer().available'
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$resources/engine" "$resources/engine-venv/bin/python3" \
   "$resources/bridge/smoke_smart_render.py" "$resources/engine-bin/ffmpeg"
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$resources/engine" "$resources/engine-venv/bin/python3" \

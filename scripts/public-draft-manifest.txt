@@ -251,3 +251,10 @@ bridgeclip/scripts/check-lockfile-integrity.test.cjs
 bridgeclip/scripts/run-bridge-tests.cjs
 bridgeclip/scripts/run-bridge-tests.test.cjs
 bridgeclip/tests/support/symlinks.cjs
+bridgeclip/docs/video-speed.md
+bridgeclip/engine/clip_engine/services/video_speed.py
+bridgeclip/engine/tests/test_video_speed.py
+bridgeclip/tests/main/video-speed.e2e.cjs
+bridgeclip/docs/assets/video-speed.png
+bridgeclip/src/renderer/components/AutomationTikTokReviewDialog.tsx
+bridgeclip/tests/zernio/automation-tiktok.test.cjs

@@ -73,6 +73,21 @@ def render(svc, request):
 
 
 class TestFallbackLadder:
+    @pytest.mark.parametrize("failures", [0, 1, 2])
+    def test_every_fallback_keeps_export_speed(self, service, monkeypatch, tmp_path, failures):
+        calls = []
+        async def render_edit(request, plan, time_map, *args):
+            assert request.video_speed == 1.5
+            calls.append(time_map.output_ms)
+            if len(calls) <= failures:
+                raise RenderingError("FFmpeg failed")
+            with open(request.output_path, "wb") as output:
+                output.write(b"mp4")
+        monkeypatch.setattr(service, "_render_edit", render_edit)
+        result = render(service, request_for(tmp_path, video_speed=1.5))
+        assert len(calls) == failures + 1
+        assert result.duration_ms == round(calls[-1] / 1.5)
+
     def test_tail_only_cut_has_natural_timing_fallback(self, service, monkeypatch, tmp_path):
         calls: list = []
         stub_render(monkeypatch, service, 2, calls)

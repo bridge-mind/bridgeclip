@@ -68,7 +68,7 @@ type CreatorInfoState = TikTokCreatorInfo | { error: string } | 'loading'
 /** Past this many accounts the picker gets a search box. */
 const SEARCH_ACCOUNTS_AT = 8
 
-const EMPTY_TIKTOK: TikTokPostOptions = {
+export const EMPTY_TIKTOK: TikTokPostOptions = {
   accounts: {},
   disclose: false,
   yourBrand: false,
@@ -952,7 +952,7 @@ function AccountRow({ account, grouped, profile, reason, selected, onToggle }: {
 }
 
 /** Choices for one TikTok account, from its own creator info. */
-function TikTokAccountFields({ heading, state, value, onChange, brandedContent, draft, businessConnection, onRetry }: {
+export function TikTokAccountFields({ heading, state, value, onChange, brandedContent, draft, businessConnection, onRetry }: {
   heading: string | null
   state: CreatorInfoState | undefined
   value: TikTokAccountOptions
@@ -1041,8 +1041,8 @@ function TikTokAccountFields({ heading, state, value, onChange, brandedContent, 
 }
 
 /** Choices that apply to every TikTok account in the post, and TikTok's consent. */
-function TikTokSharedFields({ value, onChange, commercialTypes }: { value: TikTokPostOptions; onChange: (value: TikTokPostOptions) => void; commercialTypes: string[] }): React.JSX.Element {
-  const set = (patch: Partial<TikTokPostOptions>): void => onChange({ ...value, ...patch })
+export function TikTokSharedFields({ value, onChange, commercialTypes }: { value: TikTokPostOptions; onChange: (value: TikTokPostOptions) => void; commercialTypes: string[] }): React.JSX.Element {
+  const set = (patch: Partial<TikTokPostOptions>): void => onChange({ ...value, ...patch, ...('consent' in patch ? {} : { consent: false }) })
   const canBrand = commercialTypes.length === 0 || commercialTypes.includes('brand_organic')
   const canBranded = commercialTypes.length === 0 || commercialTypes.includes('brand_content')
   const label = value.disclose && value.brandedContent ? 'Paid partnership' : value.disclose && value.yourBrand ? 'Promotional content' : null

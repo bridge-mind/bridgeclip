@@ -9,7 +9,13 @@ export const DURATION_OPTIONS = [
 ] as const
 
 /** Increment when the desktop bridge and bundled BridgeClip engine job contract change. */
-export const BRIDGE_CONTRACT_VERSION = 1
+export const BRIDGE_CONTRACT_VERSION = 2
+
+export const VIDEO_SPEED_OPTIONS = [1, 1.1, 1.25, 1.5, 1.75, 2] as const
+
+export function isVideoSpeed(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 2
+}
 
 export type DurationId = (typeof DURATION_OPTIONS)[number]['id']
 export const DURATION_IDS: readonly string[] = DURATION_OPTIONS.map((option) => option.id)

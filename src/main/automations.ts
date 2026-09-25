@@ -1,18 +1,18 @@
 import { app } from 'electron'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
 import { open, unlink } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { pipeline } from 'stream/promises'
-import { AUTOMATION_PLATFORMS, dueSlots, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type GeneratedPlatformMetadata } from '../shared/automations'
+import { AUTOMATION_PLATFORMS, dueSlots, nextAutomationContent, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type AutomationTikTokReview, type AutomationTikTokReviewUpdate, type GeneratedPlatformMetadata } from '../shared/automations'
 import { isPostableAccount, isZernioId, type ZernioOverview } from '../shared/zernio'
-import { defaultFacebookFormat, isValidTimeZone, youtubeTitleFor, type PostClipRequest } from '../shared/zernio-posts'
+import { checkCaption, checkClip, defaultFacebookFormat, isValidTimeZone, tiktokOptionsError, youtubeTitleFor, type PostClipRequest } from '../shared/zernio-posts'
 import { loadSettings } from './settings-store'
 import { assertMediaPath, authorizeMedia, isWithinDirectory, openAuthorizedMedia } from './security'
 import { getJobOutput } from './file-manager'
 import { getZernioOverview, readCachedOverview } from './zernio/service'
-import { probeClipForPosting, publishClip } from './zernio/posts'
-import { parsePostClipRequest } from './zernio/posts-payload'
+import { getTikTokCreatorInfo, probeClipForPosting, publishClip } from './zernio/posts'
+import { parsePostClipRequest, parseTikTokOptions } from './zernio/posts-payload'
 import { workspaceId } from './zernio/workspace-cache'
 import { logger } from './logger'
 import { generateAutomationMetadata, transcribeAutomationClip } from './automation-metadata'
@@ -28,6 +28,58 @@ const MAX_CONTENT = 500
 let cachedWorkspace: string | null = null
 let cached: Automation[] = []
 const busy = new Set<string>()
+// One review per bank item; a newer preview replaces the previous one.
+const reviews = new Map<string, { id: string; fingerprint: string }>()
+
+function fileStamp(path: string): { size: number; mtimeMs: number; ino: number } {
+  const { size, mtimeMs, ino } = statSync(path)
+  return { size, mtimeMs, ino }
+}
+
+function sameFileStamp(a: ReturnType<typeof fileStamp>, b: ReturnType<typeof fileStamp>): boolean {
+  return a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino
+}
+
+function clearTikTokReview(item: AutomationContent): void {
+  item.tiktokApproval = null
+  item.tiktokDraftCaption = null
+  reviews.delete(item.id)
+}
+
+function assertApprovedFile(item: AutomationContent, path: string): void {
+  if (item.tiktokApproval && !sameFileStamp(item.tiktokApproval.fileStamp, fileStamp(path))) {
+    clearTikTokReview(item)
+    item.transcript = null
+    item.generatedMetadata = null
+    throw new Error('The clip file changed. Review it for TikTok again before posting.')
+  }
+}
+
+function reviewFingerprint(workspace: string, automation: Automation, item: AutomationContent): string {
+  return createHash('sha256').update(JSON.stringify({ workspace, automationId: automation.id,
+    profileId: automation.profileId, accounts: automation.accounts, metadataMode: automation.metadataMode,
+    itemId: item.id, title: item.title, caption: item.caption, generatedMetadata: item.generatedMetadata,
+    file: fileStamp(join(bankPath(workspace, automation.id), item.fileName)) })).digest('hex')
+}
+
+function validTikTokApproval(item: AutomationContent): boolean {
+  const approval = item.tiktokApproval
+  if (approval == null) return true
+  if (!approval || typeof approval !== 'object' || typeof approval.caption !== 'string' || !approval.caption.trim() ||
+      approval.caption.includes('\0') || checkCaption('tiktok', approval.caption).error ||
+      typeof approval.reviewedAt !== 'string' || !Number.isFinite(Date.parse(approval.reviewedAt))) return false
+  if (!approval.fileStamp || ![approval.fileStamp.size, approval.fileStamp.mtimeMs, approval.fileStamp.ino].every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)) return false
+  const options = approval.options
+  if (!options || typeof options !== 'object' || !options.accounts || typeof options.accounts !== 'object' || Array.isArray(options.accounts)) return false
+  const ids = Object.keys(options.accounts)
+  if (!ids.length || ids.length > 20 || !ids.every(isZernioId) || options.consent !== true) return false
+  return (['disclose', 'yourBrand', 'brandedContent', 'madeWithAi', 'draft'] as const).every((key) => typeof options[key] === 'boolean') &&
+    ids.every((id) => {
+      const account = options.accounts[id]
+      return account && typeof account.privacyLevel === 'string' && /^[A-Z_]{1,64}$/.test(account.privacyLevel) &&
+        (['allowComment', 'allowDuet', 'allowStitch'] as const).every((key) => typeof account[key] === 'boolean')
+    })
+}
 
 function cleanName(value: unknown): string {
   const name = typeof value === 'string' ? value.trim() : ''
@@ -59,6 +111,8 @@ function validContent(value: unknown): value is AutomationContent {
         typeof post.caption === 'string' && post.caption.length <= 63_206 && (post.title === null || typeof post.title === 'string') &&
         (post.categoryId === null || typeof post.categoryId === 'string') && (post.topicTag === undefined || post.topicTag === null || typeof post.topicTag === 'string') &&
         Array.isArray(post.tags) && post.tags.length <= 8 && post.tags.every((tag) => typeof tag === 'string' && tag.length <= 100)))) &&
+    validTikTokApproval(item) &&
+    (item.tiktokDraftCaption == null || (typeof item.tiktokDraftCaption === 'string' && !item.tiktokDraftCaption.includes('\0') && !checkCaption('tiktok', item.tiktokDraftCaption).error)) &&
     ['queued', 'posting', 'posted', 'needs_review'].includes(item.status) &&
     typeof item.addedAt === 'string' && Number.isFinite(Date.parse(item.addedAt)) &&
     (item.postedAt === null || typeof item.postedAt === 'string') &&
@@ -232,14 +286,28 @@ export async function updateAutomation(id: unknown, raw: unknown): Promise<Autom
   const update = validatedUpdate(raw)
   if (update.profileId) checkProfileAccounts(await getZernioOverview(), update.profileId, update.accounts)
   if (currentWorkspace() !== workspace || !cached.includes(automation) || busy.has(automation.id)) throw new Error('Automation changed while saving. Try again.')
-  Object.assign(automation, update, { lastSlots: Object.fromEntries(Object.entries(automation.lastSlots).filter(([time]) => update.times.includes(time))) })
-  save(workspace)
+  const previous = { ...automation, content: automation.content.map((item) => ({ ...item })) }
+  const previousReviews = new Map(automation.content.map((item) => [item.id, reviews.get(item.id)]))
+  try {
+    if (automation.profileId !== update.profileId || automation.metadataMode !== update.metadataMode ||
+        JSON.stringify(automation.accounts.filter((account) => account.platform === 'tiktok').map((account) => account.accountId).sort()) !==
+        JSON.stringify(update.accounts.filter((account) => account.platform === 'tiktok').map((account) => account.accountId).sort())) {
+      for (const item of automation.content) if (item.status !== 'posted') clearTikTokReview(item)
+    }
+    Object.assign(automation, update, { lastSlots: Object.fromEntries(Object.entries(automation.lastSlots).filter(([time]) => update.times.includes(time))) })
+    save(workspace)
+  } catch (error) {
+    Object.assign(automation, previous)
+    for (const [contentId, review] of previousReviews) if (review) reviews.set(contentId, review)
+    throw error
+  }
   return listAutomations()
 }
 
 export function deleteAutomation(id: unknown): Automation[] {
   const { workspace, automation } = find(id)
   if (busy.has(automation.id)) throw new Error('Wait for the current post to finish.')
+  for (const item of automation.content) reviews.delete(item.id)
   cached = cached.filter((item) => item.id !== automation.id)
   save(workspace)
   rmSync(bankPath(workspace, automation.id), { recursive: true, force: true })
@@ -323,17 +391,28 @@ export function updateAutomationContent(id: unknown, contentId: unknown, raw: un
     if (item.status !== 'needs_review') throw new Error('Only clips needing review can return to the queue.')
     if (item.postId) throw new Error('This clip has a Zernio post. Use Posts on Accounts to review or retry it.')
   }
-  item.title = update.title.trim()
-  item.caption = update.caption
-  item.generatedMetadata = null
+  const previous = { ...item }
+  const previousReview = reviews.get(item.id)
+  if (item.title !== update.title.trim() || item.caption !== update.caption) {
+    item.title = update.title.trim()
+    item.caption = update.caption
+    item.generatedMetadata = null
+    if (item.status !== 'posted') clearTikTokReview(item)
+  }
   if (update.returnToQueue === true) {
     // The old request ID stays in the attempt journal. Only a person who has
     // checked Zernio may authorize a new post after an uncertain response.
     item.postingAttemptId = randomUUID()
+    clearTikTokReview(item)
     item.status = 'queued'
     item.error = null
   }
-  save(workspace)
+  try { save(workspace) }
+  catch (error) {
+    automation.content[automation.content.indexOf(item)] = previous
+    if (previousReview) reviews.set(item.id, previousReview)
+    throw error
+  }
   return listAutomations()
 }
 
@@ -342,23 +421,160 @@ export function removeAutomationContent(id: unknown, contentId: unknown): Automa
   const item = automation.content.find((content) => content.id === contentId)
   if (!item) throw new Error('Clip not found')
   if (item.status === 'posting' || busy.has(automation.id)) throw new Error('Wait for the current post to finish.')
+  reviews.delete(item.id)
   automation.content = automation.content.filter((content) => content.id !== item.id)
   save(workspace)
   rmSync(join(bankPath(workspace, automation.id), item.fileName), { force: true })
   return listAutomations()
 }
 
+async function prepareMetadata(workspace: string, automation: Automation, item: AutomationContent, path: string): Promise<{ facebookFormat: 'feed' | 'reel'; generated: GeneratedPlatformMetadata[] | null }> {
+  const facebookFormat = automation.metadataMode === 'ai' && automation.accounts.some((account) => account.platform === 'facebook')
+    ? defaultFacebookFormat(await probeClipForPosting(path, null)) : 'feed'
+  let generated: GeneratedPlatformMetadata[] | null = null
+  if (automation.metadataMode === 'ai') {
+    const platforms = [...new Set(automation.accounts.map((account) => account.platform))]
+    if (!item.transcript) {
+      const transcript = await transcribeAutomationClip(path)
+      if (currentWorkspace() !== workspace || !cached.includes(automation)) throw new Error('The Zernio workspace changed. Please try again.')
+      item.transcript = transcript
+      save(workspace)
+    }
+    if (!item.generatedMetadata || item.generatedMetadata.some((post) => post.topicTag === undefined) ||
+        !platforms.every((platform) => item.generatedMetadata?.some((post) => post.platform === platform))) {
+      const metadata = await generateAutomationMetadata(item.transcript, item.title, item.caption, platforms, { facebookFormat })
+      if (currentWorkspace() !== workspace || !cached.includes(automation)) throw new Error('The Zernio workspace changed. Please try again.')
+      item.generatedMetadata = metadata
+      save(workspace)
+    }
+    generated = item.generatedMetadata
+  }
+  return { facebookFormat, generated }
+}
+
+/** Prepare the exact caption and local preview without uploading or scheduling anything. */
+export async function prepareAutomationTikTokReview(id: unknown, contentId: unknown): Promise<AutomationTikTokReview> {
+  const { workspace, automation } = find(id)
+  const item = automation.content.find((content) => content.id === contentId)
+  if (!item || item.status !== 'queued') throw new Error('Only queued clips can be approved for TikTok.')
+  if (busy.has(automation.id)) throw new Error('Wait for the current operation to finish.')
+  const targets = automation.accounts.filter((account) => account.platform === 'tiktok')
+  if (!automation.profileId || !targets.length) throw new Error('Save a TikTok account on this automation first.')
+  busy.add(automation.id)
+  try {
+    // Persist the caption before revoking approval, so cancelling/reloading the
+    // dialog cannot lose previously reviewed edits or silently resume posting.
+    const previous = { ...item }
+    item.tiktokDraftCaption = item.tiktokApproval?.caption ?? item.tiktokDraftCaption ?? null
+    item.tiktokApproval = null
+    try { save(workspace) } catch (error) { automation.content[automation.content.indexOf(item)] = previous; throw error }
+    reviews.delete(item.id)
+    const overview = await getZernioOverview()
+    checkProfileAccounts(overview, automation.profileId, automation.accounts)
+    if (currentWorkspace() !== workspace || !cached.includes(automation)) throw new Error('The Zernio workspace changed. Please try again.')
+    const path = join(bankPath(workspace, automation.id), item.fileName)
+    if (!isAutomationMedia(path)) throw new Error('Clip file is missing from the content bank.')
+    const originalFile = fileStamp(path)
+    if (previous.tiktokApproval && !sameFileStamp(previous.tiktokApproval.fileStamp, originalFile)) {
+      clearTikTokReview(item)
+      item.transcript = null
+      item.generatedMetadata = null
+      save(workspace)
+    }
+    authorizeMedia(path)
+    const { generated } = await prepareMetadata(workspace, automation, item, path)
+    const media = await probeClipForPosting(path, null)
+    const creators = await Promise.all(targets.map(async (target) => {
+      const account = overview.accounts.find((account) => account.id === target.accountId)!
+      return { info: await getTikTokCreatorInfo(target.accountId), businessConnection: account.integrationLane === 'business',
+        handle: account.username ? `@${account.username}` : account.displayName || 'TikTok account' }
+    }))
+    if (currentWorkspace() !== workspace || !cached.includes(automation)) throw new Error('The Zernio workspace changed. Please try again.')
+    if (!sameFileStamp(originalFile, fileStamp(path))) {
+      clearTikTokReview(item)
+      item.transcript = null
+      item.generatedMetadata = null
+      save(workspace)
+      throw new Error('The clip file changed while preparing the review. Reload the review.')
+    }
+    const reviewId = randomUUID()
+    // Bound abandoned reviews across workspace switches.
+    if (reviews.size >= MAX_CONTENT) reviews.delete(reviews.keys().next().value!)
+    reviews.set(item.id, { id: reviewId, fingerprint: reviewFingerprint(workspace, automation, item) })
+    return { reviewId, clipPath: path, caption: item.tiktokDraftCaption ?? generated?.find((post) => post.platform === 'tiktok')?.caption ?? item.caption, media, creators }
+  } finally { busy.delete(automation.id) }
+}
+
+export async function approveAutomationTikTokReview(id: unknown, contentId: unknown, raw: unknown): Promise<Automation[]> {
+  const { workspace, automation } = find(id)
+  const item = automation.content.find((content) => content.id === contentId)
+  const value = raw as AutomationTikTokReviewUpdate | null
+  if (!item || item.status !== 'queued' || !value || typeof value !== 'object') throw new Error('Only queued clips can be approved for TikTok.')
+  if (busy.has(automation.id)) throw new Error('Wait for the current operation to finish.')
+  const review = reviews.get(item.id)
+  if (!review || review.id !== value.reviewId || review.fingerprint !== reviewFingerprint(workspace, automation, item)) {
+    throw new Error('The clip or automation changed. Reopen the TikTok review.')
+  }
+  if (value.previewConfirmed !== true) throw new Error('Confirm that you reviewed this clip and caption.')
+  if (typeof value.caption !== 'string' || !value.caption.trim() || value.caption.includes('\0')) throw new Error('Enter a TikTok caption.')
+  const captionError = checkCaption('tiktok', value.caption)
+  if (captionError.error) throw new Error(captionError.error)
+  const targets = automation.accounts.filter((account) => account.platform === 'tiktok')
+  const options = parseTikTokOptions(value.options, targets.map((target) => target.accountId))
+  busy.add(automation.id)
+  try {
+    const overview = await getZernioOverview()
+    checkProfileAccounts(overview, automation.profileId!, automation.accounts)
+    const infos = await Promise.all(targets.map((target) => getTikTokCreatorInfo(target.accountId)))
+    const problem = tiktokOptionsError(options, infos)
+    if (problem) throw new Error(problem)
+    const media = await probeClipForPosting(join(bankPath(workspace, automation.id), item.fileName), null)
+    for (const info of infos) {
+      const blocking = checkClip('tiktok', media, { tiktokMaxSec: info.maxVideoDurationSec }).blocking
+      if (blocking) throw new Error(blocking)
+      const account = overview.accounts.find((account) => account.id === info.accountId)!
+      if (!options.draft && account.integrationLane === 'business' && options.accounts[info.accountId].privacyLevel !== 'PUBLIC_TO_EVERYONE') {
+        throw new Error('TikTok Business connections require Everyone for direct video posts. Choose Everyone or send to your TikTok inbox.')
+      }
+      const choice = options.accounts[info.accountId]
+      choice.allowComment &&= info.interactions.comment
+      choice.allowDuet &&= info.interactions.duet
+      choice.allowStitch &&= info.interactions.stitch
+    }
+    if (currentWorkspace() !== workspace || !cached.includes(automation) || review.fingerprint !== reviewFingerprint(workspace, automation, item)) {
+      throw new Error('The clip or automation changed. Reopen the TikTok review.')
+    }
+    const previous = { ...item }
+    const previousError = automation.lastError
+    item.tiktokApproval = { caption: value.caption, options, reviewedAt: new Date().toISOString(), fileStamp: fileStamp(join(bankPath(workspace, automation.id), item.fileName)) }
+    item.tiktokDraftCaption = null
+    item.error = null
+    automation.lastError = null
+    try { save(workspace) }
+    catch (error) {
+      automation.content[automation.content.indexOf(item)] = previous
+      automation.lastError = previousError
+      throw error
+    }
+    reviews.delete(item.id)
+    return listAutomations()
+  } finally { busy.delete(automation.id) }
+}
+
 export async function runAutomation(id: unknown, slot?: { time: string; date: string }): Promise<Automation[]> {
   const { workspace, automation } = find(id)
   if (busy.has(automation.id)) return listAutomations()
   if (slot && (!automation.enabled || automation.lastSlots[slot.time] === slot.date)) return listAutomations()
-  if (slot) { automation.lastSlots[slot.time] = slot.date; save(workspace) }
-  const item = automation.content.find((content) => content.status === 'queued')
+  const item = nextAutomationContent(automation)
   if (!item) {
-    automation.lastError = 'No queued clips are available.'
-    save(workspace)
+    const message = automation.content.some((content) => content.status === 'queued')
+      ? 'Review a queued clip for TikTok before it can post automatically.' : 'No queued clips are available.'
+    if (automation.lastError !== message) { automation.lastError = message; save(workspace) }
     return listAutomations()
   }
+  // Waiting for approval is not an attempt. A clip approved during the wake-up
+  // grace period can still use the slot; actual attempts reserve it once.
+  if (slot) { automation.lastSlots[slot.time] = slot.date; save(workspace) }
   if (!automation.profileId || automation.accounts.length === 0) {
     automation.lastError = 'Choose one Zernio profile and at least one of its accounts.'
     save(workspace)
@@ -371,27 +587,15 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
     const path = join(bankPath(workspace, automation.id), item.fileName)
     if (!isAutomationMedia(path)) throw new Error('Clip file is missing from the content bank.')
+    const tiktokTargets = automation.accounts.filter((account) => account.platform === 'tiktok')
+    if (tiktokTargets.length) assertApprovedFile(item, path)
     authorizeMedia(path)
-    const facebookFormat = automation.metadataMode === 'ai' && automation.accounts.some((account) => account.platform === 'facebook')
-      ? defaultFacebookFormat(await probeClipForPosting(path, null)) : 'feed'
-    let generated: GeneratedPlatformMetadata[] | null = null
-    if (automation.metadataMode === 'ai') {
-      const platforms = [...new Set(automation.accounts.map((account) => account.platform))]
-      if (!item.transcript) {
-        const transcript = await transcribeAutomationClip(path)
-        if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
-        item.transcript = transcript
-        save(workspace)
-      }
-      if (!item.generatedMetadata || item.generatedMetadata.some((post) => post.topicTag === undefined) ||
-          !platforms.every((platform) => item.generatedMetadata?.some((post) => post.platform === platform))) {
-        const metadata = await generateAutomationMetadata(item.transcript, item.title, item.caption, platforms, { facebookFormat })
-        if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
-        item.generatedMetadata = metadata
-        save(workspace)
-      }
-      generated = item.generatedMetadata
-    }
+    const { facebookFormat, generated } = await prepareMetadata(workspace, automation, item, path)
+    // A scheduled run must check current creator permissions even if the user
+    // approved seconds ago and the publishing service still has cached info.
+    await Promise.all(tiktokTargets.map((target) => getTikTokCreatorInfo(target.accountId)))
+    if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
+    if (tiktokTargets.length) assertApprovedFile(item, path)
     const youtube = generated?.find((post) => post.platform === 'youtube')
     const facebook = generated?.find((post) => post.platform === 'facebook')
     const threads = generated?.find((post) => post.platform === 'threads')
@@ -399,9 +603,12 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     // start a new attempt without discarding the old request journal.
     const request: PostClipRequest = {
       attemptId: item.postingAttemptId ?? item.id, clipPath: path, clipTitle: item.title, durationMs: null, caption: item.caption,
-      targets: automation.accounts.map((account) => ({ ...account, ...(generated?.find((post) => post.platform === account.platform)?.caption
-        ? { customContent: generated.find((post) => post.platform === account.platform)!.caption } : {}) })), timing: { mode: 'now' },
+      targets: automation.accounts.map((account) => {
+        const caption = account.platform === 'tiktok' ? item.tiktokApproval?.caption : generated?.find((post) => post.platform === account.platform)?.caption
+        return { ...account, ...(caption ? { customContent: caption } : {}) }
+      }), timing: { mode: 'now' },
       options: {
+        tiktok: automation.accounts.some((account) => account.platform === 'tiktok') ? item.tiktokApproval?.options : undefined,
         youtube: automation.accounts.some((account) => account.platform === 'youtube')
           ? { title: youtube?.title || youtubeTitleFor(item.title) || 'Untitled clip', visibility: automation.youtubeVisibility, madeForKids: automation.youtubeMadeForKids,
               ...(youtube?.categoryId ? { categoryId: youtube.categoryId } : {}), ...(youtube?.tags?.length ? { tags: youtube.tags } : {}) } : undefined,

@@ -56,7 +56,7 @@ BUNDLE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 exec "$BUNDLE_DIR/../engine-venv/bin/python3" -m yt_dlp "$@"
 SH
 chmod 755 engine-bin/ffmpeg engine-bin/ffprobe engine-bin/yt-dlp
-PYTHONPATH=engine engine-venv/bin/python3 -c 'import cv2, yt_dlp; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 1; assert LayoutAnalyzer().available'
+PYTHONPATH=engine engine-venv/bin/python3 -c 'import cv2, yt_dlp; from clip_engine.bridge_contract import BRIDGE_CONTRACT_VERSION; from clip_engine.services.layout_analyzer import LayoutAnalyzer; assert BRIDGE_CONTRACT_VERSION == 2; assert LayoutAnalyzer().available'
 PYTHONPATH=engine engine-venv/bin/python3 -m unittest discover -s bridge -p 'test_*.py'
 PYTHONPATH=engine engine-venv/bin/python3 bridge/smoke_smart_render.py engine-bin/ffmpeg
 PYTHONPATH=engine engine-venv/bin/python3 bridge/smoke_transcription_audio.py engine-bin

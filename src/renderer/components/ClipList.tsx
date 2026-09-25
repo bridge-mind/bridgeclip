@@ -54,6 +54,8 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
   const settings = output.metrics?.requested_settings
   const requestedAspect = settings && typeof settings === 'object' && !Array.isArray(settings)
     ? (settings as Record<string, unknown>).aspect_ratio : null
+  const videoSpeed = settings && typeof settings === 'object' && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).video_speed : null
   const vertical = requestedAspect === '9:16' ? true : requestedAspect === '16:9' ? false : aspect == null ? true : aspect < 1
 
   useEffect(() => () => {
@@ -155,6 +157,10 @@ export function ClipList({ output, outputDir: runDirectory, leading, onNewClip, 
           </>
         }
       />
+
+      {typeof videoSpeed === 'number' && videoSpeed > 1 && (
+        <p className="mt-3 text-xs text-ink-muted">All clips exported at {videoSpeed}× speed · Original voice pitch</p>
+      )}
 
       {exportError && (
         <Callout tone="danger" className="mt-4" onDismiss={() => setExportError(null)}>

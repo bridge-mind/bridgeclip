@@ -71,7 +71,7 @@ function parseTikTokAccount(value: unknown): TikTokAccountOptions {
 }
 
 /** Only the TikTok accounts being posted to; each gets its own choices. */
-function parseTikTokOptions(value: unknown, accountIds: string[]): TikTokPostOptions {
+export function parseTikTokOptions(value: unknown, accountIds: string[]): TikTokPostOptions {
   const o = asRecord(value)
   const accounts = asRecord(o.accounts)
   return {
