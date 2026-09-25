@@ -5,6 +5,7 @@ const path = require('node:path')
 const os = require('node:os')
 const vm = require('node:vm')
 const ts = require('typescript')
+const { fileLinksAvailable, directoryLinkType } = require('../support/symlinks.cjs')
 
 function loadSource(file, mocks = {}, globals = {}) {
   const source = fs.readFileSync(path.join(__dirname, '../../src/main', file), 'utf8')
@@ -75,7 +76,7 @@ test('Zernio sign-in links stay on its HTTPS origin and provider errors are sani
     error.message.includes('HTTP 500') && !error.message.includes('private-provider-token'))
 })
 
-test('media authorization rejects traversal, symlink escapes, and non-media files', () => {
+test('media authorization rejects traversal, symlink escapes, and non-media files', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-test-'))
   try {
     const library = path.join(root, 'library')
@@ -86,10 +87,11 @@ test('media authorization rejects traversal, symlink escapes, and non-media file
     fs.writeFileSync(video, '')
     fs.writeFileSync(outside, '')
     fs.writeFileSync(secret, '{}')
-    fs.symlinkSync(outside, path.join(library, 'escape.mp4'))
+    if (fileLinksAvailable) fs.symlinkSync(outside, path.join(library, 'escape.mp4'))
+    else t.diagnostic('File symlinks unavailable; symlink escape assertion skipped')
     assert.doesNotThrow(() => security.assertMediaPath(video, library))
     assert.throws(() => security.assertMediaPath(outside, library))
-    assert.throws(() => security.assertMediaPath(path.join(library, 'escape.mp4'), library))
+    if (fileLinksAvailable) assert.throws(() => security.assertMediaPath(path.join(library, 'escape.mp4'), library))
     assert.throws(() => security.assertMediaPath(secret, library))
     assert.equal(security.isWithinDirectory(outside, library), false)
     security.authorizeMedia(outside)
@@ -100,7 +102,7 @@ test('media authorization rejects traversal, symlink escapes, and non-media file
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('validated media handle keeps the authorized file after its pathname changes', async () => {
+test('validated media handle keeps the authorized file after its pathname changes', { skip: !fileLinksAvailable }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-media-handle-'))
   try {
     const library = path.join(root, 'library')
@@ -119,7 +121,7 @@ test('validated media handle keeps the authorized file after its pathname change
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('thumbnail generation uses a private cache and does not follow an adjacent symlink', async () => {
+test('thumbnail generation uses a private cache and does not follow an adjacent symlink', { skip: !fileLinksAvailable }, async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-thumb-'))
   try {
     const video = path.join(root, 'clip.mp4')
@@ -158,7 +160,7 @@ test('IPC authentication requires the registered window main frame', () => {
   assert.throws(() => security.assertTrustedSender({ sender: contents, senderFrame: frame }, null))
 })
 
-test('the native picker authorizes media and shell opening rejects aliased application bundles', async () => {
+test('the native picker authorizes media and shell opening rejects aliased application bundles', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-picker-'))
   try {
     const library = path.join(root, 'library')
@@ -200,8 +202,10 @@ test('the native picker authorizes media and shell opening rejects aliased appli
     const bundle = path.join(library, 'unsafe.app')
     fs.mkdirSync(bundle)
     const alias = path.join(library, 'ordinary-folder')
-    fs.symlinkSync(bundle, alias)
-    await assert.rejects(handlers.get('shell:openPath')({ sender: contents, senderFrame: frame }, alias), /Application bundles cannot be opened/)
+    if (directoryLinkType) {
+      fs.symlinkSync(bundle, alias, directoryLinkType)
+      await assert.rejects(handlers.get('shell:openPath')({ sender: contents, senderFrame: frame }, alias), /Application bundles cannot be opened/)
+    } else t.diagnostic('Directory links unavailable; aliased bundle assertion skipped')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -297,7 +301,60 @@ test('settings migration writes a private file', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('library rejects parseable but incomplete job output', async () => {
+test('Windows resolves the saved legacy Python default without replacing an installed or explicit interpreter', () => {
+  const winProcess = Object.create(process)
+  Object.defineProperty(winProcess, 'platform', { value: 'win32' })
+  Object.defineProperty(winProcess, 'env', { value: { PATH: 'C:\\Python;C:\\Windows' } })
+  Object.defineProperty(winProcess, 'resourcesPath', { value: 'C:\\BridgeClip\\resources' })
+  const userData = 'C:\\Users\\Test\\BridgeClip'
+  const engine = 'C:\\BridgeClip\\engine'
+  const present = new Set()
+  let python3Runnable = false
+  let saved = null
+  const app = { isPackaged: false, getPath: (name) => name === 'home' ? 'C:\\Users\\Test' : userData }
+  const store = loadSource('settings-store.ts', {
+    electron: { app, safeStorage: {} }, path: path.win32,
+    fs: {
+      existsSync: (file) => file === userData || (file === path.win32.join(userData, 'settings.json') && saved !== null),
+      readFileSync: () => JSON.stringify(saved)
+    }
+  }, { process: winProcess })
+  const runner = loadSource('pipeline-runner.ts', {
+    electron: { app }, path: path.win32,
+    fs: { existsSync: (file) => present.has(file) },
+    child_process: { execFile() {}, execFileSync(command, args) {
+      assert.equal(command, 'python3')
+      assert.deepEqual(Array.from(args), ['-c', 'import sys; assert sys.version_info[0] == 3'])
+      if (!python3Runnable) throw new Error('Python is unavailable')
+    } },
+    './settings-store': {}, './logger': {}, '../shared/job-output': {},
+    '../shared/job-contract': {}, './run-history': {}, './tools': {}
+  }, { process: winProcess })
+
+  assert.equal(store.loadSettings().pythonPath, 'python')
+  saved = { version: 7, openrouterApiKey: '', zernioApiKey: '', outputDirectory: 'C:\\Clips', pythonPath: 'python3' }
+  assert.equal(store.loadSettings().pythonPath, 'python3', 'the persisted setting is not rewritten')
+  assert.equal(runner.resolvePythonPath(engine, store.loadSettings().pythonPath), 'python')
+
+  python3Runnable = true
+  assert.equal(runner.resolvePythonPath(engine, 'python3'), 'python3', 'an installed python3 remains usable')
+  python3Runnable = false
+  const venv = path.win32.join(engine, '.venv', 'Scripts', 'python.exe')
+  present.add(venv)
+  assert.equal(runner.resolvePythonPath(engine, 'python3'), venv, 'the project venv retains priority')
+  present.delete(venv)
+
+  const explicit = 'C:\\Python\\python.exe'
+  saved.pythonPath = explicit
+  present.add(explicit)
+  assert.equal(store.loadSettings().pythonPath, explicit)
+  assert.equal(runner.resolvePythonPath(engine, explicit), explicit)
+  assert.equal(runner.resolvePythonPath(engine, 'py'), 'py', 'other command settings remain untouched')
+  app.isPackaged = true
+  assert.equal(runner.resolvePythonPath(engine, explicit), path.win32.join(winProcess.resourcesPath, 'engine-venv', 'Scripts', 'python.exe'))
+})
+
+test('library rejects parseable but incomplete job output', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-library-'))
   const run = path.join(root, 'run-one')
   fs.mkdirSync(run)
@@ -310,12 +367,12 @@ test('library rejects parseable but incomplete job output', async () => {
     assert.equal((await manager.getJobHistory(root))[0].status, 'completed')
     const outside = path.join(root, 'outside.json')
     fs.writeFileSync(outside, JSON.stringify({ job_id: 'outside', clips: [] }))
-    if (process.platform !== 'win32') {
+    if (fileLinksAvailable) {
       fs.rmSync(path.join(run, 'job_output.json'))
       fs.symlinkSync(outside, path.join(run, 'job_output.json'))
       assert.equal(await manager.getJobOutput(run), null)
       assert.equal((await manager.getJobHistory(root))[0].status, 'failed')
-    }
+    } else t.diagnostic('File symlinks unavailable; linked job output assertions skipped')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -334,7 +391,7 @@ test('library retains unfinished desktop runs and ignores unrelated folders', as
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('run history persists outcomes, identifies interrupted work, and omits source query data', async () => {
+test('run history persists outcomes, identifies interrupted work, and omits source query data', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-history-'))
   const failedId = '4de005c2-1234-4123-8123-567890abcdef'
   const runningId = '4de005c3-1234-4123-8123-567890abcdef'
@@ -360,13 +417,13 @@ test('run history persists outcomes, identifies interrupted work, and omits sour
     assert.equal(active.find((entry) => entry.jobId === cancelledId).status, 'cancelled')
     assert.equal((await manager.getJobHistory(root)).find((entry) => entry.jobId === runningId).status, 'interrupted')
 
-    if (process.platform !== 'win32') {
+    if (fileLinksAvailable) {
       const outside = path.join(root, 'outside.json')
       fs.writeFileSync(outside, raw)
       fs.rmSync(path.join(root, failedId, 'run-history.json'))
       fs.symlinkSync(outside, path.join(root, failedId, 'run-history.json'))
       assert.equal(runHistory.readRunRecord(root, failedId), null)
-    }
+    } else t.diagnostic('File symlinks unavailable; linked run history assertion skipped')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 

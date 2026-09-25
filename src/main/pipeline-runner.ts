@@ -176,10 +176,10 @@ export function getBridgeRunnerPath(): string {
  * Resolve the Python interpreter to use.
  *
  * Priority order:
- * 1. Explicit path from user settings (if set and not "python3")
+ * 1. Explicit path from user settings (if set and not the default "python3")
  * 2. Bundled venv inside the app (packaged builds)
  * 3. In-repo engine venv python (engine/.venv/bin/python)
- * 4. System python3
+ * 4. System python3 (or python on Windows)
  */
 export function resolvePythonPath(enginePath: string, userPythonPath: string): string {
   if (app.isPackaged) {
@@ -206,7 +206,18 @@ export function resolvePythonPath(enginePath: string, userPythonPath: string): s
     }
   }
 
-  return (!app.isPackaged && userPythonPath) || (process.platform === 'win32' ? 'python' : 'python3')
+  // Older Windows settings saved "python3" as the default. Probe the command:
+  // WindowsApps can contain a python3.exe alias that does not run Python.
+  if (process.platform === 'win32' && userPythonPath === 'python3') {
+    try {
+      execFileSync('python3', ['-c', 'import sys; assert sys.version_info[0] == 3'], {
+        timeout: 2000, windowsHide: true, stdio: 'ignore'
+      })
+    } catch {
+      return 'python'
+    }
+  }
+  return userPythonPath || (process.platform === 'win32' ? 'python' : 'python3')
 }
 
 /**

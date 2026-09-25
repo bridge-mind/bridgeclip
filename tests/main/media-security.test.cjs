@@ -6,6 +6,7 @@ const path = require('node:path')
 const http = require('node:http')
 const { execFileSync } = require('node:child_process')
 const { loadMain, tempDir, fakeElectron, ROOT } = require('../zernio/support/load-main.cjs')
+const { fileLinksAvailable } = require('../support/symlinks.cjs')
 const FFMPEG = fs.existsSync(path.join(ROOT, 'engine-bin/ffmpeg')) ? path.join(ROOT, 'engine-bin/ffmpeg') : 'ffmpeg'
 
 async function server(handler) {
@@ -93,7 +94,7 @@ test('a bad OpenRouter request is not reported as a credit failure', async () =>
   } finally { global.fetch = oldFetch; cleanup() }
 })
 
-test('post cache writes do not follow predictable temporary-file symlinks', () => {
+test('post cache writes do not follow predictable temporary-file symlinks', { skip: !fileLinksAvailable }, () => {
   const { dir, cleanup } = tempDir()
   try {
     const { PostsStore } = loadMain("export { PostsStore } from './src/main/zernio/posts-store'", { electron: fakeElectron(dir).electron })

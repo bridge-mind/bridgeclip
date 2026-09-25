@@ -30,7 +30,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "icons": "bash scripts/icon/build-icons.sh",
-    "test:bridge": "python3 -m unittest discover -s bridge -p 'test_*.py'",
+    "test:bridge": "node scripts/run-bridge-tests.cjs",
     "test:release": "node --test scripts/*.test.cjs",
     "test:renderer": "node --test tests/renderer-state.test.cjs tests/create-form.test.cjs",
     "test:main": "node --test tests/main/*.test.cjs",
