@@ -1012,7 +1012,17 @@ class RenderingService:
                     script.write(graph)
                 script_cmd = cmd.copy()
                 script_cmd[graph_index:graph_index + 2] = ["-/filter_complex", script_path]
-                return run_media(script_cmd)
+                result = run_media(script_cmd)
+                # FFmpeg 6 (Ubuntu 24.04) predates file-backed option values;
+                # FFmpeg 9 removed the older script option. Retry only when the
+                # first option itself is unknown, before any render can start.
+                if result.returncode != 0:
+                    stderr = result.stderr or b""
+                    if (b"Unrecognized option '/filter_complex'." in stderr and
+                            b"Error splitting the argument list: Option not found" in stderr):
+                        script_cmd[graph_index] = "-filter_complex_script"
+                        result = run_media(script_cmd)
+                return result
             finally:
                 if script_path is not None:
                     os.remove(script_path)

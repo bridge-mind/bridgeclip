@@ -118,7 +118,7 @@ def test_large_filter_graph_uses_private_script_and_cleans_up(monkeypatch, fail)
             assert os.stat(script_path).st_mode & 0o077 == 0
         if fail:
             raise RuntimeError("FFmpeg launch failed")
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=0, stderr=b"")
 
     monkeypatch.setattr(module, "run_media", run_media)
     service = RenderingService.__new__(RenderingService)
@@ -129,6 +129,51 @@ def test_large_filter_graph_uses_private_script_and_cleans_up(monkeypatch, fail)
         asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
     assert len(seen) == 1
     assert not os.path.exists(seen[0])
+
+
+@pytest.mark.parametrize("legacy_succeeds", [True, False])
+def test_large_filter_graph_retries_only_unsupported_file_option(monkeypatch, legacy_succeeds):
+    graph = "null," * 2000
+    seen = []
+
+    def run_media(cmd):
+        seen.append((cmd[1], cmd[2]))
+        assert os.path.isfile(cmd[2])
+        if cmd[1] == "-/filter_complex":
+            return SimpleNamespace(returncode=1, stderr=(
+                b"Unrecognized option '/filter_complex'.\n"
+                b"Error splitting the argument list: Option not found"
+            ))
+        assert cmd[1] == "-filter_complex_script"
+        return SimpleNamespace(returncode=0 if legacy_succeeds else 1, stderr=b"Invalid graph")
+
+    monkeypatch.setattr(module, "run_media", run_media)
+    service = RenderingService.__new__(RenderingService)
+    if legacy_succeeds:
+        asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    else:
+        with pytest.raises(RenderingError, match="Invalid graph"):
+            asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    assert [option for option, _ in seen] == ["-/filter_complex", "-filter_complex_script"]
+    assert seen[0][1] == seen[1][1]
+    assert not os.path.exists(seen[0][1])
+
+
+def test_large_filter_graph_does_not_retry_render_failures(monkeypatch):
+    graph = "null," * 2000
+    seen = []
+
+    def run_media(cmd):
+        seen.append(cmd)
+        assert os.path.isfile(cmd[2])
+        return SimpleNamespace(returncode=1, stderr=b"A filter failed")
+
+    monkeypatch.setattr(module, "run_media", run_media)
+    service = RenderingService.__new__(RenderingService)
+    with pytest.raises(RenderingError, match="A filter failed"):
+        asyncio.run(service._run_cmd(["ffmpeg", "-filter_complex", graph]))
+    assert len(seen) == 1
+    assert not os.path.exists(seen[0][2])
 
 
 def test_cancelled_large_filter_graph_stays_until_worker_finishes(monkeypatch):

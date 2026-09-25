@@ -372,7 +372,42 @@ test('library rejects parseable but incomplete job output', async (t) => {
       fs.symlinkSync(outside, path.join(run, 'job_output.json'))
       assert.equal(await manager.getJobOutput(run), null)
       assert.equal((await manager.getJobHistory(root))[0].status, 'failed')
+      const withoutNoFollow = loadSource('file-manager.ts', {
+        fs: { ...fs, constants: { ...fs.constants, O_NOFOLLOW: undefined } },
+        '../shared/job-output': jobOutput, './run-history': runHistory, './tools': { resolveBinary: () => 'ffprobe' }
+      })
+      assert.equal(await withoutNoFollow.getJobOutput(run, root), null)
+      assert.equal((await withoutNoFollow.getJobHistory(root))[0].status, 'failed', 'a link inside the library is still rejected')
     } else t.diagnostic('File symlinks unavailable; linked job output assertions skipped')
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test('job output rejects a link substituted during open when O_NOFOLLOW is unavailable', { skip: !fileLinksAvailable }, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-output-open-'))
+  const run = path.join(root, 'run-one')
+  const output = path.join(run, 'job_output.json')
+  const outside = path.join(root, 'outside.json')
+  let closed = false
+  try {
+    fs.mkdirSync(run)
+    fs.writeFileSync(output, JSON.stringify({ job_id: 'run-one', clips: [] }))
+    fs.writeFileSync(outside, JSON.stringify({ job_id: 'outside', clips: [] }))
+    const manager = loadSource('file-manager.ts', {
+      fs: { ...fs, constants: { ...fs.constants, O_NOFOLLOW: undefined } },
+      'fs/promises': { ...fs.promises, open: async (...args) => {
+        fs.rmSync(output)
+        fs.symlinkSync(outside, output)
+        const handle = await fs.promises.open(...args)
+        return {
+          stat: () => handle.stat(),
+          readFile: (...readArgs) => handle.readFile(...readArgs),
+          close: async () => { closed = true; await handle.close() }
+        }
+      } },
+      '../shared/job-output': jobOutput, './run-history': runHistory, './tools': { resolveBinary: () => 'ffprobe' }
+    })
+    assert.equal(await manager.getJobOutput(run, root), null)
+    assert.equal(closed, true, 'the opened file is closed after rejection')
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 

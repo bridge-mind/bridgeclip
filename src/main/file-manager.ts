@@ -26,10 +26,17 @@ export interface JobHistoryEntry {
 const MAX_JOB_OUTPUT_BYTES = 20 * 1024 * 1024
 
 async function readJobOutput(outputPath: string, libraryDir: string): Promise<{ data: JobOutput; modified: Date } | null> {
+  const entry = lstatSync(outputPath)
+  if (!entry.isFile() || entry.isSymbolicLink()) return null
   const handle = await open(outputPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
   try {
     const file = await handle.stat()
     if (!file.isFile() || file.size > MAX_JOB_OUTPUT_BYTES) return null
+    // Windows has no O_NOFOLLOW. Check the name again after opening, then
+    // compare it with the file descriptor so a swapped link is not accepted.
+    const currentEntry = lstatSync(outputPath)
+    if (!currentEntry.isFile() || currentEntry.isSymbolicLink() ||
+        file.dev !== currentEntry.dev || file.ino !== currentEntry.ino) return null
     const canonical = realpathSync(outputPath)
     const library = realpathSync(libraryDir)
     const rel = relative(library, canonical)
