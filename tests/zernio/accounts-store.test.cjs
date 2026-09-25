@@ -268,6 +268,44 @@ test('a sync started before disconnect cannot restore the removed account', asyn
   assert.equal(s.calls.sync, 3, 'a fresh sync follows the stale in-flight request')
 })
 
+test('a successful sign-in fetches again after a sync started before completion', async () => {
+  const s = load()
+  s.queueSync({ overview: overview([]), stale: false, error: null })
+  await s.state().load()
+  await s.state().connect('youtube')
+  const staleSync = deferred()
+  s.queueSync(() => staleSync.promise)
+  const pendingSync = s.state().load()
+  s.queueSync({ overview: overview([account('2', 'youtube')]), stale: false, error: null })
+
+  s.emitResult({ platform: 'youtube', success: true, username: 'newchannel' })
+  staleSync.resolve({ overview: overview([]), stale: false, error: null })
+  await pendingSync
+  await flush()
+  assert.equal(s.state().accounts.length, 1)
+  assert.equal(s.state().accounts[0].platform, 'youtube')
+  assert.equal(s.calls.sync, 3)
+})
+
+test('an already-connected result fetches again after a prior sync settles', async () => {
+  const s = load()
+  s.queueSync({ overview: overview([]), stale: false, error: null })
+  await s.state().load()
+  const staleSync = deferred()
+  s.queueSync(() => staleSync.promise)
+  const pendingSync = s.state().load()
+  s.zernio.nextConnect = { status: 'connected', platform: 'instagram', profileId: P1, accountId: account('3', 'instagram').id, username: 'ready' }
+  s.queueSync({ overview: overview([account('3', 'instagram')]), stale: false, error: null })
+
+  await s.state().connect('instagram')
+  staleSync.resolve({ overview: overview([]), stale: false, error: null })
+  await pendingSync
+  await flush()
+  assert.equal(s.state().accounts.length, 1)
+  assert.equal(s.state().accounts[0].platform, 'instagram')
+  assert.equal(s.calls.sync, 3)
+})
+
 test('focus fallback: a new account on refresh completes the sign-in without the redirect', async () => {
   const s = load()
   s.queueSync({ overview: overview([account('1', 'instagram', { profileId: P2 })]), stale: false, error: null })

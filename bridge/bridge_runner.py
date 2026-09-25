@@ -36,6 +36,9 @@ DURATION_RANGE_IDS = ("xshort", "short", "medium", "long", "xlong", "extended", 
 # request URLs, proxy credentials and local paths, so only these fixed strings
 # reach the UI. First match wins.
 FAILURES = (
+    (("selected planner requires a video with speech",),
+     "The selected planning model cannot analyze a video without speech.",
+     "Choose a planning model that supports silent-video planning in Advanced mode, or use Quality or Economy."),
     (("unsupported twitch source",),
      "Choose a public, completed Twitch VOD.",
      "Copy the video link from a saved Twitch video. Live channels, collections and Twitch clips are not supported."),
@@ -55,7 +58,7 @@ FAILURES = (
      "OpenRouter rejected the transcription request.",
      "Check the OpenRouter API key in Settings."),
     (("transcription providers are temporarily rate limited",),
-     "Transcription providers are busy after automatic retries and fallback attempts.",
+     "Transcription providers are busy after automatic recovery attempts.",
      "Wait a few minutes, then run again. If this persists, check the OpenRouter account's rate limits."),
     (("transcription account credit limit reached",),
      "OpenRouter could not transcribe the video because the account has insufficient credit or a spending limit.",
@@ -68,10 +71,10 @@ FAILURES = (
      "Check your connection and retry."),
     (("transcription request rejected by provider",),
      "OpenRouter rejected the transcription audio request.",
-     "OpenRouter rejected BridgeClip's audio format or request options. Update BridgeClip and retry; if it persists, report this run."),
+     "The selected model may not support WAV audio and word timestamps. In Advanced mode, choose a timestamp-capable model such as Whisper Large V3 or MAI Transcribe 2."),
     (("transcription response lacked word timestamps",),
      "OpenRouter returned a transcript without word timestamps.",
-     "Retry the run. If it persists, report this run so the provider response can be investigated."),
+     "Choose a transcription model with word timestamps in Advanced mode, such as Whisper Large V3 or MAI Transcribe 2, or retry using a preset."),
     (("transcription response was invalid", "transcription response was too large"),
      "OpenRouter returned an unusable transcription response.",
      "Retry the run. If it persists, report this run so the provider response can be investigated."),
@@ -169,10 +172,19 @@ async def run(config: dict) -> bool:
     os.environ["CLIPPING_MODE"] = config.get("clipping_mode", "quality")
     if config.get("clipping_mode", "quality") == "economy":
         # Each job has its own bridge process, so model choices cannot leak to
-        # another queued or concurrent run. Never fall back to paid planners.
+        # another queued or concurrent run. Do not fall back to higher-cost planners.
         os.environ["PLANNER_MODEL"] = "z-ai/glm-5.3-flash"
         os.environ["PLANNER_FALLBACK_MODELS"] = ""
         os.environ["LAYOUT_VISION_ENABLED"] = "false"
+    elif config.get("clipping_mode") == "advanced":
+        os.environ["PLANNER_MODEL"] = config["planner_model"]
+        os.environ["PLANNER_FALLBACK_MODELS"] = ""
+        os.environ["ADVANCED_TRANSCRIPTION_MODEL"] = config["transcription_model"]
+        os.environ["PLANNER_MAX_OUTPUT_TOKENS"] = str(config.get("planner_max_output_tokens", 32000))
+        os.environ["PLANNER_SUPPORTS_IMAGES"] = str(config.get("planner_supports_images", False)).lower()
+        for name in ("planner_input_price", "planner_output_price"):
+            if config.get(name) is not None:
+                os.environ[name.upper()] = str(config[name])
 
     from network_guard import install as install_network_guard
     install_network_guard()
@@ -315,8 +327,23 @@ def validate_config(config: object) -> dict:
     speed = config.get("video_speed", 1.0)
     if type(speed) not in (int, float) or not 1 <= speed <= 2:
         raise ValueError("Video speed must be between 1x and 2x")
-    if config.get("clipping_mode", "quality") not in ("quality", "economy"):
+    if config.get("clipping_mode", "quality") not in ("quality", "economy", "advanced"):
         raise ValueError("Invalid clipping mode")
+    for field in ("planner_model", "transcription_model"):
+        if config.get("clipping_mode") == "advanced":
+            value = config.get(field)
+            if not isinstance(value, str) or len(value) > 120 or not re.fullmatch(r"~?[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*", value):
+                raise ValueError("Choose both models in Advanced mode")
+        elif field in config:
+            raise ValueError("Custom models require Advanced mode")
+    if "planner_max_output_tokens" in config and (type(config["planner_max_output_tokens"]) is not int or not 1 <= config["planner_max_output_tokens"] <= 32000):
+        raise ValueError("Invalid planner output limit")
+    if "planner_supports_images" in config and type(config["planner_supports_images"]) is not bool:
+        raise ValueError("Invalid planner image capability")
+    for field in ("planner_input_price", "planner_output_price"):
+        value = config.get(field)
+        if value is not None and (type(value) not in (int, float) or not 0 <= value <= 1000):
+            raise ValueError("Invalid planner price")
     keyterms = config.get("keyterms")
     if keyterms is not None and (
         not isinstance(keyterms, list) or len(keyterms) > 1000 or

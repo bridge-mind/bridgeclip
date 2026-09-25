@@ -59,6 +59,33 @@ def test_rate_limit_retries_then_uses_budget_fallback(service, monkeypatch, tmp_
     assert any("Whisper Large V3" in m for m in messages)
 
 
+def test_advanced_retries_selected_model_without_switching(service, monkeypatch, tmp_path):
+    service.settings.clipping_mode = "advanced"
+    service.settings.transcription_model = "custom/speech"
+    result, models = transcribe(service, monkeypatch, tmp_path, [stt.TranscriptionProviderError("rate_limit", 429), reply()])
+    assert models == ["custom/speech", "custom/speech"]
+    assert result.model == "custom/speech"
+    assert result.api_costs.attempts == 2
+
+
+def test_advanced_unsupported_timestamps_do_not_trigger_preset_fallback(service, monkeypatch, tmp_path):
+    service.settings.clipping_mode = "advanced"
+    service.settings.transcription_model = "custom/speech"
+    with pytest.raises(stt.TranscriptionError) as failure:
+        transcribe(service, monkeypatch, tmp_path, [{"text": "Hello.", "usage": {"cost": .1}}])
+    assert failure.value.reason == "missing_word_timestamps"
+    assert service._request_transcript.await_count == 1
+
+
+def test_unknown_transcription_price_is_not_estimated_using_mai_rate():
+    missing = stt.TranscriptionService._response_cost({}, 300, "custom/speech")
+    assert missing.cost_incomplete
+    assert missing.estimated_cost_usd == 0
+    known = stt.TranscriptionService._response_cost({"usage": {"cost": .012}}, 300, "custom/speech")
+    assert not known.cost_incomplete
+    assert known.estimated_cost_usd == .012
+
+
 def test_transient_error_recovers_without_changing_model(service, monkeypatch, tmp_path):
     result, models = transcribe(service, monkeypatch, tmp_path,
                                 [stt.TranscriptionProviderError("network", 503), reply()])

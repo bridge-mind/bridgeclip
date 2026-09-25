@@ -11,10 +11,11 @@ import { logger } from './logger'
 import { parseJobOutput, type JobOutput } from '../shared/job-output'
 import { BRIDGE_CONTRACT_VERSION } from '../shared/job-contract'
 import type { ClipJobRequest } from '../shared/jobs'
+import type { OpenRouterModel } from '../shared/openrouter-models'
 import { finishRunRecord, type StoredRunStatus } from './run-history'
 import { resolveBinary } from './tools'
 
-export type ClipJobConfig = ClipJobRequest
+export type ClipJobConfig = ClipJobRequest & { plannerCapabilities?: OpenRouterModel }
 
 /**
  * Where a run's events go. The job manager passes its own sink so it can track
@@ -388,6 +389,14 @@ export function startClipJob(
     job_id: jobId,
     video_url: config.videoUrl,
     clipping_mode: config.clippingMode ?? 'quality',
+    ...(config.clippingMode === 'advanced' ? {
+      planner_model: config.plannerModel,
+      transcription_model: config.transcriptionModel,
+      planner_max_output_tokens: Math.min(32000, Math.floor(config.plannerCapabilities?.maxOutputTokens ?? 32000)),
+      planner_supports_images: config.plannerCapabilities?.supportsImages ?? false,
+      planner_input_price: config.plannerCapabilities?.inputPrice ?? null,
+      planner_output_price: config.plannerCapabilities?.outputPrice ?? null
+    } : {}),
     max_clips: config.maxClips,
     auto_clip_count: config.autoClipCount,
     duration_ranges: config.durationRanges,

@@ -67,6 +67,16 @@ def clip(start, end, scores=(8, 8, 8, 8, 8), summary="Great Title Here"):
 
 
 class TestRequestPayload:
+    def test_advanced_uses_selected_model_limit_and_provider_reasoning_defaults(self):
+        planner = make_planner(clipping_mode="advanced", planner_model="custom/model", planner_max_output_tokens=8192)
+        payload = planner._build_request_payload(planner.settings.planner_model, planner.settings.get_planner_fallback_models(), [])
+        assert payload["model"] == "custom/model"
+        assert payload["max_tokens"] == 8192
+        assert "models" not in payload
+        assert "reasoning" not in payload
+        assert "temperature" not in payload
+        assert payload["response_format"]["type"] == "json_schema"
+
     def test_reasoning_payload_uses_schema_fallbacks_and_no_temperature(self):
         planner = make_planner(
             planner_model="primary/model",
@@ -200,6 +210,26 @@ def no_sleep(monkeypatch):
 
 
 class TestPlanClips:
+    def test_advanced_text_only_model_explains_silent_video_incompatibility(self):
+        from clip_engine.services.intelligence_planner import VisualPlanningUnsupportedError
+        from clip_engine.error_policy import safe_processing_error, safe_failure_code
+        planner = make_planner(clipping_mode="advanced", planner_supports_images=False)
+        with pytest.raises(VisualPlanningUnsupportedError) as failure:
+            asyncio.run(planner.plan_clips(
+                transcript_result=TranscriptionResult(segments=[], full_text="", duration_seconds=300),
+                video_metadata=SimpleNamespace(duration_seconds=300), max_clips=3, auto_clip_count=False,
+                min_duration_seconds=15, max_duration_seconds=60,
+                frames=[SimpleNamespace(timestamp_ms=time) for time in (0, 10000, 20000)],
+            ))
+        assert safe_processing_error(failure.value) == "Selected planner requires a video with speech"
+        assert safe_failure_code(failure.value) == "planning.images_unsupported"
+
+    def test_advanced_cost_estimate_uses_selected_model_catalog_price(self, no_sleep):
+        planner = make_planner(clipping_mode="advanced", planner_model="custom/model", planner_input_price=0.000001, planner_output_price=0.000005)
+        result = self._plan(planner, [(200, completion(json.dumps({"clips": [clip(10, 40)]}), model="custom/model", cost=None))])
+        assert result.api_costs.estimated_cost_usd == 0.002
+        assert not result.api_costs.cost_incomplete
+
     def _plan(self, planner, responses):
         planner._http_client = FakeClient(responses)
         return asyncio.run(planner.plan_clips(
@@ -210,6 +240,25 @@ class TestPlanClips:
             min_duration_seconds=15,
             max_duration_seconds=60,
         ))
+
+    @pytest.mark.parametrize("reported_first", [True, False])
+    def test_retry_preserves_reported_cost_when_another_attempt_needs_an_estimate(self, no_sleep, reported_first):
+        planner = make_planner(clipping_mode="advanced", planner_model="custom/model", planner_input_price=0.000001, planner_output_price=0.000005)
+        result = self._plan(planner, [
+            (200, completion("{{not json", model="custom/model", cost=0.01 if reported_first else None)),
+            (200, completion(json.dumps({"clips": [clip(10, 40)]}), model="custom/model", cost=None if reported_first else 0.01)),
+        ])
+        assert result.api_costs.estimated_cost_usd == 0.012
+        assert not result.api_costs.cost_incomplete
+
+    def test_unknown_retry_price_keeps_known_charges_and_marks_total_incomplete(self, no_sleep):
+        planner = make_planner(clipping_mode="advanced", planner_model="custom/model")
+        result = self._plan(planner, [
+            (200, completion("{{not json", model="custom/model", cost=None)),
+            (200, completion(json.dumps({"clips": [clip(10, 40)]}), model="custom/model", cost=0.01)),
+        ])
+        assert result.api_costs.estimated_cost_usd == 0.01
+        assert result.api_costs.cost_incomplete
 
     def test_happy_path_records_real_cost_and_serving_model(self, no_sleep):
         planner = make_planner(planner_model="primary/model")

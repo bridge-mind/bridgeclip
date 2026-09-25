@@ -12,6 +12,7 @@ import type {
 import type { ClipMediaInfo, PostClipRequest, PostClipResult, PostProgress, PostRecord, PostsRefreshResult, TikTokCreatorInfo, TikTokLegalLink } from '../shared/zernio-posts'
 import type { ClipJobRequest, JobSnapshot } from '../shared/jobs'
 import type { Automation, AutomationUpdate, AutomationTikTokReview, AutomationTikTokReviewUpdate } from '../shared/automations'
+import type { OpenRouterCatalog } from '../shared/openrouter-models'
 
 export interface ClipSettings {
   openrouterConfigured: boolean
@@ -52,6 +53,7 @@ export interface ToolStatus {
 }
 
 export interface BridgeClipAPI {
+  models: { list: (refresh?: boolean) => Promise<OpenRouterCatalog> }
   automations: {
     list: () => Promise<Automation[]>
     create: (name: string) => Promise<Automation[]>
@@ -164,6 +166,7 @@ function subscribe<T>(channel: string, callback: (data: T) => void): () => void 
 }
 
 const api: BridgeClipAPI = {
+  models: { list: (refresh = false) => ipcRenderer.invoke('models:list', refresh) },
   automations: {
     list: () => ipcRenderer.invoke('automations:list'),
     create: (name) => ipcRenderer.invoke('automations:create', name),

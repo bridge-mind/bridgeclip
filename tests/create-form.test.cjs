@@ -114,6 +114,29 @@ test('saved run speed is retained while invalid speed metadata is discarded', ()
   }
 })
 
+test('advanced selections travel with the job while presets ignore retained custom choices', () => {
+  const { ClipsStep, buildJobRequest } = form.exports
+  const draft = {
+    source: 'https://example.com/video', clippingMode: 'advanced',
+    plannerModel: 'provider/planning', transcriptionModel: 'provider/speech',
+    aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'tight',
+    durations: ['short'], autoClipCount: true, maxClips: 5, includeCaptions: true, captionPreset: 'pop'
+  }
+  const html = renderToStaticMarkup(React.createElement(ClipsStep, { draft, update() {} }))
+  assert.match(html, /Clip planning model/)
+  assert.match(html, /Transcription model/)
+  assert.equal((html.match(/role="combobox"/g) ?? []).length, 2)
+  const request = buildJobRequest(draft, { start: null, end: null })
+  assert.equal(request.plannerModel, 'provider/planning')
+  assert.equal(request.transcriptionModel, 'provider/speech')
+  assert.equal(request.layoutVision, true)
+  for (const clippingMode of ['quality', 'economy']) {
+    const preset = buildJobRequest({ ...draft, clippingMode }, { start: null, end: null })
+    assert.equal(preset.plannerModel, undefined)
+    assert.equal(preset.transcriptionModel, undefined)
+  }
+})
+
 test('clip list explains when smart framing intentionally keeps the whole frame', () => {
   const clip = (index) => ({
     clip_index: index, s3_url: `/tmp/clip-${index}.mp4`, duration_ms: 5000,

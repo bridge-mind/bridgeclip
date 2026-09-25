@@ -37,7 +37,7 @@ from clip_engine.services.clip_editor import (
     window_words,
 )
 from clip_engine.services.layout_analyzer import ClipLayoutPlan, LayoutAnalyzer, LayoutType, ShotLayout
-from clip_engine.services.media_process import MEDIA_INPUT_OPTIONS, PROBE_TIMEOUT_SECONDS, run_media, validate_video_dimensions
+from clip_engine.services.media_process import MEDIA_INPUT_OPTIONS, PROBE_TIMEOUT_SECONDS, media_process, run_media, validate_video_dimensions
 from clip_engine.services.layout_renderer import (
     AUDIO_FORMAT,
     AUDIO_SYNC,
@@ -951,7 +951,8 @@ class RenderingService:
     ) -> None:
         """Check the encoded presentation clock before publishing an export.
 
-        This catches missing/truncated tracks and mux/encoder timing shifts.
+        This catches missing/truncated tracks and mux/encoder timing shifts,
+        including gaps inside audio whose overall start/end times look valid.
         Content-level lip sync is covered by decoded flash/beep regressions;
         stream metadata alone cannot detect an already out-of-sync source.
         """
@@ -983,9 +984,42 @@ class RenderingService:
                         kind, start, duration, expected, tolerance,
                     )
                     raise ValueError(f"{kind} timing differs from the edit")
+            if with_audio:
+                await asyncio.to_thread(self._validate_audio_packets, output_path)
             logger.info("Export timing verified: %.3fs at %s fps, audio=%s", expected, fps, with_audio)
         except Exception as exc:
             raise RenderingError("Export timing validation failed; the clip was not saved") from exc
+
+    @staticmethod
+    def _validate_audio_packets(output_path: str) -> None:
+        """Verify the continuous 48 kHz AAC clock, with bounded memory.
+
+        MP4 can hide a PTS jump by extending the preceding packet's duration;
+        compare against AAC's 1024 samples as well as adjacent timestamps.
+        The final packet may be shorter and the priming packet may start
+        before zero. Neither should shift the audible presentation clock.
+        """
+        cmd = [
+            "ffprobe", "-v", "error", *MEDIA_INPUT_OPTIONS,
+            "-select_streams", "a:0", "-show_entries",
+            "packet=pts_time,duration_time:packet_side_data=",
+            "-of", "compact=p=0:nk=0", output_path,
+        ]
+        packet_seconds = 1024 / 48000
+        tolerance = 1 / 48000 + 0.000002  # One sample plus probe rounding.
+        previous = None
+        with media_process(cmd, timeout=PROBE_TIMEOUT_SECONDS) as (process, _):
+            while line := process.stdout.readline(512):
+                fields = dict(part.split(b"=", 1) for part in line.strip().split(b"|") if b"=" in part)
+                start = float(fields[b"pts_time"])
+                duration = float(fields[b"duration_time"])
+                if not (math.isfinite(start) and math.isfinite(duration) and 0 < duration <= packet_seconds + tolerance):
+                    raise ValueError("invalid AAC packet duration")
+                if previous is not None and abs(start - previous - packet_seconds) > tolerance:
+                    raise ValueError("discontinuous AAC packet timestamps")
+                previous = start
+        if process.returncode != 0 or previous is None:
+            raise ValueError("could not verify AAC packet timestamps")
 
     def _compute_padded_range(self, start_time_ms: int, duration_ms: int) -> tuple[int, int]:
         """Compute padded start and duration for consistent A/V trimming."""

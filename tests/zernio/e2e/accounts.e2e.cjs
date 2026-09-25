@@ -44,6 +44,12 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
   const expectNotice = (pattern) => notice().filter({ hasText: pattern }).waitFor({ timeout: TIMEOUT })
   const expectRowState = (platform, state) => page.locator(`li[data-platform="${platform}"][data-state="${state}"]`).waitFor({ timeout: TIMEOUT })
   const click = (name) => page.getByRole('button', { name, exact: true }).click()
+  // The app's dropdowns are a combobox button with a listbox menu.
+  const choose = async (combobox, name) => {
+    await combobox.click()
+    await page.getByRole('listbox').getByRole('option', { name, exact: true }).click()
+  }
+  const profileSelect = () => page.getByLabel('Zernio profile', { exact: true })
 
   await t.test('pasting a rejected key shows the auth error', async () => {
     await openAccounts()
@@ -113,7 +119,7 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
     await shot('06-needs-reconnect')
     const sessionsBefore = mock.state.sessions.length
     await click('Reconnect TikTok')
-    await row('tiktok').getByText('permanently deletes its Zernio analytics, inbox and DM history', { exact: false }).waitFor()
+    await page.getByRole('alertdialog').getByText('permanently deletes its Zernio analytics, inbox and DM history', { exact: false }).waitFor()
     assert.equal(mock.state.sessions.length, sessionsBefore, 'the browser is not opened before the warning is confirmed')
     await click('Confirm reconnecting TikTok')
     await expectNotice('TikTok connected')
@@ -123,7 +129,14 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
 
   await t.test('disconnect asks first, then removes the account', async () => {
     await click('Disconnect LinkedIn')
-    await row('linkedin').getByText('This also removes it from your Zernio workspace').waitFor()
+    await page.getByRole('alertdialog').getByText('This also removes Jane Doe · @jane from your Zernio workspace', { exact: false }).waitFor()
+    const cancel = page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true })
+    const confirm = page.getByRole('button', { name: 'Confirm disconnecting LinkedIn', exact: true })
+    assert.equal(await cancel.evaluate((element) => element === document.activeElement), true)
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await confirm.evaluate((element) => element === document.activeElement), true)
+    await page.keyboard.press('Tab')
+    assert.equal(await cancel.evaluate((element) => element === document.activeElement), true)
     await click('Confirm disconnecting LinkedIn')
     await expectNotice('LinkedIn disconnected.')
     await expectRowState('linkedin', 'disconnected')
@@ -161,11 +174,10 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
   })
 
   await t.test('profiles can be switched', async () => {
-    const select = page.getByRole('combobox')
-    await select.selectOption({ label: 'Brand' })
+    await choose(profileSelect(), 'Brand')
     await expectRowState('tiktok', 'disconnected')
     assert.equal(await page.locator('li[data-state="connected"]').count(), 0)
-    await select.selectOption({ index: 0 })
+    await choose(profileSelect(), profile.name)
     await expectRowState('tiktok', 'connected')
   })
 
@@ -177,11 +189,11 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
     await click('Create profile')
     await page.getByRole('alert').filter({ hasText: 'already exists' }).waitFor()
     assert.equal(await page.getByLabel('Profile name', { exact: true }).inputValue(), 'Launch team')
-    assert.equal(await page.getByLabel('Zernio profile', { exact: true }).inputValue(), profile._id)
+    assert.equal(await profileSelect().textContent(), profile.name)
     await shot('11-profile-form-error')
 
     await click('Create profile')
-    await page.getByRole('heading', { name: 'Accounts in Launch team', exact: true }).waitFor()
+    await page.getByRole('list', { name: 'Accounts in Launch team', exact: true }).waitFor()
     assert.equal(mock.state.opened.length, browserCount, 'creating a profile does not also open platform sign-in')
     assert.equal(await page.locator('li[data-state="connected"]').count(), 0)
     await shot('12-empty-profile')
@@ -189,7 +201,7 @@ test('accounts: set up, connect, reconnect, disconnect, recover and work offline
     await expectRowState('linkedin', 'connected')
     const created = mock.state.profiles.find((p) => p.name === 'Launch team')
     assert.ok(mock.state.accounts.some((a) => a.platform === 'linkedin' && a.profileId._id === created._id))
-    await page.getByLabel('Zernio profile', { exact: true }).selectOption(profile._id)
+    await choose(profileSelect(), profile.name)
     await expectRowState('linkedin', 'disconnected')
     await expectRowState('tiktok', 'connected')
   })

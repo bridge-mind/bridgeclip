@@ -39,6 +39,8 @@
 
 Every run gets its own folder. The **Library** shows completed clips with virality scores, timecodes and tags. **Jobs** shows what is running or queued right now (up to two clipping runs go at once; more wait in a queue) and every earlier run, including completed, failed, cancelled and interrupted jobs; completed runs open their clips, and failed runs from this session can run again. Older runs without a saved status appear as unfinished. You can optionally connect social accounts through Zernio to publish or schedule a selected clip.
 
+In **Create → Clips**, choose **Quality**, **Economy**, or **Advanced**. Advanced offers searchable OpenRouter model pickers for transcription and clip planning, with model IDs, planning prices and compatibility notes. Both selections are required and appear in Review. Advanced retries the selected models without automatically switching models. Transcription must provide word timestamps; planning must support structured output. See [model selection and transcription](docs/transcription.md).
+
 In **Create → Format → Video speed**, choose **1×** (normal), **1.1×**, **1.25×**, **1.5×**, **1.75×**, or **2×** for every clip in the job. Exports preserve voice pitch and keep captions synchronized. Speed works with **Cut dead air** and appears in Review and the saved results. Clip lengths and source trim times refer to the original footage: a 60-second clip at 1.5× exports in about 40 seconds, before any dead-air cuts. The choice stays selected when you clip another video in the same session. Existing exports stay as they are; generate a new job to change their speed.
 
 ## Download
@@ -55,7 +57,7 @@ Keys are encrypted with your operating system's secure storage. If secure storag
 
 ### What leaves your computer
 
-For a link, the app downloads the source using your network connection. Audio for MAI Transcribe 2 (Quality) or Whisper Turbo (Economy) transcription goes to OpenRouter. Transcription retries temporary failures and uses fallback models when needed; Economy tries Whisper Large V3 before MAI. Transcript text for clip planning also goes to OpenRouter. If the video has no audio or no speech, BridgeClip samples video frames and sends those images to OpenRouter for visual-only planning. Clips made through that fallback have no speech captions. Economy skips optional AI layout checks. If you connect social accounts, BridgeClip sends your Zernio API key to Zernio and receives account/profile metadata; platform sign-in occurs in your browser. When you choose **Post** or **Schedule**, BridgeClip uploads that clip to Zernio's media storage and sends its caption, selected accounts and publishing options to Zernio. Zernio then publishes to those platforms. Provider accounts, charges, retention and data policies are governed by those services.
+For a link, the app downloads the source using your network connection. Audio for MAI Transcribe 2 (Quality), Whisper Turbo (Economy), or your selected transcription model (Advanced) goes to OpenRouter. Transcription retries temporary failures and uses fallback models when needed; Economy tries Whisper Large V3 before MAI. Transcript text for clip planning also goes to OpenRouter. If the video has no audio or no speech, BridgeClip samples video frames and sends those images to OpenRouter for visual-only planning. Clips made through that fallback have no speech captions. Economy skips optional AI layout checks. If you connect social accounts, BridgeClip sends your Zernio API key to Zernio and receives account/profile metadata; platform sign-in occurs in your browser. When you choose **Post** or **Schedule**, BridgeClip uploads that clip to Zernio's media storage and sends its caption, selected accounts and publishing options to Zernio. Zernio then publishes to those platforms. Provider accounts, charges, retention and data policies are governed by those services.
 
 Downloads and intermediate media are held in a private `work/` directory under BridgeClip’s per-user application data folder. BridgeClip removes job work on completion, failure, and cancellation, and clears stale work when it next starts after a forced shutdown. A local video you selected stays where it was. Rendered clips, the transcript, plan and `job_output.json` remain in a run folder under your chosen **Output folder** (by default, `~/BridgeClip`). That JSON includes the source URL or local path and video title. Delete the run folder to remove those local outputs.
 
@@ -119,14 +121,14 @@ The release workflow packages the in-repo engine and media tools into signed mac
 | `npm run test:main` | Check desktop security and pipeline regressions |
 | `npm run test:zernio` | Check social account, upload and posting flows against local mocks |
 | `npm run dist:mac` | Package the current Mac architecture into `dist/` after preparing matching resources (signing needs a Developer ID) |
-| `npm run icons` | Regenerate the app icon from `scripts/icon/` (macOS) |
+| `npm run icons` | Export app icons from the imagegen master `resources/bridgeclip-icon.png` (macOS; see `scripts/icon/README.md`) |
 
 ### Project layout
 
 ```
 src/main/        Electron main process: settings, pipeline runner, IPC, optional Zernio posting
 src/preload/     The typed window.bridgeclip API exposed to the renderer
-src/renderer/    React UI (Create, Library, Jobs, Accounts, Automations, Settings)
+src/renderer/    React UI (Create, Library, Jobs, Accounts, Posts, Automations, Settings)
 src/shared/      Product constants shared by main and renderer
 bridge/          Python worker protocol and network guard
 engine/          BridgeClip clipping engine, assets, locked Python dependencies, and tests

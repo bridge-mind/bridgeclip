@@ -41,6 +41,7 @@ bridgeclip/package-lock.json
 bridgeclip/package.json
 bridgeclip/postcss.config.js
 bridgeclip/resources/bridgeclip-icon-small.svg
+bridgeclip/resources/bridgeclip-icon.png
 bridgeclip/resources/bridgeclip-icon.svg
 bridgeclip/resources/bridgeclip-logo-light.svg
 bridgeclip/resources/bridgeclip-logo.svg
@@ -48,6 +49,7 @@ bridgeclip/resources/bridgemind-mark.svg
 bridgeclip/scripts/build-ffmpeg-mac.sh
 bridgeclip/scripts/export-public-draft.sh
 bridgeclip/scripts/icon/build-icons.sh
+bridgeclip/scripts/icon/README.md
 bridgeclip/scripts/icon/build-logo.py
 bridgeclip/scripts/icon/icon.html
 bridgeclip/scripts/icon/render.js
@@ -101,7 +103,6 @@ bridgeclip/src/renderer/components/JobProgress.tsx
 bridgeclip/src/renderer/components/Layout.tsx
 bridgeclip/src/renderer/components/PlatformIcon.tsx
 bridgeclip/src/renderer/components/PostDialog.tsx
-bridgeclip/src/renderer/components/PostsPanel.tsx
 bridgeclip/src/renderer/components/SetupCard.tsx
 bridgeclip/src/renderer/components/Sidebar.tsx
 bridgeclip/src/renderer/components/SourcePicker.tsx
@@ -258,3 +259,21 @@ bridgeclip/tests/main/video-speed.e2e.cjs
 bridgeclip/docs/assets/video-speed.png
 bridgeclip/src/renderer/components/AutomationTikTokReviewDialog.tsx
 bridgeclip/tests/zernio/automation-tiktok.test.cjs
+bridgeclip/docs/AV_SYNC_FOLLOWUP_2026-09-24.md
+bridgeclip/docs/CLIPPING_REDESIGN_PLAN.md
+bridgeclip/src/main/openrouter-models.ts
+bridgeclip/src/renderer/components/ModelPicker.tsx
+bridgeclip/src/renderer/components/RunStats.tsx
+bridgeclip/src/renderer/components/brand/OpusClipLogo.tsx
+bridgeclip/src/renderer/components/ui/ConfirmDialog.tsx
+bridgeclip/src/renderer/components/ui/HoverCard.tsx
+bridgeclip/src/renderer/components/ui/Select.tsx
+bridgeclip/src/renderer/config/opus-clip.ts
+bridgeclip/src/renderer/pages/PostsPage.tsx
+bridgeclip/src/renderer/store/use-model-store.ts
+bridgeclip/src/shared/openrouter-models.ts
+bridgeclip/tests/main/advanced-models.e2e.cjs
+bridgeclip/tests/main/openrouter-models.test.cjs
+bridgeclip/tests/opus-clip.test.cjs
+bridgeclip/docs/assets/advanced-models.png
+bridgeclip/docs/assets/posts-page.png

@@ -5,7 +5,6 @@ import { getApi } from '../lib/ipc'
 import { clipFilePath, loadThumbnail } from '../lib/thumbnails'
 import type { ClipArtifact } from '../store/use-job-store'
 import { Checkbox } from './ui/Checkbox'
-import { Button } from './ui/Button'
 import { Badge } from './ui/Badge'
 import { Skeleton } from './ui/Skeleton'
 
@@ -101,12 +100,11 @@ export function ClipCard({
     >
       <div
         className={cn(
-          'relative cursor-pointer overflow-hidden rounded-xl bg-black/40 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]',
+          'relative overflow-hidden rounded-xl bg-black/40 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]',
           clipVertical ? 'aspect-[9/16]' : 'aspect-video'
         )}
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
-        onClick={selecting ? onToggleSelect : () => { void openClip() }}
       >
         {thumb ? (
           <img
@@ -143,45 +141,61 @@ export function ClipCard({
           />
         )}
 
+        {/* The media plays the clip, or picks it while clips are being selected (the checkbox is the labelled control then). */}
+        <button
+          type="button"
+          onClick={selecting ? onToggleSelect : () => { void openClip() }}
+          aria-label={`Play “${title}”`}
+          aria-hidden={selecting || undefined}
+          tabIndex={selecting ? -1 : undefined}
+          className="absolute inset-0 flex items-center justify-center focus-visible:[outline-offset:-3px]"
+        >
+          {!selecting && (
+            <span className="glass-chip flex h-11 w-11 scale-90 items-center justify-center rounded-full text-white opacity-0 transition-[opacity,transform] duration-300 ease-spring group-focus-within:opacity-100 group-hover:scale-100 group-hover:opacity-100">
+              <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
+            </span>
+          )}
+        </button>
+
         <div
           className={cn(
-            'absolute left-2.5 top-2.5 transition-opacity duration-200',
-            selecting || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            'absolute left-2 top-2 z-10 transition-opacity duration-200',
+            selecting || selected ? 'opacity-100' : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
           )}
         >
           <Checkbox variant="overlay" checked={selected} onChange={onToggleSelect} label={`Select ${title}`} />
         </div>
-        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5">
+        <div className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-1">
           {topPick && (
-            <span className="inline-flex h-[22px] items-center rounded-full bg-accent px-2.5 text-2xs font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.35)] backdrop-blur-md">
+            <span className="inline-flex h-5 items-center rounded-full bg-accent px-2 text-2xs font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.35)]">
               Top pick
             </span>
           )}
           <span
-            className="glass-chip inline-flex h-[22px] items-center gap-1 rounded-full px-2 font-mono text-2xs font-medium tabular text-white"
+            className="glass-chip pointer-events-auto inline-flex h-5 items-center gap-1 rounded-full px-1.5 font-mono text-2xs font-medium tabular text-white"
             title="Virality score"
           >
             <TrendingUp className="h-3 w-3 text-brand-gold" />
             {score}
           </span>
         </div>
-        <span className="glass-chip absolute bottom-2.5 left-2.5 rounded-full px-2 py-0.5 font-mono text-2xs tabular text-white/95">
+        <span className="glass-chip pointer-events-none absolute bottom-2 left-2 z-10 rounded-full px-1.5 py-px font-mono text-2xs tabular text-white/95">
           {formatTimecode(clip.duration_ms)}
         </span>
         {!selecting && (
-          <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-            <span className="glass-chip flex h-12 w-12 scale-90 items-center justify-center rounded-full text-white transition-transform duration-300 ease-spring group-hover:scale-100">
-              <Play className="ml-0.5 h-5 w-5" fill="currentColor" />
-            </span>
-          </span>
+          <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+            {onPost && <MediaAction label={`Post “${title}”`} title="Post to social accounts" icon={<Send />} onClick={onPost} />}
+            {onAddToAutomation && <MediaAction label={`Add “${title}” to automation`} title="Add to automation" icon={<ListPlus />} onClick={onAddToAutomation} />}
+            <MediaAction label={isMac ? 'Show in Finder' : 'Show in folder'} icon={<FolderOpen />} onClick={() => { void showInFolder() }} />
+          </div>
         )}
       </div>
 
-      <div className="flex flex-1 flex-col px-2 pb-1.5 pt-3">
-        <h3 className="line-clamp-2 text-sm font-medium leading-snug text-ink" title={title}>
+      <div className="px-1.5 pb-1 pt-2">
+        <h3 className="line-clamp-2 text-sm font-medium leading-[18px] text-ink" title={title}>
           {title}
         </h3>
-        <p className="mt-1.5 truncate text-2xs text-ink-subtle">
+        <p className="mt-1 truncate text-2xs text-ink-subtle">
           <span className="font-mono tabular" title="Position in the source video">
             {formatTimecode(clip.start_time_ms)} – {formatTimecode(clip.end_time_ms)}
           </span>
@@ -191,60 +205,30 @@ export function ClipCard({
           <Badge
             tone="warning"
             icon={<TriangleAlert className="h-3 w-3" />}
-            className="mt-2 self-start"
+            className="mt-1.5 self-start"
           >
             <span title="Smart framing failed to render this clip, so it used the classic whole-frame layout. The log has the details.">
               {clip.render_fallback === 'letterbox_natural' ? 'Fallback: whole frame, no cuts' : 'Fallback: whole frame'}
             </span>
           </Badge>
         )}
-        {clip.tags.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap gap-1">
-            {clip.tags.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-white/[0.05] px-2 py-0.5 text-2xs text-ink-muted shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="mt-auto flex items-center gap-1 pt-3.5">
-          <Button size="sm" className="flex-1" icon={<Play className="h-3.5 w-3.5" />} onClick={() => { void openClip() }}>
-            Play
-          </Button>
-          {onPost && (
-            <Button
-              size="sm"
-              variant="ghost"
-              iconOnly
-              aria-label={`Post “${title}”`}
-              title="Post to social accounts"
-              onClick={onPost}
-              icon={<Send className="h-3.5 w-3.5" />}
-            />
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            iconOnly
-            aria-label={isMac ? 'Show in Finder' : 'Show in folder'}
-            title={isMac ? 'Show in Finder' : 'Show in folder'}
-            onClick={() => { void showInFolder() }}
-            icon={<FolderOpen className="h-3.5 w-3.5" />}
-          />
-        </div>
-        {onAddToAutomation && <Button
-          size="sm"
-          variant="ghost"
-          className="mt-1 w-full"
-          icon={<ListPlus className="h-3.5 w-3.5" />}
-          aria-label={`Add “${title}” to automation`}
-          onClick={onAddToAutomation}
-        >Add to automation</Button>}
-        {actionError && <p role="alert" className="mt-2 text-xs text-danger">{actionError}</p>}
+        {actionError && <p role="alert" className="mt-1.5 text-xs text-danger">{actionError}</p>}
       </div>
     </article>
+  )
+}
+
+/** Small frosted button over the clip's media; shown on hover or focus. */
+function MediaAction({ label, title, icon, onClick }: { label: string; title?: string; icon: React.ReactNode; onClick: () => void }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={title ?? label}
+      onClick={onClick}
+      className="glass-chip flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition-colors duration-150 hover:bg-white/25 hover:text-white [&_svg]:h-3.5 [&_svg]:w-3.5"
+    >
+      {icon}
+    </button>
   )
 }

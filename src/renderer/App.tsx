@@ -6,6 +6,7 @@ import { LibraryPage } from './pages/LibraryPage'
 import { JobsPage } from './pages/JobsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AccountsPage } from './pages/AccountsPage'
+import { PostsPage } from './pages/PostsPage'
 import { AutomationsPage } from './pages/AutomationsPage'
 import { UpdateModal } from './components/UpdateModal'
 import { BridgeClipLogo } from './components/brand/BridgeClipLogo'
@@ -38,7 +39,7 @@ export default function App(): React.JSX.Element {
     return unsubscribe
   }, [])
 
-  // ⌘1 Create, ⌘2 Library, ⌘3 History, ⌘4 Accounts, ⌘5 Automations, ⌘, Settings,
+  // ⌘1 Create, ⌘2 Library, ⌘3 Jobs, ⌘4 Accounts, ⌘5 Posts, ⌘6 Automations, ⌘, Settings,
   // ⌘\ collapse or expand the sidebar (Ctrl on Windows/Linux).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -73,6 +74,7 @@ export default function App(): React.JSX.Element {
           {page === 'library' && <LibraryPage onNavigate={setPage} />}
           {page === 'jobs' && <JobsPage onNavigate={setPage} />}
           {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
+          {page === 'posts' && <PostsPage onNavigate={setPage} />}
           {page === 'automations' && <AutomationsPage onNavigate={setPage} />}
           {page === 'settings' && <SettingsPage />}
         </Layout>

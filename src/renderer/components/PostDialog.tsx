@@ -39,7 +39,8 @@ import { PlatformIcon, platformName } from './PlatformIcon'
 import { Button } from './ui/Button'
 import { Checkbox } from './ui/Checkbox'
 import { Switch } from './ui/Switch'
-import { Select, TextArea, TextInput, WELL } from './ui/Field'
+import { TextArea, TextInput, WELL } from './ui/Field'
+import { Select } from './ui/Select'
 import { ProgressBar } from './ui/ProgressBar'
 import { Badge } from './ui/Badge'
 import { Callout } from './ui/Callout'
@@ -385,8 +386,8 @@ export function PostDialog({ clips, onClose, onNavigate }: PostDialogProps): Rea
   }
 
   const viewPosts = (): void => {
-    usePostsStore.getState().requestReveal()
-    goToAccounts()
+    onClose()
+    onNavigate?.('posts')
   }
 
   // Focus trap and Escape, as in UpdateModal.
@@ -997,20 +998,20 @@ export function TikTokAccountFields({ heading, state, value, onChange, brandedCo
           <Select
             id={id}
             value={value.privacyLevel}
-            onChange={(e) => set({ privacyLevel: e.target.value })}
-          >
-            <option value="" disabled>Choose who can view</option>
-            {info.privacyLevels.map((level) => {
+            onChange={(privacyLevel) => set({ privacyLevel })}
+            placeholder="Choose who can view"
+            emptyText="TikTok returned no privacy options."
+            options={info.privacyLevels.map((level) => {
               const privateBranded = level.value === 'SELF_ONLY' && brandedContent
               const businessDirectPrivate = businessConnection && !draft && level.value !== 'PUBLIC_TO_EVERYONE'
-              return (
-                <option key={level.value} value={level.value} disabled={privateBranded || businessDirectPrivate}>
-                  {TIKTOK_PRIVACY_LABELS[level.value] ?? level.label}
-                  {privateBranded ? ' (not for branded content)' : businessDirectPrivate ? ' (send to inbox)' : ''}
-                </option>
-              )
+              return {
+                value: level.value,
+                label: TIKTOK_PRIVACY_LABELS[level.value] ?? level.label,
+                detail: privateBranded ? 'not for branded content' : businessDirectPrivate ? 'send to inbox' : undefined,
+                disabled: privateBranded || businessDirectPrivate
+              }
             })}
-          </Select>
+          />
           {info.privacyLevels.length === 0 && <p className="mt-2 text-xs text-danger">TikTok returned no privacy options for this account.</p>}
         </div>
         <div>

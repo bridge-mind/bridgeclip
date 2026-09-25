@@ -32,10 +32,10 @@
     "icons": "bash scripts/icon/build-icons.sh",
     "test:bridge": "node scripts/run-bridge-tests.cjs",
     "test:release": "node --test scripts/*.test.cjs",
-    "test:renderer": "node --test tests/renderer-state.test.cjs tests/create-form.test.cjs",
+    "test:renderer": "node --test tests/renderer-state.test.cjs tests/create-form.test.cjs tests/opus-clip.test.cjs",
     "test:main": "node --test tests/main/*.test.cjs",
     "test:zernio": "node --test tests/zernio/*.test.cjs",
-    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/main/video-speed.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/main/video-speed.e2e.cjs tests/main/advanced-models.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
     "test": "npm run test:main && npm run test:renderer && npm run test:zernio && npm run test:bridge && npm run test:release"
   },
   "dependencies": {

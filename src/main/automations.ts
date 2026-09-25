@@ -341,6 +341,9 @@ export async function addAutomationContent(id: unknown, paths: string[], titles?
   if (busy.has(automation.id)) throw new Error('Wait for the current operation to finish.')
   busy.add(automation.id)
   const directory = bankPath(workspace, automation.id)
+  const copiedFiles: string[] = []
+  const pendingItems: AutomationContent[] = []
+  let committed = false
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     for (const [index, path] of paths.entries()) {
@@ -367,15 +370,23 @@ export async function addAutomationContent(id: unknown, paths: string[], titles?
         }
         const title = Array.from(titles?.[index] || basename(path, extname(path))).filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('').replace(/[_-]+/g, ' ').trim().slice(0, 500) || 'Untitled clip'
         const item: AutomationContent = { id: itemId, fileName, title, caption: title, transcript: null, generatedMetadata: null, status: 'queued', addedAt: new Date().toISOString(), postedAt: null, postId: null, error: null }
-        automation.content.push(item)
-        try { save(workspace) }
-        catch (error) { automation.content.pop(); throw error }
+        copiedFiles.push(dest)
+        pendingItems.push(item)
       } catch (error) {
         await unlink(dest).catch(() => {})
         throw error
       } finally { await source.handle.close() }
     }
-  } finally { busy.delete(automation.id) }
+    if (currentWorkspace() !== workspace || cachedWorkspace !== workspace || !cached.includes(automation)) {
+      throw new Error('Automation changed while adding content.')
+    }
+    automation.content.push(...pendingItems)
+    try { save(workspace); committed = true }
+    catch (error) { automation.content.splice(-pendingItems.length); throw error }
+  } finally {
+    if (!committed) for (const file of copiedFiles) await unlink(file).catch(() => {})
+    busy.delete(automation.id)
+  }
   return listAutomations()
 }
 
@@ -389,7 +400,7 @@ export function updateAutomationContent(id: unknown, contentId: unknown, raw: un
       typeof update.caption !== 'string' || update.caption.length > 63_206) throw new Error('Enter a title and caption within the allowed lengths.')
   if (update.returnToQueue === true) {
     if (item.status !== 'needs_review') throw new Error('Only clips needing review can return to the queue.')
-    if (item.postId) throw new Error('This clip has a Zernio post. Use Posts on Accounts to review or retry it.')
+    if (item.postId) throw new Error('This clip has a Zernio post. Open Posts to review or retry it.')
   }
   const previous = { ...item }
   const previousReview = reviews.get(item.id)
@@ -635,7 +646,7 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
       item.postedAt = new Date().toISOString()
     } else {
       item.status = 'needs_review'
-      item.error = result.outcome === 'partial' ? 'Some accounts failed. Check Posts on Accounts before returning this clip to the queue.' : result.message
+      item.error = result.outcome === 'partial' ? 'Some accounts failed. Check Posts before returning this clip to the queue.' : result.message
       automation.lastError = item.error
     }
     save(workspace)

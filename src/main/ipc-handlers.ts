@@ -16,6 +16,7 @@ import { logger, getLogFilePath } from './logger'
 import { assertAbsolutePath, assertMediaPath, assertTrustedSender, authorizeMedia, isTrustedExternalUrl, isWebUrl, isWithinDirectory, openAuthorizedMedia } from './security'
 import { assertPublicWebUrl } from './network-policy'
 import { validateJobConfig } from './validation'
+import { getModelCatalog, resolveAdvancedModels } from './openrouter-models'
 import { randomUUID } from 'crypto'
 import { resolveBinary, supportsCaptionFilter } from './tools'
 import { approveAutomationTikTokReview, prepareAutomationTikTokReview, addAutomationContent, addLibraryClipsToAutomation, createAutomation, deleteAutomation, isAutomationMedia, listAutomations, removeAutomationContent, runAutomation, updateAutomation, updateAutomationContent } from './automations'
@@ -59,6 +60,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('settings:load', () => {
     return publicSettings(loadSettings())
   })
+  handle('models:list', (_event, refresh: unknown = false) => getModelCatalog(refresh))
 
   handle('settings:save', (_event, settings: PublicSettings) => {
     const current = loadSettings()
@@ -149,6 +151,9 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
 
     try {
       config = validateJobConfig(config)
+      if (config.clippingMode === 'advanced') {
+        config.plannerCapabilities = await resolveAdvancedModels(config.plannerModel!, config.transcriptionModel!)
+      }
       if (isWebUrl(config.videoUrl)) await assertPublicWebUrl(config.videoUrl)
       else assertMediaPath(config.videoUrl, loadSettings().outputDirectory)
       if (config.bannerChannelUrl) await assertPublicWebUrl(config.bannerChannelUrl)

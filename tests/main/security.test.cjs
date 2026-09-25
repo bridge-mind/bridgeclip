@@ -28,7 +28,7 @@ const jobOutput = loadShared('job-output.ts')
 const videoSource = loadShared('video-source.ts')
 const runHistory = loadSource('run-history.ts', { '../shared/video-source': videoSource })
 const security = loadSource('security.ts', { electron: {}, '../shared/brand': loadShared('brand.ts') })
-const { validateJobConfig } = loadSource('validation.ts', { './security': security, '../shared/video-source': videoSource, '../shared/job-contract': jobContract })
+const { validateJobConfig } = loadSource('validation.ts', { './security': security, '../shared/video-source': videoSource, '../shared/job-contract': jobContract, '../shared/openrouter-models': loadShared('openrouter-models.ts') })
 
 test('development checks the staged FFmpeg that the clipping engine uses', async () => {
   const binDir = path.join(__dirname, '../../engine-bin')
@@ -187,6 +187,7 @@ test('the native picker authorizes media and shell opening rejects aliased appli
       './security': security,
       './network-policy': {},
       './validation': {},
+      './openrouter-models': {},
       './tools': {},
       './zernio/service': {},
       './zernio/posts': {},
@@ -226,6 +227,12 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   }
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'economy' }))
   assert.doesNotThrow(() => validateJobConfig({ ...job, clippingMode: 'quality' }))
+  const advanced = { ...job, clippingMode: 'advanced', plannerModel: 'google/gemini-3.8-flash', transcriptionModel: 'openai/whisper-large-v3' }
+  assert.doesNotThrow(() => validateJobConfig(advanced))
+  assert.equal(validateJobConfig({ ...advanced, plannerCapabilities: { maxOutputTokens: 1e12 } }).plannerCapabilities, undefined)
+  for (const patch of [{ plannerModel: '' }, { transcriptionModel: undefined }, { plannerModel: 'provider/model,other/model' }, { plannerModel: 'https://example.com' }, { clippingMode: 'quality' }]) {
+    assert.throws(() => validateJobConfig({ ...advanced, ...patch }))
+  }
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
   assert.equal(validateJobConfig({ ...job, videoUrl: 'https://go.twitch.tv/videos/123?t=30s' }).videoUrl, 'https://www.twitch.tv/videos/123')
   for (const videoUrl of ['https://twitch.tv/channel', 'https://clips.twitch.tv/Clip']) assert.throws(() => validateJobConfig({ ...job, videoUrl }), /completed Twitch VOD/)
@@ -517,10 +524,20 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
     './tools': { resolveBinary: () => '/staged/engine-bin/ffmpeg' }
   })
   const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel, data) => sent.push({ channel, data }) } }
-  runner.startClipJob('trusted-job', { videoUrl: '/tmp/video.mp4', videoSpeed: 1.5 }, window, undefined, '/tmp/queued-output')
-  assert.equal(JSON.parse(workerInput).output_dir, '/tmp/queued-output')
-  assert.equal(JSON.parse(workerInput).video_speed, 1.5)
-  assert.equal(JSON.parse(workerInput).contract_version, 2)
+  runner.startClipJob('trusted-job', {
+    videoUrl: '/tmp/video.mp4', videoSpeed: 1.5, clippingMode: 'advanced', plannerModel: 'custom/planner', transcriptionModel: 'custom/speech',
+    plannerCapabilities: { maxOutputTokens: 8192, supportsImages: false, inputPrice: .000001, outputPrice: .000005 }
+  }, window, undefined, '/tmp/queued-output')
+  const forwarded = JSON.parse(workerInput)
+  assert.equal(forwarded.video_speed, 1.5)
+  assert.equal(forwarded.contract_version, 2)
+  assert.equal(forwarded.output_dir, '/tmp/queued-output')
+  assert.equal(forwarded.clipping_mode, 'advanced')
+  assert.equal(forwarded.planner_model, 'custom/planner')
+  assert.equal(forwarded.transcription_model, 'custom/speech')
+  assert.equal(forwarded.planner_max_output_tokens, 8192)
+  assert.equal(forwarded.planner_supports_images, false)
+  assert.equal(forwarded.planner_input_price, .000001)
   child.stdout.write('{"type":"prog')
   child.stdout.write('ress","jobId":"spoof","percent":42}\n{"type":"result","status":"completed","job_id":"trusted-job","output":{"job_id":"trusted-job","clips":[]}}\n')
   child.stdout.end()

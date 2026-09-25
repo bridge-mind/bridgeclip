@@ -1,5 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { cn } from '../../lib/utils'
 
 interface FieldProps {
@@ -35,7 +34,7 @@ export const WELL =
 interface TextInputProps extends InputHTMLAttributes<HTMLInputElement> {
   leading?: ReactNode
   trailing?: ReactNode
-  inputSize?: 'md' | 'lg'
+  inputSize?: 'sm' | 'md' | 'lg'
   mono?: boolean
 }
 
@@ -60,8 +59,8 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
         autoComplete="off"
         className={cn(
           'w-full min-w-0 bg-transparent text-ink placeholder:text-ink-faint focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed',
-          // Wrapper border adds 2px: md totals 32px, lg 40px, matching Button sizes.
-          inputSize === 'lg' ? 'h-[38px] px-3 text-sm' : 'h-[30px] px-2.5 text-sm',
+          // Wrapper border adds 2px: sm totals 28px, md 32px, lg 40px, matching Button sizes.
+          inputSize === 'lg' ? 'h-[38px] px-3 text-sm' : inputSize === 'sm' ? 'h-[26px] px-2 text-xs' : 'h-[30px] px-2.5 text-sm',
           leading && (inputSize === 'lg' ? 'pl-2.5' : 'pl-2'),
           mono && 'font-mono text-xs',
           trailing && 'pr-1'
@@ -72,27 +71,6 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
     </div>
   )
 })
-
-/** Native select in a glass well, with its own chevron. */
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { selectSize?: 'sm' | 'md' }>(
-  function Select({ className, selectSize = 'md', children, ...props }, ref) {
-    return (
-      <div className={cn('relative flex items-center rounded-lg', WELL, props.disabled && 'opacity-60', className)}>
-        <select
-          ref={ref}
-          className={cn(
-            'w-full min-w-0 appearance-none bg-transparent pr-8 text-ink [color-scheme:dark] focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed',
-            selectSize === 'sm' ? 'h-[26px] pl-2 text-xs' : 'h-[30px] pl-2.5 text-sm'
-          )}
-          {...props}
-        >
-          {children}
-        </select>
-        <ChevronDown aria-hidden className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-ink-subtle" />
-      </div>
-    )
-  }
-)
 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function TextArea(
   { className, ...props },

@@ -608,6 +608,7 @@ class AIClippingPipeline:
                     "audio_duration_seconds": round(tc.audio_duration_seconds, 1),
                     "estimated_cost_usd": tc.estimated_cost_usd,
                     "attempts": tc.attempts,
+                    "cost_incomplete": tc.cost_incomplete,
                 }
                 total_cost += tc.estimated_cost_usd
 
@@ -621,6 +622,7 @@ class AIClippingPipeline:
                     "total_tokens": pc.total_tokens,
                     "estimated_cost_usd": pc.estimated_cost_usd,
                     "attempts": pc.attempts,
+                    "cost_incomplete": pc.cost_incomplete,
                 }
                 total_cost += pc.estimated_cost_usd
 
@@ -633,11 +635,19 @@ class AIClippingPipeline:
                 total_cost += layout_vision_cost
 
             api_costs["total_estimated_cost_usd"] = round(total_cost, 6)
+            api_costs["cost_incomplete"] = any(section.get("cost_incomplete", False) for section in api_costs.values() if isinstance(section, dict))
 
             logger.info(f"Job {job_id} total API cost: ${total_cost:.6f}")
 
             metrics = {
+                "analysis_duration_seconds": max(
+                    0, (effective_end_time if effective_end_time is not None else video_duration)
+                    - (request.start_time_seconds or 0),
+                ),
                 "requested_settings": {
+                    "clipping_mode": self.settings.clipping_mode,
+                    "planner_model": self.settings.planner_model,
+                    "transcription_model": self.settings.transcription_model,
                     "aspect_ratio": request.aspect_ratio,
                     "layout_style": request.layout_style,
                     "layout_vision_enabled": self.settings.layout_vision_enabled,

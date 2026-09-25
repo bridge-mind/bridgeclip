@@ -234,6 +234,7 @@ test('clip results retain bounded framing, pacing, and complete cost metrics', (
   const { parseJobOutput } = load()
   const output = parseJobOutput({
     job_id: 'run-one', clips: [], metrics: {
+      analysis_duration_seconds: 120,
       smart_framing_available: true, failed_clip_count: 1,
       stage_durations_seconds: { rendering: 12.5, 'invalid/name': 99 },
       clip_layouts: [{ clip_index: 0, layout_type: 'screen_cam', pacing_removed_ms: 1200,
@@ -253,4 +254,5 @@ test('clip results retain bounded framing, pacing, and complete cost metrics', (
   assert.equal(output.metrics.api_costs.planning.completion_tokens, 20)
   assert.equal(output.metrics.stage_durations_seconds['invalid/name'], undefined)
   assert.equal(output.metrics.secret, undefined)
+  assert.equal(output.metrics.analysis_duration_seconds, 120)
 })

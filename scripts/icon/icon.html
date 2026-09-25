@@ -1,85 +1,45 @@
-<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;width:1024px;height:1024px;background:transparent;overflow:hidden}
-svg{display:block}
-</style></head><body>
-<svg id="c" width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"></svg>
-<script>
-// BridgeClip app icon: the BridgeMind mark inside crop brackets (a clip being
-// framed) above a trim bar whose handles pick up the mark's gold and blue.
-// Flat colours only: a solid tile, a solid rim, no gradients or glows.
-//   ?v=full     large sizes (128px and up)
-//   ?v=compact  32-64px: brackets only, heavier strokes
-//   ?v=tiny     16-24px: mark only, as large as the tile allows
-const variant = new URLSearchParams(location.search).get('v') || 'full'
-
-// Superellipse (n=5) approximates Apple's continuous-curvature icon shape.
-function squircle(cx, cy, r, n = 5, steps = 360) {
-  let d = ''
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2
-    const c = Math.cos(t), s = Math.sin(t)
-    const x = cx + r * Math.sign(c) * Math.pow(Math.abs(c), 2 / n)
-    const y = cy + r * Math.sign(s) * Math.pow(Math.abs(s), 2 / n)
-    d += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2)
-  }
-  return d + 'Z'
-}
-
-function brackets({ x0, y0, x1, y1, arm, stroke }) {
-  const path = (d) =>
-    `<path d="${d}" fill="none" stroke="#fafafa" stroke-opacity="0.92" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/>`
-  return (
-    path(`M${x0} ${y0 + arm}V${y0}H${x0 + arm}`) +
-    path(`M${x1 - arm} ${y0}H${x1}V${y0 + arm}`) +
-    path(`M${x1} ${y1 - arm}V${y1}H${x1 - arm}`) +
-    path(`M${x0 + arm} ${y1}H${x0}V${y1 - arm}`)
-  )
-}
-
-function trimBar({ x0, x1, y, from, to }) {
-  const track = 16, handleW = 20, handleH = 56
-  return `
-    <rect x="${x0}" y="${y - track / 2}" width="${x1 - x0}" height="${track}" rx="${track / 2}" fill="#fff" fill-opacity="0.1"/>
-    <rect x="${from}" y="${y - track / 2}" width="${to - from}" height="${track}" fill="#fafafa" fill-opacity="0.92"/>
-    <rect x="${from - handleW / 2}" y="${y - handleH / 2}" width="${handleW}" height="${handleH}" rx="${handleW / 2}" fill="#ffc400"/>
-    <rect x="${to - handleW / 2}" y="${y - handleH / 2}" width="${handleW}" height="${handleH}" rx="${handleW / 2}" fill="#38ccff"/>`
-}
-
-const LAYOUTS = {
-  full: {
-    mark: { cx: 512, cy: 456, w: 456 },
-    brackets: { x0: 236, y0: 198, x1: 788, y1: 714, arm: 80, stroke: 18 },
-    trim: { x0: 236, x1: 788, y: 800, from: 392, to: 632 }
-  },
-  compact: {
-    mark: { cx: 512, cy: 512, w: 470 },
-    brackets: { x0: 214, y0: 222, x1: 810, y1: 802, arm: 96, stroke: 28 }
-  },
-  tiny: {
-    mark: { cx: 512, cy: 512, w: 600 }
-  }
-}
-
-const tile = squircle(512, 512, 412)
-const rim = squircle(512, 512, 410.5)
-
-fetch('../../resources/bridgemind-mark.svg').then((r) => r.text()).then((markSrc) => {
-  const layout = LAYOUTS[variant]
-  const inner = markSrc.replace(/^[\s\S]*?<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '')
-  const markW = layout.mark.w, markH = markW * 129 / 142.29
-  const mx = layout.mark.cx - markW / 2, my = layout.mark.cy - markH / 2
-
-  document.getElementById('c').innerHTML = `
-  <defs>
-    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000" flood-opacity="0.6"/>
-    </filter>
-  </defs>
-  <path d="${tile}" fill="#101116"/>
-  <path d="${rim}" fill="none" stroke="#fff" stroke-opacity="0.12" stroke-width="3.5"/>
-  ${layout.brackets ? brackets(layout.brackets) : ''}
-  <svg x="${mx}" y="${my}" width="${markW}" height="${markH}" viewBox="0 0 142.29 129" filter="url(#lift)">${inner}</svg>
-  ${layout.trim ? trimBar(layout.trim) : ''}`
-  document.title = 'ready'
-})
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BridgeClip app icon</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 48px; background: #09090b; color: #fafafa; font: 15px system-ui, sans-serif; }
+      main { max-width: 960px; margin: auto; }
+      h1 { font-size: 24px; font-weight: 600; }
+      p { color: #a1a1aa; }
+      .hero { display: block; width: min(360px, 100%); height: auto; margin: 24px auto; }
+      .sizes { display: flex; align-items: end; gap: 24px; flex-wrap: wrap; padding: 24px; border-radius: 20px; }
+      .light { background: #f4f4f5; color: #18181b; margin-top: 24px; }
+      figure { margin: 0; text-align: center; }
+      figcaption { font-size: 12px; margin-top: 12px; opacity: .65; }
+      img { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>BridgeClip app icon</h1>
+      <p>A clip/play emblem in BridgeMind gold and cyan. Imagegen master, with transparent outer padding.</p>
+      <img class="hero" src="../../resources/bridgeclip-icon.png" alt="BridgeClip app icon" />
+      <div class="sizes" aria-label="Icon sizes on a dark surface"></div>
+      <div class="sizes light" aria-label="Icon sizes on a light surface"></div>
+    </main>
+    <script>
+      for (const row of document.querySelectorAll('.sizes')) {
+        for (const size of [16, 24, 32, 48, 64, 128]) {
+          const figure = document.createElement('figure')
+          const img = document.createElement('img')
+          img.src = size <= 64 ? '../../resources/bridgeclip-icon-small.svg' : '../../resources/bridgeclip-icon.svg'
+          img.width = img.height = size
+          img.alt = `BridgeClip at ${size} pixels`
+          const caption = document.createElement('figcaption')
+          caption.textContent = `${size}px`
+          figure.append(img, caption)
+          row.append(figure)
+        }
+      }
+    </script>
+  </body>
+</html>

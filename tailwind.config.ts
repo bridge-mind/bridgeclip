@@ -95,6 +95,14 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateY(8px) scale(0.97)' },
           to: { opacity: '1', transform: 'translateY(0) scale(1)' }
         },
+        'menu-in': {
+          from: { opacity: '0', transform: 'scale(0.97)' },
+          to: { opacity: '1', transform: 'scale(1)' }
+        },
+        'bar-grow': {
+          from: { transform: 'scaleX(0)' },
+          to: { transform: 'scaleX(1)' }
+        },
         'pulse-ring': {
           '0%': { boxShadow: '0 0 0 0 rgb(var(--accent) / 0.5)' },
           '100%': { boxShadow: '0 0 0 10px rgb(var(--accent) / 0)' }
@@ -106,6 +114,8 @@ const config: Config = {
         'fade-in': 'fade-in 320ms cubic-bezier(0.16, 1, 0.3, 1) backwards',
         fade: 'fade 240ms ease-out backwards',
         'pop-in': 'pop-in 360ms cubic-bezier(0.16, 1, 0.3, 1) backwards',
+        'menu-in': 'menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1) backwards',
+        'bar-grow': 'bar-grow 800ms cubic-bezier(0.16, 1, 0.3, 1) backwards',
         'pulse-ring': 'pulse-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite'
       }
     }

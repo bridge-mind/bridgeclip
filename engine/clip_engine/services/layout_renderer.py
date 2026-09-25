@@ -541,9 +541,13 @@ def build_layout_graph(
                 f"asetpts=PTS-{start / 1000:.3f}/TB{fades}[a{k}]"
             )
         inputs = "".join(f"[a{k}]" for k in range(audio_n))
-        # Source offsets and cuts are already materialized in the samples.
-        # Apply pitch-preserving speed and rebuild the final sample clock after
-        # both buffered filters so loudnorm's EOF timestamps cannot delay speech.
+        # The input resampler has already materialized source offsets/gaps,
+        # and concat has applied the exact sample edits. Rebuild the final
+        # clock from those samples AFTER loudnorm: its buffered EOF flush can
+        # leave a PTS jump when the edit ends between its 100 ms blocks. AAC
+        # then encodes that jump as an overlong packet, delaying the tail.
+        # Resetting timestamps here preserves all content and source silence;
+        # doing it before AUDIO_SYNC would erase legitimate source offsets.
         parts.append(
             f"{inputs}concat=n={audio_n}:v=0:a=1,{loudness_filter or LOUDNESS_FILTER},"
             f"{speed_audio_filter(video_speed, sum(end - start for start, end in audio_keeps))}"

@@ -13,10 +13,6 @@ interface PostsState {
   error: string | null
   /** Post id → the action running on it. */
   busy: Record<string, PostAction>
-  /** Set by "View posts": the panel scrolls itself into view once. */
-  reveal: boolean
-  requestReveal: () => void
-  takeReveal: () => boolean
   load: () => Promise<void>
   /** Asks the main process to re-read posts whose status can still change. */
   refresh: (force?: boolean) => Promise<void>
@@ -79,13 +75,6 @@ export const usePostsStore = create<PostsState>((set, get) => {
     refreshing: false,
     error: null,
     busy: {},
-    reveal: false,
-    requestReveal: () => set({ reveal: true }),
-    takeReveal: () => {
-      const reveal = get().reveal
-      if (reveal) set({ reveal: false })
-      return reveal
-    },
 
     load: async () => {
       const startedAtRevision = postsRevision
