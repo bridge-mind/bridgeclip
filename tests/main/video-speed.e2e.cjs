@@ -42,13 +42,17 @@ test('video speed supports keyboard selection, review, submission and reuse in E
   await page.getByRole('radio', { name: /Horizontal/ }).click()
   assert.equal(await chosen.getAttribute('aria-checked'), 'true')
   await page.getByRole('radio', { name: /Vertical/ }).click()
-  const artifacts = process.env.BRIDGECLIP_E2E_ARTIFACT_DIR || root
-  fs.mkdirSync(artifacts, { recursive: true })
-  await page.screenshot({ path: path.join(artifacts, 'video-speed.png') })
+  // Screenshots are opt-in evidence: hidden Linux CI windows need not have
+  // a drawable compositor surface for the functional assertions below.
+  const artifacts = process.env.BRIDGECLIP_E2E_SHOTS
+  if (artifacts) {
+    fs.mkdirSync(artifacts, { recursive: true })
+    await page.screenshot({ path: path.join(artifacts, 'video-speed.png') })
+  }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(980, 760))
   await chosen.scrollIntoViewIfNeeded()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
-  await page.screenshot({ path: path.join(artifacts, 'video-speed-compact.png') })
+  if (artifacts) await page.screenshot({ path: path.join(artifacts, 'video-speed-compact.png') })
   await steps.getByRole('button', { name: /Clips/ }).click()
   await page.getByText(/60 seconds becomes about 40 seconds/).waitFor()
   await steps.getByRole('button', { name: /Review/ }).click()
