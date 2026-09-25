@@ -572,6 +572,7 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     if (automation.lastError !== message) { automation.lastError = message; save(workspace) }
     return listAutomations()
   }
+  const hadTikTokApproval = automation.accounts.some((account) => account.platform === 'tiktok') && item.tiktokApproval != null
   // Waiting for approval is not an attempt. A clip approved during the wake-up
   // grace period can still use the slot; actual attempts reserve it once.
   if (slot) { automation.lastSlots[slot.time] = slot.date; save(workspace) }
@@ -641,6 +642,10 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
   } catch (error) {
     if (currentWorkspace() === workspace && cached.includes(automation)) {
       const message = error instanceof Error ? error.message.slice(0, 500) : 'Posting failed. Check Zernio before retrying.'
+      // A changed file revokes the exact TikTok review before any upload. Let
+      // a fresh review use this due slot; keep reservations for other failures.
+      if (slot && hadTikTokApproval && item.tiktokApproval == null && item.status === 'queued' &&
+          !submissionStarted && automation.lastSlots[slot.time] === slot.date) delete automation.lastSlots[slot.time]
       if (item.status === 'posting') {
         item.status = submissionStarted ? 'needs_review' : 'queued'
         item.error = message

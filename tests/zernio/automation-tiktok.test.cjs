@@ -112,6 +112,45 @@ test('a clip approved during a due slot can still post, with fresh creator permi
   assert.equal(posting.state.creates.length, 1)
 }))
 
+test('a changed approved clip can be reviewed again during the same due slot', () => withTikTokBank(async ({ api, id, contentId, request, posting }) => {
+  const slot = { time: '12:00', date: '2026-09-25' }
+  const review = await api.prepareAutomationTikTokReview(id, contentId)
+  await api.approveAutomationTikTokReview(id, contentId, request(review.reviewId))
+  fs.utimesSync(review.clipPath, new Date(), new Date(Date.now() + 10_000))
+
+  const [changed] = await api.runAutomation(id, slot)
+  assert.match(changed.lastError, /clip file changed/i)
+  assert.equal(changed.content[0].tiktokApproval, null)
+  assert.equal(changed.lastSlots[slot.time], undefined, 'no upload started, so the due slot remains available')
+  assert.equal(posting.state.uploads.length, 0)
+
+  const fresh = await api.prepareAutomationTikTokReview(id, contentId)
+  await api.approveAutomationTikTokReview(id, contentId, request(fresh.reviewId))
+  const [posted] = await api.runAutomation(id, slot)
+  assert.equal(posted.content[0].status, 'posted')
+  assert.equal(posted.lastSlots[slot.time], slot.date)
+  assert.equal(posting.state.creates.length, 1)
+  await api.runAutomation(id, slot)
+  assert.equal(posting.state.creates.length, 1, 'the completed slot cannot post again')
+}))
+
+test('ordinary TikTok preflight failures keep the due slot reserved', () => withTikTokBank(async ({ api, id, contentId, request, account, posting }) => {
+  const slot = { time: '12:00', date: '2026-09-25' }
+  const review = await api.prepareAutomationTikTokReview(id, contentId)
+  await api.approveAutomationTikTokReview(id, contentId, request(review.reviewId))
+  posting.state.creatorInfo[account._id] = { ...DEFAULT_CREATOR_INFO, privacyLevels: [{ value: 'SELF_ONLY', label: 'Only me' }] }
+
+  const [failed] = await api.runAutomation(id, slot)
+  assert.match(failed.lastError, /privacy option isn’t available/)
+  assert.equal(failed.content[0].status, 'queued')
+  assert.equal(failed.lastSlots[slot.time], slot.date)
+  assert.equal(posting.state.uploads.length, 0)
+
+  posting.state.creatorInfo[account._id] = DEFAULT_CREATOR_INFO
+  await api.runAutomation(id, slot)
+  assert.equal(posting.state.uploads.length, 0, 'an ordinary failed attempt cannot repeat during the same slot')
+}))
+
 test('changing and restoring TikTok targets invalidates the original open review', () => withTikTokBank(async ({ api, id, contentId, update, request, posting }) => {
   const review = await api.prepareAutomationTikTokReview(id, contentId)
   await api.updateAutomation(id, { ...update, enabled: false, accounts: [] })
