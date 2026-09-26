@@ -106,7 +106,11 @@ export function needsTikTokReview(automation: Pick<Automation, 'accounts'>, item
 }
 
 export function nextAutomationContent(automation: Pick<Automation, 'accounts' | 'content'>): AutomationContent | undefined {
-  return automation.content.find((item) => item.status === 'queued' && !needsTikTokReview(automation, item))
+  const ready = automation.content.filter((item) => item.status === 'queued' && !needsTikTokReview(automation, item))
+  // A clip whose last attempt failed waits behind clips that have not, so one
+  // clip that cannot be prepared (for example, unverifiable AI metadata) does
+  // not stop every later slot. It is retried once nothing else is ready.
+  return ready.find((item) => !item.error) ?? ready[0]
 }
 
 /** Return due local slots, including a short grace period after wake/reopen. */

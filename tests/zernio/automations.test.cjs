@@ -260,6 +260,44 @@ test('generated copy enforces platform fields, X weights and grounded Threads to
   } finally { cleanup() }
 })
 
+test('grounding accepts quotes that tidy spoken stutters but rejects changed or stitched words', () => {
+  const { dir, cleanup } = tempDir('bridgeclip-evidence-')
+  try {
+    const { evidenceInTranscript } = loadMain("export { evidenceInTranscript } from './src/main/automation-metadata'", { electron: fakeElectron(dir).electron })
+    // The transcript of the clip whose Facebook metadata failed verification on every run.
+    const transcript = "Where is this all going? Anyone can do anything related to software, right, for cheap. I feel like very few great new apps, sites have been created from AI. Am I wrong? Everything that you're seeing now in today's world is created with AI. I don't think that a lot of people that are like, even if you look at some of the, like, leading, like, think about leading companies. What do you think, do you think their engineers are still coding by hand? No, everybody's using AI. Most products that you see now are, are, I think, I don't know what the, the, like, I think a couple months ago, didn't Google say that, like, 80% of their code was written by AI now? Probably not using a Gemini model, but, you know, you guys get the point. It's like everything that you see now is pretty much AI anyway, so."
+    for (const evidence of [
+      "Everything that you're seeing now in today's world is created with AI",
+      'Most products that you see now are, I think',
+      'if you look at some of the leading',
+      "didn't Google say that 80 percent of their code was written by AI",
+      'Do you think their engineers are still coding by hand? No, everybody’s using AI.',
+      'I, um, feel like very few great new apps'
+    ]) assert.equal(evidenceInTranscript(evidence, transcript), true, evidence)
+    for (const evidence of [
+      'Google said 80% of their code was written by AI',
+      'if you look at some of the leading companies',
+      'everybody is coding by hand',
+      'Most products that you see now are created with AI'
+    ]) assert.equal(evidenceInTranscript(evidence, transcript), false, evidence)
+    assert.equal(evidenceInTranscript('I think this is good', 'I do not think this is good.'), false, 'a dropped negation is not a stutter')
+    assert.equal(evidenceInTranscript('I was crazy', 'I was, I was crazy'), true, 'a restarted phrase is')
+  } finally { cleanup() }
+})
+
+test('a clip that failed to prepare waits behind clips that have not', () => {
+  const { dir, cleanup } = tempDir('bridgeclip-next-clip-')
+  try {
+    const { nextAutomationContent } = loadMain("export { nextAutomationContent } from './src/shared/automations'", { electron: fakeElectron(dir).electron })
+    const clip = (id, status, error = null) => ({ id, status, error, tiktokApproval: null })
+    const automation = { accounts: [{ accountId: 'fb', platform: 'facebook' }],
+      content: [clip('posted', 'posted'), clip('stuck', 'queued', 'AI metadata for facebook was not grounded in the transcript. The clip was not posted.'), clip('fresh', 'queued')] }
+    assert.equal(nextAutomationContent(automation).id, 'fresh')
+    automation.content[2].status = 'posted'
+    assert.equal(nextAutomationContent(automation).id, 'stuck', 'it is retried once nothing else is ready')
+  } finally { cleanup() }
+})
+
 test('AI metadata retries ungrounded and invalid model responses before accepting them', async () => {
   const { dir, cleanup } = tempDir('bridgeclip-automation-retry-')
   const transcript = 'Building reliable automations starts with accurate transcripts.'
