@@ -104,12 +104,35 @@ export async function transcribeAutomationClip(path: string): Promise<string> {
 
 function normalized(value: string): string { return value.replace(/\s+/g, ' ').trim().toLocaleLowerCase() }
 
-/** Speech-to-text and the writing model may punctuate the same spoken words differently. */
-function evidenceInTranscript(evidence: string, transcript: string): boolean {
-  const words = (value: string): string => value.normalize('NFKC').toLocaleLowerCase()
-    .replace(/[\p{P}\p{S}]+/gu, ' ').replace(/\s+/g, ' ').trim()
-  const excerpt = words(evidence)
-  return excerpt.length > 0 && ` ${words(transcript)} `.includes(` ${excerpt} `)
+const FILLER_WORDS = new Set(['uh', 'uhm', 'um', 'umm', 'er', 'erm', 'ah', 'hmm', 'mm', 'mhm'])
+
+/** Spoken words without punctuation or filler sounds; "80%" and "80 percent" read the same. */
+function spokenWords(value: string): string[] {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/%/g, ' percent ')
+    .replace(/[\p{P}\p{S}]+/gu, ' ').split(/\s+/).filter((word) => word && !FILLER_WORDS.has(word))
+}
+
+/**
+ * Evidence is grounded when its words were spoken in that order. Speech-to-text
+ * keeps stutters and restarts ("are, are", "the, the, like") that the writing
+ * model tidies when it quotes, so the transcript may repeat a word from the
+ * last few words or say "like" between quoted words. Any other word in
+ * between, such as a "not" the quote leaves out, breaks the match.
+ */
+export function evidenceInTranscript(evidence: string, transcript: string): boolean {
+  const quote = spokenWords(evidence)
+  const heard = spokenWords(transcript)
+  if (!quote.length) return false
+  for (let start = 0; start < heard.length; start++) {
+    if (heard[start] !== quote[0]) continue
+    let matched = 1
+    for (let index = start + 1; index < heard.length && matched < quote.length; index++) {
+      if (heard[index] === quote[matched]) matched++
+      else if (heard[index] !== 'like' && !heard.slice(Math.max(start, index - 4), index).includes(heard[index])) break
+    }
+    if (matched === quote.length) return true
+  }
+  return false
 }
 
 /** Validate fields a platform uses; discard fields that cannot enter its post request. */
