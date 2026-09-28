@@ -54,6 +54,51 @@ test('reordered queues and original media provenance survive a fresh load', asyn
   } finally { cleanup() }
 })
 
+test('metadata dismissal is scoped to one error, persists, and new failures warn again', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-dismiss-metadata-')
+  try {
+    const library = path.join(dir, 'library'); fs.mkdirSync(library)
+    const clip = path.join(library, 'clip.mp4'); fs.writeFileSync(clip, 'test media')
+    const source = "export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'; export { hasContentWarnings, nextAutomationContent } from './src/shared/automations'"
+    const mocks = { electron: fakeElectron(dir).electron }
+    let main = loadMain(source, mocks)
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3' })
+    const [created] = main.automations.createAutomation('Queue')
+    await main.automations.addAutomationContent(created.id, [clip, clip, clip])
+    const dataFile = path.join(dir, 'userData', fs.readdirSync(path.join(dir, 'userData')).find((name) => /^automations-.*\.json$/.test(name)))
+    const saved = JSON.parse(fs.readFileSync(dataFile, 'utf8'))
+    const [a, b, held] = saved.automations[0].content
+    for (const item of [a, b, held]) item.metadataError = 'Previous writing failure'
+    held.status = 'needs_review'; held.error = 'Check the previous post'
+    fs.writeFileSync(dataFile, JSON.stringify(saved))
+    main = loadMain(source, mocks)
+    assert.throws(() => main.automations.dismissAutomationMetadataError(created.id, 'missing'), /Clip not found/)
+    main.automations.dismissAutomationMetadataError(created.id, a.id)
+    main.automations.dismissAutomationMetadataError(created.id, held.id)
+    const damaged = JSON.parse(fs.readFileSync(dataFile, 'utf8'))
+    damaged.automations[0].content[1].metadataErrorAcknowledged = 'yes'
+    fs.writeFileSync(dataFile, JSON.stringify(damaged))
+    main = loadMain(source, mocks)
+    const [bank] = main.automations.listAutomations()
+    assert.deepEqual(bank.content[0], { ...a, metadataErrorAcknowledged: true })
+    assert.deepEqual(bank.content[1], b, 'invalid optional acknowledgement is dropped without losing the clip or hiding its error')
+    assert.deepEqual(bank.content[2], { ...held, metadataErrorAcknowledged: true })
+    assert.equal(main.hasContentWarnings(bank.content[0]), false)
+    assert.equal(main.hasContentWarnings(bank.content[1]), true)
+    assert.equal(main.hasContentWarnings(bank.content[2]), true, 'posting warning stays visible')
+    assert.equal(main.nextAutomationContent(bank).id, a.id, 'dismissal does not change posting eligibility')
+    // Missing media makes a retry fail before any network request.
+    const banks = path.join(dir, 'userData', 'automation-bank')
+    const [workspace] = fs.readdirSync(banks)
+    fs.unlinkSync(path.join(banks, workspace, created.id, a.fileName))
+    const retry = await main.automations.enhanceAutomationBatch(created.id, [a.id], `clip:${a.id}`)
+    assert.equal(retry.errors.length, 1)
+    assert.equal(retry.automations[0].content[0].metadataErrorAcknowledged, false)
+    assert.equal(main.hasContentWarnings(retry.automations[0].content[0]), true)
+  } finally { cleanup() }
+})
+
 test('warnings can be acknowledged individually or across banks, persist, and preserve held clips', async () => {
   const { dir, cleanup } = tempDir('bridgeclip-acknowledge-')
   try {
@@ -83,6 +128,13 @@ test('warnings can be acknowledged individually or across banks, persist, and pr
     const [first, second] = main.automations.listAutomations()
     assert.throws(() => main.automations.acknowledgeAutomationWarnings(undefined), /Invalid automation/)
     assert.throws(() => main.automations.acknowledgeAutomationWarnings('../all'), /Invalid automation/)
+    assert.throws(() => main.automations.acknowledgeAutomationWarnings(null, first.content[0].id), /Choose a clip/)
+    assert.throws(() => main.automations.acknowledgeAutomationWarnings(first.id, second.content[0].id), /Clip not found/)
+    const dismissed = main.automations.acknowledgeAutomationWarnings(first.id, first.content[0].id)
+    assert.equal(dismissed[0].content[0].warningsAcknowledged, true)
+    assert.equal(dismissed[0].content[0].status, 'needs_review', 'dismissal does not release held clips')
+    assert.equal(dismissed[0].lastErrorAcknowledged, undefined, 'per-clip dismissal leaves run history alone')
+    assert.equal(dismissed[1].content[0].warningsAcknowledged, undefined, 'other clips stay visible')
     const one = main.automations.acknowledgeAutomationWarnings(first.id)
     assert.equal(main.hasAutomationWarnings(one[0]), false)
     assert.equal(main.hasAutomationWarnings(one[1]), true, 'individual acknowledgement leaves other banks alone')
@@ -252,9 +304,31 @@ test('an upload failure keeps an automation clip retryable without creating a po
     fs.writeFileSync(dataPath, JSON.stringify(saved))
     const restarted = loadMain(source, { electron })
     assert.equal(restarted.automations.listAutomations()[0].content[0].status, 'queued', 'old pre-submit failures recover on restart')
-    const [posted] = await restarted.automations.runAutomation(created.id)
+    const fresh = makeClip(path.join(library, 'fresh.mp4'), 'red')
+    const later = makeClip(path.join(library, 'later.mp4'), 'green')
+    await restarted.automations.addAutomationContent(created.id, [fresh, later])
+    const [skipped] = await restarted.automations.runAutomation(created.id)
+    assert.equal(skipped.content[0].status, 'queued', 'Run now tries a fresh clip before the failed one')
+    assert.equal(skipped.content[1].status, 'posted')
+    const failedId = skipped.content[0].id
+    restarted.automations.acknowledgeAutomationWarnings(created.id, failedId)
+    let [dismissed] = loadMain(source, { electron }).automations.listAutomations()
+    assert.equal(dismissed.content[0].warningsAcknowledged, true, 'per-clip dismissal survives restart')
+    assert.equal(dismissed.content[0].error, skipped.content[0].error, 'dismissal preserves error history')
+    assert.equal(dismissed.content[0].status, 'queued')
+    posting.state.failNextUpload = 503
+    const [failedAgain] = await restarted.automations.retryAutomationContent(created.id, failedId)
+    assert.equal(failedAgain.content[0].warningsAcknowledged, false, 'a new failure warns again')
+    assert.equal(failedAgain.content[2].status, 'queued', 'retry does not consume a different queued clip')
+    const [posted] = await restarted.automations.retryAutomationContent(created.id, failedId)
     assert.equal(posted.content[0].status, 'posted')
-    assert.equal(posting.state.creates.length, 1)
+    assert.equal(posted.content[2].status, 'queued')
+    assert.equal(posted.content[0].error, null)
+    assert.equal(posting.state.creates.length, 2)
+    await assert.rejects(restarted.automations.retryAutomationContent(created.id, failedId), /failed, unposted queued/)
+    await assert.rejects(restarted.automations.retryAutomationContent(created.id, posted.content[2].id), /failed, unposted queued/)
+    await assert.rejects(restarted.automations.retryAutomationContent(created.id, 'missing'), /failed, unposted queued/)
+    assert.equal(posting.state.creates.length, 2, 'invalid retries never publish')
   } finally {
     if (previousUrl === undefined) delete process.env.BRIDGECLIP_ZERNIO_API_URL
     else process.env.BRIDGECLIP_ZERNIO_API_URL = previousUrl

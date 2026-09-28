@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from '@hello-pangea/dnd'
 import { Check, FolderOpen, GripVertical, Info, Pencil, Play, Plus, RefreshCw, Sparkles, Trash2, Workflow, X } from 'lucide-react'
-import { canReorderContent, hasAutomationWarnings, hasContentWarnings, hasEnhancedMetadata } from '../../shared/automations'
+import { canReorderContent, reorderQueuedContent, hasAutomationWarnings, hasContentWarnings, hasEnhancedMetadata } from '../../shared/automations'
 import { MAX_ENHANCEMENT_GUIDANCE, AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate, type AutomationSourceGroup } from '../../shared/automations'
 import { isPostableAccount, isValidProfileName } from '../../shared/zernio'
 import { AutomationTikTokReviewDialog } from '../components/AutomationTikTokReviewDialog'
@@ -95,8 +97,9 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+  // Do not let an in-flight poll replace the list during a drag or a save.
+  const contentInteraction = useRef(false)
+  const refreshVersion = useRef(0)
   const [editing, setEditing] = useState<{ id: string; title: string; caption: string } | null>(null)
   const [enhancing, setEnhancing] = useState<{ automationId: string; contentId: string } | null>(null)
   const [bulkProgress, setBulkProgress] = useState<string | null>(null)
@@ -115,9 +118,11 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
     if (!configured) return
     let active = true
     const refresh = async (): Promise<void> => {
+      if (contentInteraction.current) return
+      const version = refreshVersion.current
       try {
         const result = await getApi().automations.list()
-        if (active) {
+        if (active && !contentInteraction.current && version === refreshVersion.current) {
           setAutomations(result); setLoaded(true)
           if (!initialSelectionDone.current) {
             initialSelectionDone.current = true
@@ -152,6 +157,7 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
   }
 
   const mutate = async (action: string, request: () => Promise<Automation[]>, success?: string): Promise<Automation[] | null> => {
+    contentInteraction.current = true; refreshVersion.current++
     setBusy(action); setError(null); setNotice(null)
     try {
       const result = await request()
@@ -161,7 +167,7 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
     } catch (cause) {
       setError(errorMessage(cause, 'Could not update the automation.'))
       return null
-    } finally { setBusy(null) }
+    } finally { contentInteraction.current = false; refreshVersion.current++; setBusy(null) }
   }
 
   const prepareEnhancementGroups = async (): Promise<void> => {
@@ -242,6 +248,15 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
     else setNotice('Run finished. Check the content bank for the result.')
   }
 
+  const retryContent = async (item: AutomationContent): Promise<void> => {
+    if (!selected || busy || dirty || editing) return
+    const result = await mutate('retry-content', () => getApi().automations.retryContent(selected.id, item.id))
+    const updated = result?.find((automation) => automation.id === selected.id)
+    if (!updated) return
+    if (updated.lastError) setError(updated.lastError)
+    else setNotice('Retry finished. Check the clip’s status in the content bank.')
+  }
+
   const remove = (): void => {
     if (!selected) return
     setConfirm({
@@ -288,15 +303,22 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
     if (result) setEditing(null)
   }
 
-  const moveContent = async (id: string, targetId: string): Promise<void> => {
-    setDraggingId(null); setDropTargetId(null)
-    if (!selected || busy || dirty || editing || id === targetId) return
+  const moveContent = async ({ draggableId, source, destination }: DropResult): Promise<void> => {
+    contentInteraction.current = false; refreshVersion.current++
+    if (!selected || busy || dirty || editing || !destination || source.droppableId !== destination.droppableId || source.index === destination.index) return
+    const visibleQueue = selected.content.filter((item) => item.status === 'queued' || item.status === 'posting')
+    const target = visibleQueue[destination.index]
     const queue = selected.content.filter(canReorderContent)
-    const from = queue.findIndex((item) => item.id === id)
-    const to = queue.findIndex((item) => item.id === targetId)
+    const from = queue.findIndex((item) => item.id === draggableId)
+    const to = queue.findIndex((item) => item.id === target?.id)
     if (from < 0 || to < 0) return
-    const beforeId = from < to ? queue[to + 1]?.id ?? null : targetId
-    await mutate('reorder', () => getApi().automations.reorder(selected.id, id, beforeId), 'Queue order saved.')
+    const beforeId = from < to ? queue[to + 1]?.id ?? null : target.id
+    const previous = selected.content
+    const content = reorderQueuedContent(previous, draggableId, beforeId)
+    // Commit immediately so the drop settles into its final place while IPC saves.
+    setAutomations((items) => items.map((item) => item.id === selected.id ? { ...item, content } : item))
+    const result = await mutate('reorder', () => getApi().automations.reorder(selected.id, draggableId, beforeId))
+    if (!result) setAutomations((items) => items.map((item) => item.id === selected.id ? { ...item, content: previous } : item))
   }
 
   const reviewContent = async (item: AutomationContent, returnToQueue: boolean): Promise<void> => {
@@ -388,6 +410,7 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
     posted: selected?.content.filter((item) => item.status === 'posted').length ?? 0,
     needs_review: selected?.content.filter((item) => item.status === 'needs_review' && hasContentWarnings(item)).length ?? 0
   }
+  const reorderDisabled = Boolean(busy) || dirty || Boolean(editing) || Boolean(selected?.content.some((item) => item.status === 'posting'))
   const contentGroups = [
     { label: 'Queued', items: selected?.content.filter((item) => item.status === 'queued' || item.status === 'posting') ?? [], empty: 'No clips waiting to be submitted.' },
     { label: 'Needs attention', items: selected?.content.filter((item) => item.status === 'needs_review' && !item.warningsAcknowledged) ?? [], empty: '' },
@@ -690,58 +713,57 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
                   </> : <p className="text-sm text-ink-muted">No queued clips need a new draft.</p>}
                 </div>}
                 {bulkProgress && <Callout tone="info" className="mt-3" action={<Button size="sm" onClick={() => { stopBulk.current = true; setBulkProgress('Stopping after the current operation…') }}>Stop after batch</Button>}>{bulkProgress}</Callout>}
-                {contentGroups.filter((group) => !['Needs attention', 'Held clips'].includes(group.label) || group.items.length > 0).map((group) => (
-                  <section key={group.label} aria-label={group.label} className="border-t border-white/[0.06]">
-                    <div className="flex flex-wrap items-center justify-between gap-2 bg-white/[0.02] px-3.5 py-2.5">
-                      <h3 className="flex items-center gap-2 text-xs font-semibold text-ink-muted">{group.label}<span className="tabular rounded-full bg-white/[0.06] px-2 py-0.5 text-2xs">{group.items.length}</span></h3>
-                      {group.label === 'Queued' && <span role="status" aria-label="Next posting slot" className="ml-auto text-right text-2xs text-ink-muted">
-                        {!nextSlot ? 'No times scheduled' : !selected.enabled ? 'Paused' : <>Next slot <span className="text-ink">{nextSlot}</span><span className="text-ink-subtle"> · {selected.timezone.replace(/_/g, ' ')}</span></>}
-                      </span>}
-                    </div>
-                    {group.label === 'Held clips' && <p className="px-3.5 py-2 text-2xs text-ink-subtle">Warnings acknowledged. These clips stay out of the queue until you review and return them.</p>}
-                    {group.items.length === 0 && <p className="px-3.5 py-4 text-xs text-ink-subtle">{group.empty}</p>}
-                    <ul className="divide-y divide-white/[0.06]">
-                      {group.items.map((item) => (
-                        <ContentRow
-                          key={item.id}
-                          item={item}
-                          nextUp={item.id === nextClip?.id}
-                          tiktokReviewNeeded={item.status === 'queued' && needsTikTokReview(selected, item)}
-                          tiktokSelected={selected.accounts.some((account) => account.platform === 'tiktok')}
-                          onReviewTikTok={() => setTiktokReview(item)}
-                          reviewDisabled={dirty || editing?.id === item.id}
-                          editing={editing?.id === item.id ? editing : null}
-                          busy={Boolean(busy)}
-                          onEdit={() => setEditing(editing?.id === item.id ? null : { id: item.id, title: item.title, caption: item.caption })}
-                          onEnhance={() => setEnhancing({ automationId: selected.id, contentId: item.id })}
-                          enhancementDisabled={dirty || !writingConfigured}
-                          enhanced={hasEnhancedMetadata(item, selected.accounts.length ? selected.accounts.map((account) => account.platform) : ['youtube'])}
-                          reorder={!busy && !dirty && !editing && canReorderContent(item) ? {
-                            dragging: draggingId === item.id,
-                            dropPosition: dropTargetId === item.id && draggingId ? (selected.content.findIndex((entry) => entry.id === draggingId) < selected.content.indexOf(item) ? 'after' : 'before') : null,
-                            onStart: () => setDraggingId(item.id),
-                            onEnd: () => { setDraggingId(null); setDropTargetId(null) },
-                            onOver: () => { if (draggingId && draggingId !== item.id) setDropTargetId(item.id) },
-                            onDrop: () => { if (draggingId) void moveContent(draggingId, item.id) },
-                            onMove: (direction) => {
-                              const queue = selected.content.filter(canReorderContent)
-                              const target = queue[queue.findIndex((entry) => entry.id === item.id) + direction]
-                              if (target) void moveContent(item.id, target.id)
-                            }
-                          } : undefined}
-                          onChange={setEditing}
-                          onSave={() => void saveContent(item)}
-                          onReturnToQueue={() => requestReturnToQueue(item)}
-                          onRefreshPost={() => void reviewContent(item, false)}
-                          onRemove={() => removeContent(item)}
-                          onCheckPosts={() => onNavigate('posts')}
-                          onViewLibrary={() => void viewLibrary(item)}
-                          onShowInFolder={() => void showInFolder(item)}
-                        />
-                      ))}
-                    </ul>
-                  </section>
-                ))}
+                <DragDropContext key={selected.id} onBeforeCapture={() => { contentInteraction.current = true; refreshVersion.current++ }} onDragEnd={(result) => void moveContent(result)}>
+                  {contentGroups.filter((group) => !['Needs attention', 'Held clips'].includes(group.label) || group.items.length > 0).map((group) => (
+                    <section key={group.label} aria-label={group.label} className="border-t border-white/[0.06]">
+                      <div className="flex flex-wrap items-center justify-between gap-2 bg-white/[0.02] px-3.5 py-2.5">
+                        <h3 className="flex items-center gap-2 text-xs font-semibold text-ink-muted">{group.label}<span className="tabular rounded-full bg-white/[0.06] px-2 py-0.5 text-2xs">{group.items.length}</span></h3>
+                        {group.label === 'Queued' && <span role="status" aria-label="Next posting slot" className="ml-auto text-right text-2xs text-ink-muted">
+                          {!nextSlot ? 'No times scheduled' : !selected.enabled ? 'Paused' : <>Next slot <span className="text-ink">{nextSlot}</span><span className="text-ink-subtle"> · {selected.timezone.replace(/_/g, ' ')}</span></>}
+                        </span>}
+                      </div>
+                      {group.label === 'Held clips' && <p className="px-3.5 py-2 text-2xs text-ink-subtle">Warnings acknowledged. These clips stay out of the queue until you review and return them.</p>}
+                      {group.items.length === 0 && <p className="px-3.5 py-4 text-xs text-ink-subtle">{group.empty}</p>}
+                      <Droppable droppableId={group.label} isDropDisabled={group.label !== 'Queued' || reorderDisabled}>
+                        {(listProvided, listSnapshot) => <ul ref={listProvided.innerRef} {...listProvided.droppableProps} className={cn('divide-y divide-white/[0.06] transition-colors', listSnapshot.isDraggingOver && 'bg-accent/[0.035]')}>
+                          {group.items.map((item, index) => (
+                            <Draggable key={item.id} draggableId={item.id} index={index} isDragDisabled={reorderDisabled || !canReorderContent(item)}>
+                              {(provided, snapshot) => <ContentRow
+                                dragProvided={provided}
+                                dragging={snapshot.isDragging}
+                                item={item}
+                                nextUp={item.id === nextClip?.id}
+                                tiktokReviewNeeded={item.status === 'queued' && needsTikTokReview(selected, item)}
+                                tiktokSelected={selected.accounts.some((account) => account.platform === 'tiktok')}
+                                onReviewTikTok={() => setTiktokReview(item)}
+                                reviewDisabled={dirty || editing?.id === item.id}
+                                editing={editing?.id === item.id ? editing : null}
+                                busy={Boolean(busy)}
+                                onEdit={() => setEditing(editing?.id === item.id ? null : { id: item.id, title: item.title, caption: item.caption })}
+                                onEnhance={() => setEnhancing({ automationId: selected.id, contentId: item.id })}
+                                enhancementDisabled={dirty || !writingConfigured}
+                                enhanced={hasEnhancedMetadata(item, selected.accounts.length ? selected.accounts.map((account) => account.platform) : ['youtube'])}
+                                onRetry={() => void retryContent(item)}
+                                retryDisabled={dirty || Boolean(editing) || needsTikTokReview(selected, item)}
+                                onDismissError={() => { if (!busy) void mutate('dismiss-warning', () => getApi().automations.acknowledgeWarnings(selected.id, item.id)) }}
+                                onDismissMetadataError={() => { if (!busy) void mutate('dismiss-metadata', () => getApi().automations.dismissMetadataError(selected.id, item.id)) }}
+                                onChange={setEditing}
+                                onSave={() => void saveContent(item)}
+                                onReturnToQueue={() => requestReturnToQueue(item)}
+                                onRefreshPost={() => void reviewContent(item, false)}
+                                onRemove={() => removeContent(item)}
+                                onCheckPosts={() => onNavigate('posts')}
+                                onViewLibrary={() => void viewLibrary(item)}
+                                onShowInFolder={() => void showInFolder(item)}
+                              />}
+                            </Draggable>
+                          ))}
+                          {listProvided.placeholder}
+                        </ul>}
+                      </Droppable>
+                    </section>
+                  ))}
+                </DragDropContext>
               </Panel>
 
               {dirty && (
@@ -849,7 +871,7 @@ function CreateForm({ busy, onCreate, onCancel, autoFocus, size = 'md', classNam
   )
 }
 
-function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReviewTikTok, reviewDisabled, editing, busy, onEdit, onChange, onSave, onReturnToQueue, onRefreshPost, onRemove, onCheckPosts, onViewLibrary, onShowInFolder, onEnhance, enhancementDisabled, enhanced, reorder }: {
+function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReviewTikTok, reviewDisabled, editing, busy, onEdit, onChange, onSave, onReturnToQueue, onRefreshPost, onRemove, onCheckPosts, onViewLibrary, onShowInFolder, onEnhance, enhancementDisabled, enhanced, dragProvided, dragging, onDismissMetadataError, onDismissError, onRetry, retryDisabled }: {
   item: AutomationContent
   nextUp: boolean
   tiktokReviewNeeded: boolean
@@ -870,22 +892,23 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
   onEnhance: () => void
   enhancementDisabled: boolean
   enhanced: boolean
-  reorder?: { dragging: boolean; dropPosition: 'before' | 'after' | null; onStart: () => void; onEnd: () => void; onOver: () => void; onDrop: () => void; onMove: (direction: -1 | 1) => void }
+  dragProvided: DraggableProvided
+  dragging: boolean
+  onDismissMetadataError: () => void
+  onDismissError: () => void
+  onRetry: () => void
+  retryDisabled: boolean
 }): React.JSX.Element {
   const status = item.status === 'needs_review' && item.warningsAcknowledged ? { label: 'Held · Warning acknowledged', tone: 'neutral' as const }
     : tiktokReviewNeeded ? { label: 'Needs TikTok review', tone: 'warning' as const } : CONTENT_STATUS[item.status]
   const note = item.status === 'queued' && tiktokSelected && !tiktokReviewNeeded && item.tiktokApproval ? 'TikTok approved'
     : item.status === 'posted' && item.tiktokApproval?.options.draft ? 'Sent to TikTok inbox' : null
   const problem = item.warningsAcknowledged ? null : item.error ?? (item.status === 'needs_review' ? 'Confirm whether this clip posted before running it again.' : null)
-  return (
-    <li className={cn('group/row px-3.5 py-2.5 transition-colors', editing && 'bg-white/[0.025]', reorder?.dragging && 'opacity-40', reorder?.dropPosition === 'before' && 'border-t-2 border-accent', reorder?.dropPosition === 'after' && 'border-b-2 border-accent')}
-      onDragOver={(event) => { if (reorder && event.dataTransfer.types.includes('application/x-bridgeclip-content')) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; reorder.onOver() } }}
-      onDrop={(event) => { if (reorder && event.dataTransfer.types.includes('application/x-bridgeclip-content')) { event.preventDefault(); reorder.onDrop() } }}>
+  const row = (
+    <li ref={dragProvided.innerRef} {...dragProvided.draggableProps}
+      className={cn('group/row list-none px-3.5 py-2.5', editing && 'bg-white/[0.025]', dragging && 'rounded-xl bg-raised shadow-pop ring-1 ring-accent/40')}>
       <div className="flex min-h-8 flex-wrap items-center gap-2">
-        {reorder && <button type="button" draggable aria-label={`Reorder ${item.title}`} title="Drag to reorder. Use Up or Down arrows while focused." className="cursor-grab rounded p-1 text-ink-subtle hover:text-ink active:cursor-grabbing"
-          onDragStart={(event) => { event.dataTransfer.setData('application/x-bridgeclip-content', item.id); event.dataTransfer.effectAllowed = 'move'; reorder.onStart() }}
-          onDragEnd={reorder.onEnd}
-          onKeyDown={(event) => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); reorder.onMove(event.key === 'ArrowUp' ? -1 : 1) } }}><GripVertical className="h-3.5 w-3.5" /></button>}
+        {canReorderContent(item) && <span role="button" tabIndex={-1} aria-disabled={!dragProvided.dragHandleProps} {...dragProvided.dragHandleProps} aria-label={`Reorder ${item.title}`} title="Drag to reorder. Or press Space, use arrow keys, then Space to drop; Escape to cancel." className={cn('touch-none rounded p-1 text-ink-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent', dragProvided.dragHandleProps ? 'cursor-grab hover:bg-fill-hover hover:text-ink active:cursor-grabbing' : 'cursor-default opacity-40')}><GripVertical className="h-3.5 w-3.5" /></span>}
         <div className="flex min-w-0 flex-1 basis-48 items-center gap-2">
           <p className="truncate text-xs text-ink">{item.title}</p>
           {item.metadataDraft && <Badge tone="warning">Draft to review</Badge>}
@@ -893,6 +916,7 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
           {nextUp && <Badge tone="accent" className="h-4 px-1.5 text-[10px]">Next up</Badge>}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {item.status === 'queued' && !item.postId && item.error && <Button size="sm" variant="secondary" icon={<RefreshCw className="h-3 w-3" />} disabled={busy || retryDisabled || Boolean(item.metadataDraft)} onClick={onRetry} title="Retry this clip now, using the saved automation settings">Retry clip</Button>}
           {item.status === 'queued' && !item.postId && (item.metadataDraft || !enhanced) && <Button size="sm" variant="ghost" disabled={busy || (!item.metadataDraft && enhancementDisabled)} onClick={onEnhance}>{item.metadataDraft ? 'Review draft' : 'Enhance'}</Button>}
           {tiktokReviewNeeded && <Button size="sm" variant="secondary" onClick={onReviewTikTok} disabled={busy || reviewDisabled || Boolean(item.metadataDraft)}>Review TikTok</Button>}
           {item.status === 'needs_review' && <Button size="sm" variant="secondary" onClick={onReturnToQueue} disabled={busy || Boolean(editing)} title={editing ? 'Save or close the editor first' : 'Review and return this clip to the queue'}>Return to queue</Button>}
@@ -908,9 +932,9 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
                 {(item.sourceContext?.title || item.metadataEnhancement?.source?.title) && <><dt>Source</dt><dd className="line-clamp-2 text-ink">{item.sourceContext?.title || item.metadataEnhancement?.source?.title}</dd></>}
               </dl>
               {item.caption && <p className="line-clamp-3 whitespace-pre-wrap text-ink-muted">{item.caption}</p>}
-              {item.warningsAcknowledged && (item.error || item.metadataError) && <div className="space-y-1 border-t border-white/[0.08] pt-2 text-ink-subtle">
+              {((item.warningsAcknowledged && (item.error || item.metadataError)) || (item.metadataErrorAcknowledged && item.metadataError)) && <div className="space-y-1 border-t border-white/[0.08] pt-2 text-ink-subtle">
                 <p className="font-medium">Acknowledged warnings</p>
-                {item.error && <p>{item.error}</p>}
+                {item.warningsAcknowledged && item.error && <p>{item.error}</p>}
                 {item.metadataError && <p>{item.metadataError}</p>}
               </div>}
               {Boolean(item.generatedMetadata?.length) && <div className="space-y-1.5 border-t border-white/[0.08] pt-2">
@@ -929,13 +953,12 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
         </div>
       </div>
 
-      {item.metadataError && !item.warningsAcknowledged && <Callout tone="warning" className="mt-2">Metadata enhancement failed: {item.metadataError} Use Enhance to retry this clip, or select its source video to retry all remaining clips.</Callout>}
-      {problem && (
-        <p role={item.status === 'needs_review' ? 'status' : 'alert'} className={cn('mb-1 ml-4 flex flex-wrap items-baseline gap-x-2 text-2xs', item.status === 'needs_review' ? 'text-warning' : 'text-danger')}>
-          <span data-selectable>{problem}</span>
-          {item.status === 'needs_review' && <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={onCheckPosts}>Check posts</button>}
-        </p>
-      )}
+      {item.metadataError && !item.warningsAcknowledged && !item.metadataErrorAcknowledged && <Callout tone="warning" className="mt-2" onDismiss={busy ? undefined : onDismissMetadataError}>Metadata enhancement failed: {item.metadataError} Use Enhance to retry this clip, or select its source video to retry all remaining clips.</Callout>}
+      {problem && <Callout tone={item.status === 'needs_review' ? 'warning' : 'danger'} className="mt-2" onDismiss={busy ? undefined : onDismissError}>
+        {problem}
+        {item.status === 'queued' && !item.postId && <p className="mt-1 text-xs text-ink-muted">Failed clips wait behind other ready clips. Use Retry clip to try this one now.</p>}
+        {item.status === 'needs_review' && <button type="button" className="ml-2 font-medium text-ink underline-offset-2 hover:underline" onClick={onCheckPosts}>Check posts</button>}
+      </Callout>}
       {item.warningsAcknowledged && item.status === 'needs_review' && <p className="mb-1 ml-4 text-2xs text-ink-subtle">
         Held for review · <button type="button" className="text-ink-muted underline-offset-2 hover:underline" onClick={onCheckPosts}>Check posts</button>
       </p>}
@@ -952,4 +975,7 @@ function ContentRow({ item, nextUp, tiktokReviewNeeded, tiktokSelected, onReview
       )}
     </li>
   )
+  // Glass panels create a containing block for fixed descendants. Keep the
+  // lifted row in viewport coordinates so it stays attached to the pointer.
+  return dragging ? createPortal(row, document.body) : row
 }

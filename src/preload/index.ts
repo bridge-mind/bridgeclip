@@ -90,7 +90,8 @@ export interface BridgeClipAPI {
   models: { list: (refresh?: boolean) => Promise<OpenRouterCatalog> }
   automations: {
     reviewContent: (id: string, contentId: string, returnToQueue: boolean) => Promise<AutomationReviewResult>
-    acknowledgeWarnings: (id: string | null) => Promise<Automation[]>
+    acknowledgeWarnings: (id: string | null, contentId?: string) => Promise<Automation[]>
+    dismissMetadataError: (id: string, contentId: string) => Promise<Automation[]>
     libraryClip: (id: string, contentId: string) => Promise<LibraryClipTarget | null>
     showInFolder: (id: string, contentId: string) => Promise<boolean>
     reorder: (id: string, contentId: string, beforeId: string | null) => Promise<Automation[]>
@@ -103,6 +104,7 @@ export interface BridgeClipAPI {
     create: (name: string) => Promise<Automation[]>
     update: (id: string, update: AutomationUpdate) => Promise<Automation[]>
     delete: (id: string) => Promise<Automation[]>
+    retryContent: (id: string, contentId: string) => Promise<Automation[]>
     run: (id: string) => Promise<Automation[]>
     addContent: (id: string) => Promise<Automation[]>
     addLibraryClips: (id: string, outputDir: string, clipIndices: number[]) => Promise<Automation[]>
@@ -244,7 +246,8 @@ const api: BridgeClipAPI = {
   models: { list: (refresh = false) => ipcRenderer.invoke('models:list', refresh) },
   automations: {
     reviewContent: (id, contentId, returnToQueue) => ipcRenderer.invoke('automations:reviewContent', id, contentId, returnToQueue),
-    acknowledgeWarnings: (id) => ipcRenderer.invoke('automations:acknowledgeWarnings', id),
+    acknowledgeWarnings: (id, contentId) => ipcRenderer.invoke('automations:acknowledgeWarnings', id, contentId),
+    dismissMetadataError: (id, contentId) => ipcRenderer.invoke('automations:dismissMetadataError', id, contentId),
     libraryClip: (id, contentId) => ipcRenderer.invoke('automations:libraryClip', id, contentId),
     showInFolder: (id, contentId) => ipcRenderer.invoke('automations:showInFolder', id, contentId),
     reorder: (id, contentId, beforeId) => ipcRenderer.invoke('automations:reorder', id, contentId, beforeId),
@@ -257,6 +260,7 @@ const api: BridgeClipAPI = {
     create: (name) => ipcRenderer.invoke('automations:create', name),
     update: (id, update) => ipcRenderer.invoke('automations:update', id, update),
     delete: (id) => ipcRenderer.invoke('automations:delete', id),
+    retryContent: (id, contentId) => ipcRenderer.invoke('automations:retryContent', id, contentId),
     run: (id) => ipcRenderer.invoke('automations:run', id),
     addContent: (id) => ipcRenderer.invoke('automations:addContent', id),
     addLibraryClips: (id, outputDir, clipIndices) => ipcRenderer.invoke('automations:addLibraryClips', id, outputDir, clipIndices),

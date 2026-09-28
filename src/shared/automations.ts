@@ -81,6 +81,8 @@ export interface MetadataEnhancement {
 export interface AutomationContent {
   /** Suppresses existing warning indicators without changing posting eligibility. */
   warningsAcknowledged?: boolean
+  /** Dismisses only the current metadata failure; a new failure resets this. */
+  metadataErrorAcknowledged?: boolean
   id: string
   /** Original authorized file, retained when a library clip is copied to the bank. */
   sourceClipPath?: string
@@ -153,7 +155,7 @@ export interface Automation {
 }
 
 export function hasContentWarnings(item: AutomationContent): boolean {
-  return !item.warningsAcknowledged && Boolean(item.error || item.metadataError || item.status === 'needs_review')
+  return !item.warningsAcknowledged && Boolean(item.error || (item.metadataError && !item.metadataErrorAcknowledged) || item.status === 'needs_review')
 }
 
 export function hasAutomationWarnings(automation: Automation): boolean {

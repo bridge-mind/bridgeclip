@@ -25,7 +25,7 @@ import { getYouTubePreview } from './youtube-preview'
 import { randomUUID } from 'crypto'
 import { resolveBinary, supportsCaptionFilter } from './tools'
 import { automationEnhancementGroups, enhanceAutomationBatch, automationContentSource, enhanceAutomationContent, resolveAutomationMetadataDraft, addAutomationContent, addLibraryClipsToAutomation, createAutomation, deleteAutomation, isAutomationMedia, listAutomations, removeAutomationContent, runAutomation, updateAutomation, updateAutomationContent, approveAutomationTikTokReview, prepareAutomationTikTokReview } from './automations'
-import { acknowledgeAutomationWarnings, automationLibraryClip, reorderAutomationContent, reviewAutomationContent, showAutomationContentInFolder } from './automations'
+import { acknowledgeAutomationWarnings, retryAutomationContent, dismissAutomationMetadataError, automationLibraryClip, reorderAutomationContent, reviewAutomationContent, showAutomationContentInFolder } from './automations'
 import { libraryPostingStatus, libraryMetadataSource, enhanceLibraryMetadata } from './library-posting'
 import { libraryPostingSummary } from './library-posting'
 import { deleteLibraryClips, deleteLibraryRun, setLibraryFavorite, setLibraryPosted } from './library-management'
@@ -124,7 +124,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('automations:enhance', (_event, id: unknown, contentId: unknown, options: unknown) => enhanceAutomationContent(id, contentId, options))
   handle('automations:resolveDraft', (_event, id: unknown, contentId: unknown, draftId: unknown, apply: unknown) => resolveAutomationMetadataDraft(id, contentId, draftId, apply))
   handle('automations:list', () => listAutomations())
-  handle('automations:acknowledgeWarnings', (_event, id: unknown) => acknowledgeAutomationWarnings(id))
+  handle('automations:acknowledgeWarnings', (_event, id: unknown, contentId: unknown) => acknowledgeAutomationWarnings(id, contentId))
+  handle('automations:dismissMetadataError', (_event, id: unknown, contentId: unknown) => dismissAutomationMetadataError(id, contentId))
   handle('automations:reviewContent', (_event, id: unknown, contentId: unknown, returnToQueue: unknown) => reviewAutomationContent(id, contentId, returnToQueue))
   handle('automations:libraryClip', (_event, id: unknown, contentId: unknown) => automationLibraryClip(id, contentId))
   handle('automations:showInFolder', (_event, id: unknown, contentId: unknown) => showAutomationContentInFolder(id, contentId))
@@ -132,6 +133,7 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('automations:create', (_event, name: unknown) => createAutomation(name))
   handle('automations:update', (_event, id: unknown, update: unknown) => updateAutomation(id, update))
   handle('automations:delete', (_event, id: unknown) => deleteAutomation(id))
+  handle('automations:retryContent', (_event, id: unknown, contentId: unknown) => retryAutomationContent(id, contentId))
   handle('automations:run', (_event, id: unknown) => runAutomation(id))
   handle('automations:addLibraryClips', (_event, id: unknown, outputDir: unknown, clipIndices: unknown) => addLibraryClipsToAutomation(id, outputDir, clipIndices))
   handle('automations:updateContent', (_event, id: unknown, contentId: unknown, update: unknown) => updateAutomationContent(id, contentId, update))
