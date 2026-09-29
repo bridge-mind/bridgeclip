@@ -7,7 +7,7 @@ const { renderToStaticMarkup } = require('react-dom/server')
 
 const bundled = buildSync({
   stdin: {
-    contents: `export { FormatStep, ClipsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
+    contents: `export { FormatStep, ClipsStep, CaptionsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
       export { SetupCard } from './src/renderer/components/SetupCard';
       export { useSettingsStore } from './src/renderer/store/use-settings-store';
       export { useDraftStore } from './src/renderer/store/use-draft-store';
@@ -106,6 +106,25 @@ test('clipping mode is selectable and economy disables paid vision in the submit
   assert.equal(Object.hasOwn(request, 'debugCapture'), false)
   assert.equal(request.layoutVision, false)
   assert.equal(buildJobRequest({ ...draft, clippingMode: 'quality' }, { start: null, end: null }).layoutVision, true)
+})
+
+test('the title card is shown by default and can be turned off for automatic runs', () => {
+  const { CaptionsStep, useDraftStore, buildJobRequest } = form.exports
+  const original = useDraftStore.getState()
+  try {
+    assert.equal(original.includeTitle, true)
+    original.update({ workflow: 'automatic', source: 'https://example.com/video' })
+    const automatic = renderToStaticMarkup(React.createElement(CaptionsStep, { draft: useDraftStore.getState(), update() {} }))
+    assert.match(automatic, /Show title at the top/)
+    assert.equal(buildJobRequest(useDraftStore.getState(), { start: null, end: null }).includeTitle, true)
+    original.update({ includeTitle: false })
+    assert.equal(buildJobRequest(useDraftStore.getState(), { start: null, end: null }).includeTitle, false)
+    original.startAnother()
+    assert.equal(useDraftStore.getState().includeTitle, false)
+    // Review exports never draw a title card, so the switch is not offered there.
+    const review = renderToStaticMarkup(React.createElement(CaptionsStep, { draft: { ...useDraftStore.getState(), workflow: 'review' }, update() {} }))
+    assert.doesNotMatch(review, /Show title at the top/)
+  } finally { useDraftStore.setState(original) }
 })
 
 test('format and framing radio groups each expose one keyboard tab stop', () => {

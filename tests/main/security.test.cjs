@@ -257,6 +257,8 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   const job = { videoUrl: 'https://example.com/video', maxClips: 5, autoClipCount: true, includeCaptions: true, aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'tight', captionPreset: 'pop', durationRanges: ['short'], startTimeSeconds: null, endTimeSeconds: null, bannerPlatform: null, bannerChannelUrl: null }
   assert.doesNotThrow(() => validateJobConfig(job))
   assert.equal(validateJobConfig(job).videoSpeed, 1)
+  assert.equal(validateJobConfig(job).includeTitle, true)
+  assert.equal(validateJobConfig({ ...job, includeTitle: false }).includeTitle, false)
   for (const videoSpeed of jobContract.VIDEO_SPEED_OPTIONS) assert.equal(validateJobConfig({ ...job, videoSpeed }).videoSpeed, videoSpeed)
   for (const videoSpeed of [null, true, '1.5', 0, 0.5, 2.01, NaN, Infinity, -Infinity]) {
     assert.throws(() => validateJobConfig({ ...job, videoSpeed }), /Video speed/)
@@ -272,7 +274,7 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
   assert.equal(validateJobConfig({ ...job, videoUrl: 'https://go.twitch.tv/videos/123?t=30s' }).videoUrl, 'https://www.twitch.tv/videos/123')
   for (const videoUrl of ['https://twitch.tv/channel', 'https://clips.twitch.tv/Clip']) assert.throws(() => validateJobConfig({ ...job, videoUrl }), /completed Twitch VOD/)
-  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
+  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { includeTitle: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
 })
 
 test('saved provider keys remain in main and migrate away from legacy encoding', () => {
@@ -634,6 +636,7 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
   }, window, undefined, '/tmp/queued-output')
   const forwarded = JSON.parse(workerInput)
   assert.equal(forwarded.video_speed, 1.5)
+  assert.equal(forwarded.include_title, true)
   assert.equal(forwarded.debug_capture, undefined)
   assert.equal(forwarded.contract_version, 3)
   assert.equal(forwarded.output_dir, '/tmp/queued-output')

@@ -34,6 +34,8 @@ export interface ClipDraft {
   maxClips: number
   includeCaptions: boolean
   captionPreset: string
+  /** Automatic clips: the title card at the top of each clip. */
+  includeTitle: boolean
   trimOpen: boolean
   trimStart: string
   trimEnd: string
@@ -67,6 +69,7 @@ export const useDraftStore = create<DraftState>((set) => ({
   maxClips: 5,
   includeCaptions: true,
   captionPreset: 'pop',
+  includeTitle: true,
   trimOpen: false,
   trimStart: '',
   trimEnd: '',

@@ -104,6 +104,8 @@ class ClippingJobRequest:
     target_platform: str = "tiktok"
     include_captions: bool = True
     caption_style: Optional[CaptionStyle] = None
+    # Title card over the top of each rendered clip.
+    include_title: bool = True
     callback_url: Optional[str] = None
     start_time_seconds: Optional[float] = None
     end_time_seconds: Optional[float] = None
@@ -635,6 +637,7 @@ class AIClippingPipeline:
                         include_captions=request.include_captions and transcription_status == "available",
                         caption_style=request.caption_style,
                         title_text=segment.summary,
+                        include_title=request.include_title,
                         emphasis_words=segment.emphasis_words,
                         banner_platform=request.banner_platform,
                         banner_channel_url=request.banner_channel_url,
@@ -954,6 +957,7 @@ class AIClippingPipeline:
                     "layout_vision_enabled": self.settings.layout_vision_enabled,
                     "pacing": request.pacing,
                     "video_speed": request.video_speed,
+                    "include_title": request.include_title,
                 },
                 "transcription_status": transcription_status,
                 "planning_source": "visual" if visual_frames else "transcript",

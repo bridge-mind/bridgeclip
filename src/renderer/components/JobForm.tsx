@@ -76,6 +76,7 @@ export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; 
     videoSpeed: draft.videoSpeed ?? 1,
     includeCaptions: draft.includeCaptions,
     captionPreset: draft.captionPreset,
+    includeTitle: draft.includeTitle,
     startTimeSeconds: trim.start,
     endTimeSeconds: trim.end,
     bannerPlatform: null,
@@ -496,12 +497,19 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
   )
 }
 
-function CaptionsStep({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
+export function CaptionsStep({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
   return (
     <div className="space-y-3">
+      {draft.workflow !== 'review' && (
+        <SettingRow
+          title="Show title at the top"
+          description="Each clip's title over the video. Turn off to leave it out."
+          control={<Switch label="Title at the top" checked={draft.includeTitle} onChange={(includeTitle) => update({ includeTitle })} />}
+        />
+      )}
       <SettingRow
         title="Burn in captions"
-        description="Turn off for clean clips without on-screen text."
+        description="Turn off for clips without word-by-word captions."
         control={<Switch label="Captions" checked={draft.includeCaptions} onChange={(includeCaptions) => update({ includeCaptions })} />}
       />
       <div
@@ -546,6 +554,7 @@ function ReviewStep({ draft, trim, onEdit }: {
     { step: 'clips', label: 'Clips', value: `${lengths}${(draft.videoSpeed ?? 1) > 1 && draft.durations.length > 0 ? ' of source footage' : ''} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
     { step: 'captions', label: 'Captions', value: draft.includeCaptions ? CAPTION_PRESET_NAMES[draft.captionPreset] ?? draft.captionPreset : 'Off' }
   ]
+  if (draft.workflow !== 'review') rows.push({ step: 'captions', label: 'Title', value: draft.includeTitle ? 'Shown at the top' : 'Off' })
   if (draft.clippingMode === 'advanced') rows.splice(5, 0,
     { step: 'clips', label: 'Transcribe', value: draft.transcriptionModel || 'Choose a model' },
     { step: 'clips', label: 'Plan', value: draft.plannerModel || 'Choose a model' })

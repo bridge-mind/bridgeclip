@@ -104,6 +104,8 @@ class RenderRequest:
     caption_y: Optional[float] = None
 
     title_text: Optional[str] = None
+    # Off keeps title_text for editorial review but draws no title card.
+    include_title: bool = True
     # Planner-chosen punch words highlighted in the captions.
     emphasis_words: list[str] = field(default_factory=list)
 
@@ -767,7 +769,7 @@ class RenderingService:
         self, request: RenderRequest, target_width: int, scale: float = 1.0,
     ) -> Optional[tuple[str, int, int]]:
         """Render the title card PNG. Returns (path, width, height) or None."""
-        if not request.title_text:
+        if not (request.include_title and request.title_text):
             return None
         path = os.path.join(
             os.path.dirname(request.output_path),
