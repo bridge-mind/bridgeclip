@@ -2,7 +2,7 @@
 
 BridgeClip source and official downloads live in `bridge-mind/bridgeclip`. Tests, package rehearsals, signing, and publication run in the maintainer's private automation repository. Public GitHub repositories cannot make Actions logs private. Public Actions execution is disabled; no signing credentials belong in this repository.
 
-The primary maintainers set the project's direction and review contributions under [CONTRIBUTING.md](../CONTRIBUTING.md). Main requires a pull request and the configured checks; release tags cannot be moved or deleted. Public source can still be forked under the MIT license. Administrators can change access policy, so review collaborators and automation access before each release.
+The primary maintainers set the project's direction and review contributions under [CONTRIBUTING.md](../CONTRIBUTING.md). Main requires a pull request and the configured checks; release tags cannot be moved or deleted. Anyone can open a pull request from a fork; only the maintainer can push branches or merge. Public source can still be forked under the MIT license. Administrators can change access policy, so review collaborators and automation access before each release.
 
 ## Packages
 
