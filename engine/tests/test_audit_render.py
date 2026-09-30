@@ -292,6 +292,22 @@ def test_title_card_is_bounded(tmp_path):
     assert service._build_title_card("  \n\t ", 1080, 0, str(tmp_path / "empty.png")) is None
 
 
+@pytest.mark.parametrize("is_landscape", [False, True])
+def test_title_card_can_be_turned_off(tmp_path, is_landscape):
+    service = RenderingService.__new__(RenderingService)
+    service._font_path = service._resolve_font()
+    plan = ClipLayoutPlan([ShotLayout(0, 4000, LayoutType.TALKING_HEAD)], 640, 360)
+    width, height = (1920, 1080) if is_landscape else (1080, 1920)
+
+    def overlay_paths(**options):
+        request = RenderRequest(str(tmp_path / "source.mp4"), str(tmp_path / "clip.mp4"), 0, 4000, 640, 360,
+                                title_text="Why Most Developers Get This Wrong", **options)
+        return [overlay[0] for overlay in service._overlays(request, plan, width, height, is_landscape)]
+
+    assert overlay_paths() == [str(tmp_path / "title-0-4000.png")]
+    assert overlay_paths(include_title=False) == []
+
+
 def planner_with_state() -> IntelligencePlannerService:
     planner = IntelligencePlannerService()
     planner._current_transcript = []

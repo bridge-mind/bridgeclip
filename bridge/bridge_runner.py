@@ -111,6 +111,9 @@ FAILURES = (
     (("no clips passed the coherence review", "clip omitted:"),
      "No clips passed the coherence review.",
      "Inspect transcript & edits in Jobs to see which context, ending, title or cut checks failed. No clip was forced."),
+    (("no moments matched the clip request",),
+     "No moments matched what you asked to clip.",
+     "Try describing it more broadly, or leave What to clip blank to get the best moments. Inspect transcript & edits in Jobs shows the planner's explanation."),
     (("the planner returned no clip candidates",),
      "The planner returned no clip candidates.",
      "Open Inspect transcript & edits in Jobs and check the planner response for its explanation. The video may still contain suitable clips; this is not a rendering or system-check failure."),
@@ -272,11 +275,13 @@ async def run(config: dict) -> bool:
         video_speed=config.get("video_speed", 1.0),
         include_captions=config.get("include_captions", True),
         caption_style=caption_style,
+        include_title=config.get("include_title", True),
         start_time_seconds=config.get("start_time_seconds"),
         end_time_seconds=config.get("end_time_seconds"),
         banner_platform=config.get("banner_platform"),
         banner_channel_url=config.get("banner_channel_url"),
         keyterms=config.get("keyterms") or None,
+        clip_request=config.get("clip_request"),
     )
 
     emit({
@@ -342,7 +347,7 @@ def validate_config(config: object) -> dict:
     output = config.get("output_dir")
     if output is not None and (not isinstance(output, str) or not os.path.isabs(output) or "\0" in output):
         raise ValueError("Output directory must be an absolute path")
-    for field in ("include_captions", "auto_clip_count", "layout_vision_enabled", "debug_capture"):
+    for field in ("include_captions", "include_title", "auto_clip_count", "layout_vision_enabled", "debug_capture"):
         if field in config and not isinstance(config[field], bool):
             raise ValueError(f"{field} must be a boolean")
     if config.get('workflow', 'automatic') not in ('automatic', 'review'):
@@ -382,6 +387,11 @@ def validate_config(config: object) -> dict:
         any(not isinstance(term, str) or not term.strip() or len(term) > 49 for term in keyterms)
     ):
         raise ValueError("Invalid keyterms")
+    clip_request = config.get("clip_request")
+    if clip_request is not None and (
+        not isinstance(clip_request, str) or not clip_request.strip() or len(clip_request) > 1000 or "\0" in clip_request
+    ):
+        raise ValueError("Invalid clip request")
     ranges = config.get("duration_ranges")
     if ranges is not None and (
         not isinstance(ranges, list) or len(ranges) > len(DURATION_RANGE_IDS) or

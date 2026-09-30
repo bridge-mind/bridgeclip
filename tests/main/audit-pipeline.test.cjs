@@ -86,6 +86,7 @@ test('the worker gets a minimal environment: no proxies, interpreter hooks or in
   assert.equal(spawned.args.length, 1)
   assert.ok(!JSON.stringify(spawned.args).includes(SECRET))
   assert.ok(!workerInput.includes(SECRET), 'stdin config carries no key')
+  assert.equal(Object.hasOwn(JSON.parse(workerInput), 'clip_request'), false, 'no clip request, no clip_request field')
   assert.equal(spawned.options.shell, undefined)
   assert.equal(spawned.options.detached, true)
   assert.equal(spawned.options.cwd, runner.getEnginePath())

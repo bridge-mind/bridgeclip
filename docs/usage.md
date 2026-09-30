@@ -100,7 +100,7 @@ Connect social accounts with your own Zernio account and API key to post or sche
 
 ### Organize the content bank
 
-In **Automations**, drag a queued clip’s handle to change its order, or focus the handle and use the Up/Down arrow keys. Submitted or uncertain items stay in place. The bank separates **Queued**, **Needs attention** (when needed), and **Submitted** clips. The Queued heading shows the next posting slot and its timezone, or indicates that scheduling is paused or unconfigured. Hover or focus each row’s info icon for its added/submitted timestamps, source, caption and metadata status.
+In **Automations**, drag a queued clip’s handle to change its order with animated movement and automatic scrolling. For keyboard sorting, focus the handle, press Space to pick up the clip, use the Up/Down arrow keys, then press Space to drop or Escape to cancel. Submitted or uncertain items stay in place. The bank separates **Queued**, **Needs attention** (when needed), and **Submitted** clips. The Queued heading shows the next posting slot and its timezone, or indicates that scheduling is paused or unconfigured. Hover or focus each row’s info icon for its added/submitted timestamps, source, caption and metadata status.
 
 Use the actions menu to edit a bank item, **Show in Finder** (**Show in folder** on other systems) to reveal its saved video, or **Remove from queue**, and **View in Library** to open its source run filtered to that exact clip, including submitted clips and items with enhanced titles. Choose **Show all clips** to return to the full run. Submitted clips have no removal option. Removing a queued clip leaves the original file intact.
 
@@ -111,6 +111,8 @@ Reviewed metadata is marked **Enhanced** in the info tooltip and hides the Enhan
 ### Warnings and recovery
 
 In **Automations**, the header shows scheduling status once. **More settings** holds caption writing, YouTube options and the automation name; previous failures are expandable historical messages. Use **Acknowledge warnings** for one automation or **Acknowledge all warnings** for every automation to clear existing failure indicators without a successful post. Acknowledgements survive restarts; new failures warn again. Messages remain in the run details or clip info, and acknowledged clips awaiting review appear under **Held clips** without being retried or returned to the queue.
+
+Dismiss a clip’s upload or metadata error with its **×** button; dismissal survives restarts, preserves the message in clip info, and a new failure shows the warning again. **Run now** prioritizes ready clips without previous upload errors. Use **Retry clip** to retry a specific failed upload without changing queue order, even after dismissing its error. Retry is available only for queued clips that have not been submitted; metadata drafts and required TikTok review must be resolved first.
 
 Held clips have a visible **Return to queue** action and, when linked to a Zernio post, **Refresh post status**. A fresh Zernio check moves already published or active posts to **Submitted** and permits requeuing only fully failed posts; partial or uncertain results stay held for review in Posts. Returning a failed linked clip disables Retry on its old Posts entry so only the new queue attempt can post.
 

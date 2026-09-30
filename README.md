@@ -39,7 +39,7 @@ Get BridgeClip from **[bridgeclip.ai](https://www.bridgeclip.ai)** or [GitHub Re
 
 Packages include Python, FFmpeg and yt-dlp. macOS builds are signed and notarized; Linux needs an unlocked desktop secret service to save API keys. Installed releases support [automatic updates](docs/usage.md#automatic-updates).
 
-This README describes the current source. Check the [release notes](https://github.com/bridge-mind/bridgeclip/releases) for features available in your downloaded version, and the [verification guide](docs/RELEASING.md#verify-a-download) for signatures and checksums.
+This README describes the current source. Check the [release notes](https://github.com/bridge-mind/bridgeclip/releases) for features available in your downloaded version, and the [verification guide](docs/RELEASING.md#verify-a-download) for signatures and checksums. The [changelog](CHANGELOG.md) lists what changed in each version; in the app, open **Settings → About → Changelog**.
 
 ## Quick start
 

@@ -12,6 +12,9 @@ export const DURATION_OPTIONS = [
 /** Version 3 adds review projects that must never auto-render. */
 export const BRIDGE_CONTRACT_VERSION = 3
 
+/** Longest "What to clip" description sent to the planner. */
+export const CLIP_REQUEST_MAX_CHARS = 1000
+
 export const VIDEO_SPEED_OPTIONS = [1, 1.1, 1.25, 1.5, 1.75, 2] as const
 
 export function isVideoSpeed(value: unknown): value is number {

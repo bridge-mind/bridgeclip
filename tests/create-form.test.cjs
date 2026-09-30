@@ -7,7 +7,8 @@ const { renderToStaticMarkup } = require('react-dom/server')
 
 const bundled = buildSync({
   stdin: {
-    contents: `export { FormatStep, ClipsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
+    contents: `export { FormatStep, ClipsStep, CaptionsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
+      export { JobProgress } from './src/renderer/components/JobProgress';
       export { SetupCard } from './src/renderer/components/SetupCard';
       export { useSettingsStore } from './src/renderer/store/use-settings-store';
       export { useDraftStore } from './src/renderer/store/use-draft-store';
@@ -106,6 +107,59 @@ test('clipping mode is selectable and economy disables paid vision in the submit
   assert.equal(Object.hasOwn(request, 'debugCapture'), false)
   assert.equal(request.layoutVision, false)
   assert.equal(buildJobRequest({ ...draft, clippingMode: 'quality' }, { start: null, end: null }).layoutVision, true)
+})
+
+test('the title card is shown by default and can be turned off for automatic runs', () => {
+  const { CaptionsStep, useDraftStore, buildJobRequest } = form.exports
+  const original = useDraftStore.getState()
+  try {
+    assert.equal(original.includeTitle, true)
+    original.update({ workflow: 'automatic', source: 'https://example.com/video' })
+    const automatic = renderToStaticMarkup(React.createElement(CaptionsStep, { draft: useDraftStore.getState(), update() {} }))
+    assert.match(automatic, /Show title at the top/)
+    assert.equal(buildJobRequest(useDraftStore.getState(), { start: null, end: null }).includeTitle, true)
+    original.update({ includeTitle: false })
+    assert.equal(buildJobRequest(useDraftStore.getState(), { start: null, end: null }).includeTitle, false)
+    original.startAnother()
+    assert.equal(useDraftStore.getState().includeTitle, false)
+    // Review exports never draw a title card, so the switch is not offered there.
+    const review = renderToStaticMarkup(React.createElement(CaptionsStep, { draft: { ...useDraftStore.getState(), workflow: 'review' }, update() {} }))
+    assert.doesNotMatch(review, /Show title at the top/)
+  } finally { useDraftStore.setState(original) }
+})
+
+test('what to clip is optional, trimmed into the request and cleared for the next video', () => {
+  const { ClipsStep, useDraftStore, buildJobRequest } = form.exports
+  const original = useDraftStore.getState()
+  try {
+    assert.equal(original.clipRequest, '')
+    original.update({ workflow: 'automatic', source: 'https://example.com/video' })
+    const html = renderToStaticMarkup(React.createElement(ClipsStep, { draft: useDraftStore.getState(), update() {} }))
+    assert.match(html, /aria-label="What to clip"/)
+    assert.match(html, /maxLength="1000"/)
+    assert.match(html, /aria-describedby="clip-request-help"/)
+    assert.match(html, /id="clip-request-help"[^>]*>Only matching moments are clipped/)
+    assert.equal(Object.hasOwn(buildJobRequest(useDraftStore.getState(), { start: null, end: null }), 'clipRequest'), false)
+    original.update({ clipRequest: '   ' })
+    assert.equal(Object.hasOwn(buildJobRequest(useDraftStore.getState(), { start: null, end: null }), 'clipRequest'), false)
+    original.update({ clipRequest: '  every time they talk about pricing \n' })
+    assert.equal(buildJobRequest(useDraftStore.getState(), { start: null, end: null }).clipRequest, 'every time they talk about pricing')
+    original.startAnother()
+    assert.equal(useDraftStore.getState().clipRequest, '')
+  } finally { useDraftStore.setState(original) }
+})
+
+test('a running job shows what the user asked to clip', () => {
+  const { JobProgress } = form.exports
+  const job = {
+    id: 'job', revision: 1, status: 'planning', percent: 40, step: 'Finding moments', clipsDone: 0, clipsTotal: 0,
+    queuedAt: Date.now(), startedAt: Date.now(),
+    request: { videoUrl: 'https://www.youtube.com/watch?v=abc123def45', workflow: 'automatic', clipRequest: ' every time they talk about pricing ' }
+  }
+  const html = renderToStaticMarkup(React.createElement(JobProgress, { job, onCancel() {} }))
+  assert.match(html, /title="every time they talk about pricing"><span class="sr-only">What to clip: <\/span>every time they talk about pricing</)
+  const plain = renderToStaticMarkup(React.createElement(JobProgress, { job: { ...job, request: { ...job.request, clipRequest: undefined } }, onCancel() {} }))
+  assert.doesNotMatch(plain, /What to clip/)
 })
 
 test('format and framing radio groups each expose one keyboard tab stop', () => {

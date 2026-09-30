@@ -14,6 +14,8 @@ import { useSettingsStore } from './store/use-settings-store'
 import { useJobStore } from './store/use-job-store'
 import { useSidebarStore } from './store/use-sidebar-store'
 import { useUpdateStore } from './store/use-update-store'
+import { useChangelogStore } from './store/use-changelog-store'
+import { ChangelogDialog } from './components/Changelog'
 import { Button } from './components/ui/Button'
 import { getApi } from './lib/ipc'
 
@@ -29,6 +31,8 @@ export default function App(): React.JSX.Element {
   const loadSettings = useSettingsStore((s) => s.load)
   const checkTools = useSettingsStore((s) => s.checkTools)
   const settingsLoaded = useSettingsStore((s) => s.loaded)
+  const changelogOpen = useChangelogStore((s) => s.open)
+  const closeChangelog = useCallback(() => useChangelogStore.getState().setOpen(false), [])
 
   // Sidebar destinations always open the page root, even when already active.
   // In-page navigation keeps setPage so links to a specific job retain focus.
@@ -83,6 +87,13 @@ export default function App(): React.JSX.Element {
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
   }, [])
 
+  // Optional: a renderer hot-reloaded over an older preload has no changelog bridge.
+  useEffect(() => getApi().changelog?.onShow(() => {
+    // Another dialog owns focus and Escape (a post may be uploading); don't stack on it.
+    if (document.querySelector('[aria-modal="true"]')) return
+    useChangelogStore.getState().setOpen(true)
+  }), [])
+
   // ⌘1 Create, ⌘2 Library, ⌘3 Jobs, ⌘4 Accounts, ⌘5 Posts, ⌘6 Automations, ⌘, Settings,
   // ⌘\ collapse or expand the sidebar (Ctrl on Windows/Linux).
   useEffect(() => {
@@ -131,6 +142,7 @@ export default function App(): React.JSX.Element {
           ) : <BridgeClipLogo className="h-7 animate-pulse opacity-80" />}
         </div>
       )}
+      {changelogOpen && <ChangelogDialog onClose={closeChangelog} />}
     </>
   )
 }

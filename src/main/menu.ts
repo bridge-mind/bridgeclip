@@ -70,6 +70,15 @@ export function createMenu(mainWindow: BrowserWindow): void {
             ]
           : []),
         {
+          label: 'Changelog',
+          click: (): void => {
+            if (mainWindow.isDestroyed()) return
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.show()
+            mainWindow.webContents.send('changelog:show')
+          }
+        },
+        {
           label: `${APP_NAME} on GitHub`,
           click: (): void => {
             shell.openExternal(REPO_URL)

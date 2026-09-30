@@ -287,11 +287,20 @@ class TestSentenceHelpers:
         assert last_sentence_end_between(tr, ends[2] + 1, ends[3] - 1) is None
 
 
+def test_clip_request_is_trimmed_bounded_and_blank_means_none():
+    from clip_engine.services.intelligence_planner import MAX_CLIP_REQUEST_CHARS
+    assert ClippingJobRequest(video_url='x', clip_request='   ').clip_request is None
+    assert ClippingJobRequest(video_url='x', clip_request=' the pricing debate \n').clip_request == 'the pricing debate'
+    assert len(ClippingJobRequest(video_url='x', clip_request='x' * 5000).clip_request) == MAX_CLIP_REQUEST_CHARS
+
+
 class TestEmptyPlan:
+    @pytest.mark.parametrize('clip_request', [None, 'every time they talk about pricing'])
     @pytest.mark.parametrize('workflow', ['automatic', 'review'])
-    def test_empty_model_plan_preserves_explanation_and_never_starts_review_or_render(self, monkeypatch, tmp_path, workflow):
+    def test_empty_model_plan_preserves_explanation_and_never_starts_review_or_render(self, monkeypatch, tmp_path, workflow, clip_request):
         from unittest.mock import AsyncMock
-        from clip_engine.error_policy import NoClipCandidatesError, safe_processing_error, safe_job_error_text
+        from clip_engine.error_policy import NoClipCandidatesError, NoRequestedMomentsError, safe_processing_error, safe_job_error_text
+        from clip_engine.services.intelligence_planner import CLIP_REQUEST_RULE
         from clip_engine.services.sponsor_policy import SPONSOR_DISCOVERY_RULE
         monkeypatch.setattr(RenderingService, '_verify_ffmpeg', lambda self: None)
         settings = pipeline_module.get_settings()
@@ -306,6 +315,9 @@ class TestEmptyPlan:
             system = kwargs['messages'][0]['content']
             assert SPONSOR_DISCOVERY_RULE in system
             assert 'Do not require proof that the presenter is independent' in system
+            user = ' '.join(part['text'] for part in kwargs['messages'][1]['content'] if part['type'] == 'text')
+            assert (CLIP_REQUEST_RULE in system) == bool(clip_request)
+            assert (json.dumps(clip_request) in user) == bool(clip_request)
             return {'choices': [{'message': {'content': model_response}, 'finish_reason': 'stop'}]}, {'prompt_tokens': 100, 'completion_tokens': 20, 'total_tokens': 120, 'cost': .001}
         planner_call = AsyncMock(side_effect=complete)
         render = AsyncMock()
@@ -317,9 +329,9 @@ class TestEmptyPlan:
         monkeypatch.setattr(pipeline.transcription_service, 'transcribe', AsyncMock(return_value=TranscriptionResult(segments=tr, full_text='A product demo.')))
         monkeypatch.setattr(pipeline.rendering_service, 'render_clip', render)
         monkeypatch.setattr(pipeline_module, 'CoherenceReviewer', review)
-        result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url='fixture.mp4', job_id='empty', workflow=workflow)))
+        result = asyncio.run(pipeline.process_video(ClippingJobRequest(video_url='fixture.mp4', job_id='empty', workflow=workflow, clip_request=clip_request)))
         assert result.status == JobStatus.FAILED
-        assert result.error == 'The planner returned no clip candidates'
+        assert result.error == ('No moments matched the clip request' if clip_request else 'The planner returned no clip candidates')
         assert result.failure_code == 'planning.no_candidates' and result.failure_stage == 'planning'
         assert planner_call.await_count == 1
         review.assert_not_called()
@@ -329,7 +341,8 @@ class TestEmptyPlan:
         assert audit['planner']['requests'][0]['response'] == model_response
         assert len(audit['transcript']) == len(tr)
         # Public errors stay fixed even if an exception carries private provider details.
-        assert safe_processing_error(NoClipCandidatesError('private-provider-detail')) == result.error
+        error = NoRequestedMomentsError if clip_request else NoClipCandidatesError
+        assert safe_processing_error(error('private-provider-detail')) == result.error
         assert safe_job_error_text(result.error) == result.error
 
     @pytest.mark.parametrize('workflow', ['automatic', 'review'])

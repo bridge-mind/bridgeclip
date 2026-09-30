@@ -238,6 +238,8 @@ test('external URLs reject executable schemes and embedded credentials', () => {
   assert.equal(security.isWebUrl('https://example.com/video'), true)
   assert.equal(security.isTrustedExternalUrl('https://example.com/video'), false)
   assert.equal(security.isTrustedExternalUrl('https://github.com/bridge-mind/bridgeclip'), true)
+  assert.equal(security.isTrustedExternalUrl('https://github.com/bridge-mind/bridgeclip/releases'), true)
+  assert.equal(security.isTrustedExternalUrl('https://github.com/bridge-mind/bridgeclip/releases/download/v0.1.19/evil.exe'), false)
 })
 
 test('source video links normalize supported YouTube forms and allow only canonical browser URLs', () => {
@@ -257,6 +259,19 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   const job = { videoUrl: 'https://example.com/video', maxClips: 5, autoClipCount: true, includeCaptions: true, aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'tight', captionPreset: 'pop', durationRanges: ['short'], startTimeSeconds: null, endTimeSeconds: null, bannerPlatform: null, bannerChannelUrl: null }
   assert.doesNotThrow(() => validateJobConfig(job))
   assert.equal(validateJobConfig(job).videoSpeed, 1)
+  assert.equal(validateJobConfig(job).includeTitle, true)
+  assert.equal(validateJobConfig({ ...job, includeTitle: false }).includeTitle, false)
+  assert.equal(validateJobConfig(job).clipRequest, undefined)
+  assert.equal(validateJobConfig({ ...job, clipRequest: '  the pricing debate \n' }).clipRequest, 'the pricing debate')
+  assert.equal(validateJobConfig({ ...job, clipRequest: '   ' }).clipRequest, undefined)
+  assert.equal(validateJobConfig({ ...job, clipRequest: ` ${'x'.repeat(1000)} ` }).clipRequest, 'x'.repeat(1000))
+  for (const clipRequest of ['x'.repeat(1001), 'a\0b', 3, null, ['pricing']]) assert.throws(() => validateJobConfig({ ...job, clipRequest }))
+  // Python's strip() also drops these, so blank-to-Python requests are never forwarded to the bridge.
+  assert.equal(validateJobConfig({ ...job, clipRequest: '\x1c\x85 \n' }).clipRequest, undefined)
+  assert.equal(validateJobConfig({ ...job, clipRequest: '\x1f the pricing debate \x85' }).clipRequest, 'the pricing debate')
+  // "Run again" resubmits the stored request, which must validate to the same value.
+  const stored = validateJobConfig({ ...job, clipRequest: '  the pricing debate ' })
+  assert.equal(validateJobConfig(stored).clipRequest, 'the pricing debate')
   for (const videoSpeed of jobContract.VIDEO_SPEED_OPTIONS) assert.equal(validateJobConfig({ ...job, videoSpeed }).videoSpeed, videoSpeed)
   for (const videoSpeed of [null, true, '1.5', 0, 0.5, 2.01, NaN, Infinity, -Infinity]) {
     assert.throws(() => validateJobConfig({ ...job, videoSpeed }), /Video speed/)
@@ -272,7 +287,7 @@ test('job validation rejects malformed options and invalid trim intervals', () =
   for (const option of jobContract.DURATION_OPTIONS) assert.doesNotThrow(() => validateJobConfig({ ...job, durationRanges: [option.id] }))
   assert.equal(validateJobConfig({ ...job, videoUrl: 'https://go.twitch.tv/videos/123?t=30s' }).videoUrl, 'https://www.twitch.tv/videos/123')
   for (const videoUrl of ['https://twitch.tv/channel', 'https://clips.twitch.tv/Clip']) assert.throws(() => validateJobConfig({ ...job, videoUrl }), /completed Twitch VOD/)
-  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
+  for (const patch of [{ maxClips: -1 }, { startTimeSeconds: NaN }, { startTimeSeconds: 5, endTimeSeconds: 3 }, { videoUrl: 'file:///etc/passwd' }, { durationRanges: ['unexpected'] }, { includeCaptions: 'false' }, { includeTitle: 'false' }, { layoutVision: 'true' }, { aspectRatio: '1:1' }, { clippingMode: 'unknown' }]) assert.throws(() => validateJobConfig({ ...job, ...patch }))
 })
 
 test('saved provider keys remain in main and migrate away from legacy encoding', () => {
@@ -629,11 +644,13 @@ test('pipeline preserves split JSON messages and protects the job identity', asy
   })
   const window = { isDestroyed: () => false, webContents: { isDestroyed: () => false, send: (channel, data) => sent.push({ channel, data }) } }
   runner.startClipJob('trusted-job', {
-    videoUrl: '/tmp/video.mp4', debugCapture: true, videoSpeed: 1.5, clippingMode: 'advanced', plannerModel: 'custom/planner', transcriptionModel: 'custom/speech',
+    videoUrl: '/tmp/video.mp4', debugCapture: true, videoSpeed: 1.5, clipRequest: 'the pricing debate', clippingMode: 'advanced', plannerModel: 'custom/planner', transcriptionModel: 'custom/speech',
     plannerCapabilities: { maxOutputTokens: 8192, supportsImages: false, inputPrice: .000001, outputPrice: .000005 }
   }, window, undefined, '/tmp/queued-output')
   const forwarded = JSON.parse(workerInput)
   assert.equal(forwarded.video_speed, 1.5)
+  assert.equal(forwarded.include_title, true)
+  assert.equal(forwarded.clip_request, 'the pricing debate')
   assert.equal(forwarded.debug_capture, undefined)
   assert.equal(forwarded.contract_version, 3)
   assert.equal(forwarded.output_dir, '/tmp/queued-output')

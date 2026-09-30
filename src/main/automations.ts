@@ -5,7 +5,7 @@ import { createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, rena
 import { open, unlink } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { pipeline } from 'stream/promises'
-import { MAX_ENHANCEMENT_GUIDANCE, MAX_RESEARCH_URL, AUTOMATION_PLATFORMS, dueSlots, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type GeneratedPlatformMetadata, type AutomationSourceContext, type MetadataEnhancement, type MetadataResearch, type AutomationSourceGroup, type AutomationBatchResult, nextAutomationContent, type AutomationTikTokReview, type AutomationTikTokReviewUpdate } from '../shared/automations'
+import { MAX_ENHANCEMENT_GUIDANCE, MAX_RESEARCH_URL, needsTikTokReview, AUTOMATION_PLATFORMS, dueSlots, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type GeneratedPlatformMetadata, type AutomationSourceContext, type MetadataEnhancement, type MetadataResearch, type AutomationSourceGroup, type AutomationBatchResult, nextAutomationContent, type AutomationTikTokReview, type AutomationTikTokReviewUpdate } from '../shared/automations'
 import { isPostableAccount, isZernioId, type ZernioOverview } from '../shared/zernio'
 import { checkCaption, checkClip, defaultFacebookFormat, isValidTimeZone, tiktokOptionsError, youtubeTitleFor, type PostClipRequest } from '../shared/zernio-posts'
 import { loadSettings } from './settings-store'
@@ -154,6 +154,7 @@ const OPTIONAL_CONTENT_FIELDS: { [K in keyof AutomationContent]?: (value: Automa
   metadataEnhancement: (value) => value == null || validEnhancement(value),
   metadataError: (value) => value == null || (typeof value === 'string' && value.length <= 500),
   warningsAcknowledged: (value) => value === undefined || typeof value === 'boolean',
+  metadataErrorAcknowledged: (value) => value === undefined || typeof value === 'boolean',
   sourceClipPath: (value) => value === undefined || (typeof value === 'string' && value.length <= 8192 && !value.includes('\0')),
   tiktokApproval: (_value, item) => validTikTokApproval(item),
   tiktokDraftCaption: (value) => value == null || (typeof value === 'string' && !value.includes('\0') && !checkCaption('tiktok', value).error)
@@ -198,6 +199,7 @@ function validContent(value: unknown): value is AutomationContent {
   }
   return UUID.test(item.id) && (item.postingAttemptId === undefined || (typeof item.postingAttemptId === 'string' && UUID.test(item.postingAttemptId))) && typeof item.fileName === 'string' &&
     (item.warningsAcknowledged === undefined || typeof item.warningsAcknowledged === 'boolean') &&
+    (item.metadataErrorAcknowledged === undefined || typeof item.metadataErrorAcknowledged === 'boolean') &&
     (item.sourceClipPath === undefined || (typeof item.sourceClipPath === 'string' && item.sourceClipPath.length <= 8192 && !item.sourceClipPath.includes('\0'))) &&
     item.fileName === `${item.id}${extname(item.fileName)}` && VIDEO_EXTENSIONS.has(extname(item.fileName)) &&
     (item.metadataError === undefined || item.metadataError === null || (typeof item.metadataError === 'string' && item.metadataError.length <= 500)) &&
@@ -355,15 +357,17 @@ function checkProfileAccounts(overview: ZernioOverview, profileId: string, accou
 export function listAutomations(): Automation[] { return structuredClone(data().automations) }
 
 /** Acknowledge existing messages only; never retry, release, or mark a clip as posted. */
-export function acknowledgeAutomationWarnings(id: unknown): Automation[] {
+export function acknowledgeAutomationWarnings(id: unknown, contentId?: unknown): Automation[] {
   const { workspace, automations } = data()
+  if (contentId !== undefined && (id === null || typeof contentId !== 'string' || !UUID.test(contentId))) throw new Error('Choose a clip to dismiss its warnings.')
   const targets = id === null ? automations : [find(id).automation]
+  if (contentId !== undefined && !targets[0].content.some((item) => item.id === contentId)) throw new Error('Clip not found')
   if (targets.some((automation) => busy.has(automation.id))) throw new Error('Wait for the current operation to finish before acknowledging warnings.')
   const previous = structuredClone(automations)
   try {
     for (const automation of targets) {
-      if (automation.lastError) automation.lastErrorAcknowledged = true
-      for (const item of automation.content) if (hasContentWarnings(item)) item.warningsAcknowledged = true
+      if (contentId === undefined && automation.lastError) automation.lastErrorAcknowledged = true
+      for (const item of automation.content) if ((contentId === undefined || item.id === contentId) && hasContentWarnings(item)) item.warningsAcknowledged = true
     }
     save(workspace)
   } catch (error) {
@@ -375,6 +379,18 @@ export function acknowledgeAutomationWarnings(id: unknown): Automation[] {
     }
     throw error
   }
+  return listAutomations()
+}
+
+export function dismissAutomationMetadataError(id: unknown, contentId: unknown): Automation[] {
+  const { workspace, automation } = find(id)
+  const item = automation.content.find((entry) => entry.id === contentId)
+  if (!item) throw new Error('Clip not found')
+  if (busy.has(automation.id)) throw new Error('Wait for the current operation to finish.')
+  if (!item.metadataError) return listAutomations()
+  const previous = item.metadataErrorAcknowledged
+  item.metadataErrorAcknowledged = true
+  try { save(workspace) } catch (error) { item.metadataErrorAcknowledged = previous; throw error }
   return listAutomations()
 }
 
@@ -772,6 +788,7 @@ export async function enhanceAutomationBatch(id: unknown, rawIds: unknown, rawKe
       const item = automation.content.find((item) => item.id === failure.contentId)
       if (item && !item.metadataDraft) {
         item.metadataError = failure.message.slice(0, 500)
+        item.metadataErrorAcknowledged = false
         item.warningsAcknowledged = false
       }
       logger.warn('automation.metadata.clip_failed', { automationId: automation.id, contentId: failure.contentId, code: metadataFailureCode(failure.message) })
@@ -1088,7 +1105,18 @@ async function runDeferredSlot(automationId: string, entry: { slot: { time: stri
   logger.warn('automation.slot.missed', { automationId })
 }
 
-export async function runAutomation(id: unknown, slot?: { time: string; date: string }): Promise<Automation[]> {
+/** Retry one pre-submit failure without changing queue order or post identity. */
+export async function retryAutomationContent(id: unknown, contentId: unknown): Promise<Automation[]> {
+  const { automation } = find(id)
+  if (busy.has(automation.id)) throw new Error('Wait for the current operation to finish.')
+  const item = automation.content.find((entry) => entry.id === contentId)
+  if (!item || item.status !== 'queued' || item.postId || !item.error) throw new Error('Choose a failed, unposted queued clip to retry.')
+  if (item.metadataDraft) throw new Error('Apply or discard this clip’s metadata draft before retrying.')
+  if (needsTikTokReview(automation, item)) throw new Error('Review this clip for TikTok before retrying.')
+  return runAutomation(id, undefined, item.id)
+}
+
+export async function runAutomation(id: unknown, slot?: { time: string; date: string }, contentId?: string): Promise<Automation[]> {
   const { workspace, automation } = find(id)
   if (slot && (!automation.enabled || automation.lastSlots[slot.time] === slot.date)) return listAutomations()
   if (busy.has(automation.id)) {
@@ -1101,7 +1129,7 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     }
     return listAutomations()
   }
-  const item = nextAutomationContent(automation)
+  const item = contentId === undefined ? nextAutomationContent(automation) : automation.content.find((entry) => entry.id === contentId)
   if (!item) {
     const queued = automation.content.filter((content) => content.status === 'queued')
     const message = queued.some((content) => content.metadataDraft) ? DRAFTS_PENDING : queued.length ? TIKTOK_REVIEW_PENDING : NO_QUEUED_CLIPS

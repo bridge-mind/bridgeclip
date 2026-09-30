@@ -2,7 +2,7 @@ import { SourcePreview } from './SourcePicker'
 import { JobDiagnostics } from './JobDiagnostics'
 import { StageBreakdown } from './StageBreakdown'
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Clapperboard, Clock3, Gauge, Github, RotateCcw, ScrollText } from 'lucide-react'
+import { AlertTriangle, Clapperboard, Clock3, Gauge, Github, RotateCcw, ScrollText, TextSearch } from 'lucide-react'
 import { formatTimecode, sourceLabel } from '../lib/utils'
 import { getApi } from '../lib/ipc'
 import { ISSUES_URL } from '../config/brand'
@@ -41,7 +41,7 @@ function useElapsed(since: string, running: boolean): number {
 /** Small capsule for job metadata. */
 function InfoChip({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }): React.JSX.Element {
   return (
-    <span className="glass-tile inline-flex h-8 items-center gap-2 rounded-full px-3.5 text-xs tabular text-ink-muted [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:text-ink-subtle">
+    <span className="glass-tile inline-flex h-8 max-w-full items-center gap-2 rounded-full px-3.5 text-xs tabular text-ink-muted [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:text-ink-subtle">
       {icon}
       {children}
     </span>
@@ -59,6 +59,7 @@ export function JobProgress({ job, onCancel, leading }: JobProgressProps): React
   const queued = job.status === 'queued'
   const elapsed = useElapsed(job.startedAt ?? job.queuedAt, true)
   const source = job.request.videoUrl
+  const clipRequest = job.request.clipRequest?.trim()
 
   return (
     <Page width="narrow">
@@ -70,7 +71,8 @@ export function JobProgress({ job, onCancel, leading }: JobProgressProps): React
           <InfoChip icon={<Clock3 />}>{formatTimecode(elapsed)} {queued ? 'waiting' : 'elapsed'}</InfoChip>
         </header>
         <div className="mb-6"><SourcePreview key={source} source={source} readOnly /></div>
-        {((job.request.videoSpeed ?? 1) > 1 || job.clipsTotal > 0) && <div className="mb-5 flex flex-wrap items-center gap-2">
+        {((job.request.videoSpeed ?? 1) > 1 || job.clipsTotal > 0 || clipRequest) && <div className="mb-5 flex flex-wrap items-center gap-2">
+          {clipRequest && <InfoChip icon={<TextSearch />}><span className="min-w-0 truncate" title={clipRequest}><span className="sr-only">What to clip: </span>{clipRequest}</span></InfoChip>}
           {(job.request.videoSpeed ?? 1) > 1 && <InfoChip icon={<Gauge />}>{job.request.videoSpeed}× export speed</InfoChip>}
           {job.clipsTotal > 0 && <InfoChip icon={<Clapperboard />}>{job.clipsDone} of {job.clipsTotal} clips rendered</InfoChip>}
         </div>}

@@ -45,6 +45,15 @@ Keep the README focused on what BridgeClip does, installation, a first successfu
 
 Keep essential account, cost and data-sharing requirements visible in the README. Use relative links for repository files and release-page links for downloads. When behavior changes, update the relevant guide instead of appending a release summary to the README. Check that links, screenshots, defaults and platform claims match the current source; distinguish unreleased behavior from published builds.
 
+## Changelog
+
+[CHANGELOG.md](CHANGELOG.md) is bundled into the app and shown under **Settings → About → Changelog** and **Help → Changelog**, so write it for users.
+
+- **Every user-visible change:** add a bullet under `## [Unreleased]` in the matching group: `### Added`, `### Changed`, `### Fixed` or `### Removed` (`Deprecated` and `Security` also work). Say what people can now do or what works better, and name the screen or setting. Leave out tests, CI, refactors and other internal changes. The app shows **bold** and `code`; links show as plain text.
+- **Each release:** in the PR that bumps `package.json` and `package-lock.json` to `X.Y.Z`, rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and add an empty `## [Unreleased]` above it. At the bottom, point `[Unreleased]` at `compare/vX.Y.Z...HEAD` and add `[X.Y.Z]: https://github.com/bridge-mind/bridgeclip/releases/tag/vX.Y.Z`. Tag `vX.Y.Z` after the PR merges, and reuse the section as the GitHub Release notes.
+
+`npm run test:release` fails when the `package.json` version has no dated section, versions are out of order, or a group isn't one of those types.
+
 ## Pull request descriptions
 
 - Link the relevant issue and, for features or other changes, the maintainer's prior approval.

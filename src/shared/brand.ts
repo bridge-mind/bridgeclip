@@ -5,6 +5,7 @@ export const APP_TAGLINE = 'Open-source AI video clipping'
 
 export const REPO_URL = 'https://github.com/bridge-mind/bridgeclip'
 export const ISSUES_URL = `${REPO_URL}/issues`
+export const RELEASES_URL = `${REPO_URL}/releases`
 export const LICENSE_NAME = 'MIT'
 export const BRIDGEMIND_URL = 'https://www.bridgemind.ai'
 export const DISCORD_URL = 'https://www.bridgemind.ai/discord'

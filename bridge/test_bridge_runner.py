@@ -71,6 +71,25 @@ class BridgeTests(unittest.TestCase):
         with patch.dict(sys.modules, modules), redirect_stdout(io.StringIO()):
             self.assertTrue(asyncio.run(bridge.run(self.config(video_speed=1.5))))
         self.assertEqual(requests[-1]["video_speed"], 1.5)
+        self.assertTrue(requests[-1]["include_title"])
+        with patch.dict(sys.modules, modules), redirect_stdout(io.StringIO()):
+            self.assertTrue(asyncio.run(bridge.run(self.config(include_title=False))))
+        self.assertFalse(requests[-1]["include_title"])
+        self.assertIsNone(requests[-1]["clip_request"])
+        with patch.dict(sys.modules, modules), redirect_stdout(io.StringIO()):
+            self.assertTrue(asyncio.run(bridge.run(self.config(clip_request="the pricing debate"))))
+        self.assertEqual(requests[-1]["clip_request"], "the pricing debate")
+
+    def test_clip_request_validation_and_no_match_message(self):
+        self.assertEqual(bridge.validate_config(self.config(clip_request="x" * 1000))["clip_request"], "x" * 1000)
+        # Main counts UTF-16 units, so the most it forwards is never over the limit in code points.
+        self.assertEqual(bridge.validate_config(self.config(clip_request="\U0001F600" * 500))["clip_request"], "\U0001F600" * 500)
+        for value in ("", "   ", "x" * 1001, "a\0b", 3, ["pricing"]):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                bridge.validate_config(self.config(clip_request=value))
+        failure = bridge.describe_failure("No moments matched the clip request")
+        self.assertEqual(failure["message"], "No moments matched what you asked to clip.")
+        self.assertIn("What to clip", failure["hint"])
 
     def test_video_speed_validation(self):
         for speed in (1, 1.1, 1.25, 1.5, 1.75, 2):
@@ -80,7 +99,7 @@ class BridgeTests(unittest.TestCase):
                 bridge.validate_config(self.config(video_speed=speed))
 
     def test_rejects_invalid_config_without_importing_bridgeclip(self):
-        for value in ([], None, "config", self.config(contract_version=None), self.config(contract_version=1), self.config(layout_vision_enabled=None), self.config(job_id="../escape"), self.config(video_url="file:///etc/passwd"), self.config(max_clips=True), self.config(aspect_ratio="1:1"), self.config(layout_style="unknown"), self.config(pacing="unknown"), self.config(clipping_mode="unknown"), self.config(duration_ranges=["unknown"])):
+        for value in ([], None, "config", self.config(contract_version=None), self.config(contract_version=1), self.config(layout_vision_enabled=None), self.config(job_id="../escape"), self.config(video_url="file:///etc/passwd"), self.config(max_clips=True), self.config(include_title="false"), self.config(aspect_ratio="1:1"), self.config(layout_style="unknown"), self.config(pacing="unknown"), self.config(clipping_mode="unknown"), self.config(duration_ranges=["unknown"])):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 bridge.validate_config(value)
 

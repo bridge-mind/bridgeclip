@@ -13,10 +13,15 @@ DISK_FULL_ERRNOS = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
 DISK_FULL_MARKERS = ("no space left on device", "disk quota exceeded")
 
 NO_CLIP_CANDIDATES_MESSAGE = 'The planner returned no clip candidates'
+NO_REQUESTED_MOMENTS_MESSAGE = 'No moments matched the clip request'
 
 
 class NoClipCandidatesError(Exception):
     """Discovery completed, but did not provide usable candidates for either workflow."""
+
+
+class NoRequestedMomentsError(NoClipCandidatesError):
+    """The user described what to clip and the planner found nothing that matched."""
 
 
 def is_disk_full(error: BaseException) -> bool:
@@ -43,6 +48,8 @@ def safe_processing_error(error: Exception) -> str:
         return "Not enough disk space to save clips"
     if isinstance(error, TimeoutError):
         return "Processing timed out"
+    if isinstance(error, NoRequestedMomentsError):
+        return NO_REQUESTED_MOMENTS_MESSAGE
     if isinstance(error, NoClipCandidatesError):
         return NO_CLIP_CANDIDATES_MESSAGE
     if type(error).__name__ == "VisualPlanningUnsupportedError":
@@ -111,7 +118,7 @@ def safe_job_error_text(error: str | None) -> str | None:
     """Only expose known, fixed messages from stored job state."""
     if error is None:
         return None
-    if error == NO_CLIP_CANDIDATES_MESSAGE:
+    if error in (NO_CLIP_CANDIDATES_MESSAGE, NO_REQUESTED_MOMENTS_MESSAGE):
         return error
     if error in TWITCH_ERRORS.values():
         return error
