@@ -1,11 +1,11 @@
 import type { LibraryClipTarget } from '../shared/library-posting'
-import { app, shell } from 'electron'
+import { app, powerSaveBlocker, shell } from 'electron'
 import { createHash, randomUUID } from 'crypto'
 import { createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
 import { open, unlink } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { pipeline } from 'stream/promises'
-import { MAX_ENHANCEMENT_GUIDANCE, MAX_RESEARCH_URL, needsTikTokReview, AUTOMATION_PLATFORMS, dueSlots, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type GeneratedPlatformMetadata, type AutomationSourceContext, type MetadataEnhancement, type MetadataResearch, type AutomationSourceGroup, type AutomationBatchResult, nextAutomationContent, type AutomationTikTokReview, type AutomationTikTokReviewUpdate } from '../shared/automations'
+import { MAX_ENHANCEMENT_GUIDANCE, MAX_RESEARCH_URL, needsTikTokReview, AUTOMATION_PLATFORMS, dueSlots, missedSlots, recentSlots, slotDueSoon, type Automation, type AutomationAccount, type AutomationContent, type AutomationUpdate, type GeneratedPlatformMetadata, type AutomationSourceContext, type MetadataEnhancement, type MetadataResearch, type AutomationSourceGroup, type AutomationBatchResult, nextAutomationContent, type AutomationTikTokReview, type AutomationTikTokReviewUpdate, validMissedNotice } from '../shared/automations'
 import { isPostableAccount, isZernioId, type ZernioOverview } from '../shared/zernio'
 import { checkCaption, checkClip, defaultFacebookFormat, isValidTimeZone, tiktokOptionsError, youtubeTitleFor, type PostClipRequest } from '../shared/zernio-posts'
 import { loadSettings } from './settings-store'
@@ -16,7 +16,7 @@ import { getTikTokCreatorInfo, inspectAutomationPost, probeClipForPosting, publi
 import type { AutomationReviewResult } from '../shared/automations'
 import { parsePostClipRequest, parseTikTokOptions } from './zernio/posts-payload'
 import { workspaceId } from './zernio/workspace-cache'
-import { logger } from './logger'
+import { errorSummary, logger } from './logger'
 import { generateAutomationMetadata, transcribeAutomationClip, researchAutomationTopic, generateAutomationMetadataBatch, metadataFailureCode, type MetadataBatchClip } from './automation-metadata'
 
 import { completeSourceContext, findLibraryClipForClip, parseSourceContext, recoverSourceContext, sourceFromOutput, sourceResearchKey } from './automation-source'
@@ -168,6 +168,13 @@ function dropInvalidOptionalFields(value: unknown): boolean {
   const drop = (field: string, contentId?: string): void => {
     changed = true
     logger.warn('automation.store.field_dropped', { automationId: typeof automation.id === 'string' ? automation.id.slice(0, 64) : null, contentId: contentId?.slice(0, 64) ?? null, field })
+  }
+  if (automation.missedNotice != null && !validMissedNotice(automation.missedNotice)) { delete automation.missedNotice; drop('missedNotice') }
+  // Builds before missedNotice reported missed slots as a run failure.
+  if (typeof automation.lastError === 'string' && automation.lastError.startsWith('BridgeClip was closed or asleep at ')) {
+    automation.lastError = null
+    automation.lastErrorAcknowledged = false
+    changed = true
   }
   if (automation.sourceResearch !== undefined) {
     if (!Array.isArray(automation.sourceResearch)) { delete automation.sourceResearch; drop('sourceResearch') }
@@ -367,6 +374,7 @@ export function acknowledgeAutomationWarnings(id: unknown, contentId?: unknown):
   try {
     for (const automation of targets) {
       if (contentId === undefined && automation.lastError) automation.lastErrorAcknowledged = true
+      if (contentId === undefined) automation.missedNotice = null
       for (const item of automation.content) if ((contentId === undefined || item.id === contentId) && hasContentWarnings(item)) item.warningsAcknowledged = true
     }
     save(workspace)
@@ -375,6 +383,7 @@ export function acknowledgeAutomationWarnings(id: unknown, contentId?: unknown):
     for (const automation of targets) {
       const old = previous.find((entry) => entry.id === automation.id)!
       automation.lastErrorAcknowledged = old.lastErrorAcknowledged
+      automation.missedNotice = old.missedNotice
       for (const item of automation.content) item.warningsAcknowledged = old.content.find((entry) => entry.id === item.id)?.warningsAcknowledged
     }
     throw error
@@ -472,7 +481,11 @@ export async function updateAutomation(id: unknown, raw: unknown): Promise<Autom
         JSON.stringify(update.accounts.filter((account) => account.platform === 'tiktok').map((account) => account.accountId).sort())) {
       for (const item of automation.content) if (item.status !== 'posted') clearTikTokReview(item)
     }
-    Object.assign(automation, update, { lastSlots: Object.fromEntries(Object.entries(automation.lastSlots).filter(([time]) => update.times.includes(time))) })
+    const lastSlots = Object.fromEntries(Object.entries(automation.lastSlots).filter(([time]) => update.times.includes(time) && automation.enabled))
+    // Enabling, or adding a time, starts from the next occurrence: a slot that
+    // passed before this save is never caught up as a late post.
+    if (update.enabled) for (const slot of recentSlots(update.times, update.timezone, Date.now())) if (slot.minutesAgo >= 5) lastSlots[slot.time] ??= slot.date
+    Object.assign(automation, update, { lastSlots })
     save(workspace)
   } catch (error) {
     Object.assign(automation, previous)
@@ -1119,7 +1132,7 @@ export async function retryAutomationContent(id: unknown, contentId: unknown): P
   return runAutomation(id, undefined, item.id)
 }
 
-export async function runAutomation(id: unknown, slot?: { time: string; date: string }, contentId?: string): Promise<Automation[]> {
+export async function runAutomation(id: unknown, slot?: { time: string; date: string }, contentId?: string, catchUp = false): Promise<Automation[]> {
   const { workspace, automation } = find(id)
   if (slot && (!automation.enabled || automation.lastSlots[slot.time] === slot.date)) return listAutomations()
   if (busy.has(automation.id)) {
@@ -1138,12 +1151,17 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     const message = queued.some((content) => content.metadataDraft) ? DRAFTS_PENDING : queued.length ? TIKTOK_REVIEW_PENDING : NO_QUEUED_CLIPS
     // Warn again for every new blocked slot or manual run, even with the same message.
     const key = slot ? `${slot.date}/${slot.time}` : null
+    let changed = false
+    // A late slot is used up even with nothing ready, so clips added later
+    // wait for the next scheduled time instead of posting the moment they arrive.
+    if (slot && catchUp) { automation.lastSlots[slot.time] = slot.date; changed = true }
     if (automation.lastError !== message || !key || blockedSlots.get(automation.id) !== key) {
       automation.lastError = message
       automation.lastErrorAcknowledged = false
       if (key) blockedSlots.set(automation.id, key)
-      save(workspace)
+      changed = true
     }
+    if (changed) save(workspace)
     return listAutomations()
   }
   const hadTikTokApproval = automation.accounts.some((account) => account.platform === 'tiktok') && item.tiktokApproval != null
@@ -1157,18 +1175,23 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     return listAutomations()
   }
   let submissionStarted = false
+  // Recorded with a failure: error messages can hold titles or paths and stay out of the log.
+  let stage: 'accounts' | 'file' | 'metadata' | 'tiktok' | 'request' | 'publish' = 'accounts'
   busy.add(automation.id)
   try {
     checkProfileAccounts(await getZernioOverview(), automation.profileId, automation.accounts)
     if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
+    stage = 'file'
     const path = join(bankPath(workspace, automation.id), item.fileName)
     if (!isAutomationMedia(path)) throw new Error('Clip file is missing from the content bank.')
     const tiktokTargets = automation.accounts.filter((account) => account.platform === 'tiktok')
     if (tiktokTargets.length) assertApprovedFile(item, path)
     authorizeMedia(path)
+    stage = 'metadata'
     const { facebookFormat, generated } = await prepareMetadata(workspace, automation, item, path)
     // A scheduled run must check current creator permissions even if the user
     // approved seconds ago and the publishing service still has cached info.
+    stage = 'tiktok'
     await Promise.all(tiktokTargets.map((target) => getTikTokCreatorInfo(target.accountId)))
     if (currentWorkspace() !== workspace || !cached.includes(automation)) return []
     if (tiktokTargets.length) assertApprovedFile(item, path)
@@ -1194,7 +1217,9 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
         threads: threads?.topicTag ? { topicTag: threads.topicTag } : undefined
       }
     }
+    stage = 'request'
     parsePostClipRequest(request)
+    stage = 'publish'
     item.status = 'posting'
     item.error = null
     automation.lastRunAt = new Date().toISOString()
@@ -1208,14 +1233,18 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
     if (result.post && !['failed', 'duplicate', 'partial'].includes(result.outcome)) {
       item.status = 'posted'
       item.postedAt = new Date().toISOString()
+      // An on-time scheduled post means the app is running again.
+      if (slot && !catchUp) automation.missedNotice = null
     } else {
       item.status = 'needs_review'
       item.error = result.outcome === 'partial' ? 'Some accounts failed. Check Posts before returning this clip to the queue.' : result.message
       automation.lastError = item.error
       automation.lastErrorAcknowledged = false
       item.warningsAcknowledged = false
+      logger.warn('automation.post.held', { automationId: automation.id, contentId: item.id, outcome: result.outcome })
     }
     save(workspace)
+    if (catchUp && item.status === 'posted') logger.info('automation.slot.caught_up', { automationId: automation.id, contentId: item.id })
   } catch (error) {
     if (currentWorkspace() === workspace && cached.includes(automation)) {
       const message = error instanceof Error ? error.message.slice(0, 500) : 'Posting failed. Check Zernio before retrying.'
@@ -1232,21 +1261,59 @@ export async function runAutomation(id: unknown, slot?: { time: string; date: st
       item.warningsAcknowledged = false
       save(workspace)
     }
-    logger.warn('automation.post.failed', { automationId: automation.id, contentId: item.id })
+    logger.warn('automation.post.failed', { automationId: automation.id, contentId: item.id, stage, submissionStarted, ...errorSummary(error) })
   } finally { release(automation.id) }
   return listAutomations()
 }
 
+/**
+ * Slots that passed while BridgeClip was closed, asleep or restarting. The
+ * newest one still posts, late, unless the next scheduled time is close; the
+ * rest are marked missed and reported, so a long outage never posts a burst.
+ */
+async function catchUpMissedSlots(automationId: string, now: number): Promise<void> {
+  const { workspace, automation } = find(automationId)
+  if (!automation.enabled || busy.has(automation.id)) return
+  const missed = missedSlots(automation.times, automation.timezone, automation.lastSlots, now)
+  if (!missed.length) return
+  const postLate = !slotDueSoon(automation.times, automation.timezone, now)
+  const skipped = postLate ? missed.slice(1) : missed
+  for (const slot of skipped) automation.lastSlots[slot.time] = slot.date
+  if (skipped.length) {
+    save(workspace)
+    logger.warn('automation.slot.missed', { automationId: automation.id, count: skipped.length, cause: 'not_running' })
+  }
+  if (postLate) await runAutomation(automation.id, missed[0], undefined, true)
+  if (currentWorkspace() !== workspace || !cached.includes(automation)) return
+  const late = postLate && automation.content.some((item) => item.status === 'posted' && item.postedAt && Date.parse(item.postedAt) >= now) ? missed[0].time : null
+  if (skipped.length || late) {
+    automation.missedNotice = { date: missed[0].date, skipped: skipped.map((slot) => slot.time).sort(), late }
+    save(workspace)
+  }
+}
+
 export function startAutomationScheduler(): () => void {
+  // Idle sleep stops the scheduler's timers, and a slot that passes while the
+  // Mac sleeps can only post late. Hold the system awake while anything is scheduled.
+  let blocker: number | null = null
+  const keepAwake = (wanted: boolean): void => {
+    try {
+      if (wanted && blocker === null) blocker = powerSaveBlocker.start('prevent-app-suspension')
+      else if (!wanted && blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null }
+    } catch (error) { logger.warn('automation.power.failed', errorSummary(error)) }
+  }
   const tick = (): void => {
     try {
-      if (!loadSettings().zernioApiKey) return
+      if (!loadSettings().zernioApiKey) { keepAwake(false); return }
       const now = Date.now()
-      for (const automation of listAutomations()) {
+      const automations = listAutomations()
+      keepAwake(automations.some((automation) => automation.enabled && automation.times.length > 0))
+      for (const automation of automations) {
         if (!automation.enabled) continue
         // Distinct automations can post together; one slow upload must not delay another account's slot.
         void (async () => {
           for (const slot of dueSlots(automation.times, automation.timezone, now)) await runAutomation(automation.id, slot)
+          await catchUpMissedSlots(automation.id, now)
         })().catch((error) => logger.warn('automation.scheduler.failed', { message: error instanceof Error ? error.message : 'Unknown error' }))
       }
     } catch (error) {
@@ -1255,5 +1322,5 @@ export function startAutomationScheduler(): () => void {
   }
   const timer = setInterval(tick, 15_000)
   setTimeout(tick, 2_000)
-  return () => clearInterval(timer)
+  return () => { clearInterval(timer); keepAwake(false) }
 }

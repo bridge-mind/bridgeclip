@@ -95,7 +95,7 @@ test('no-op and rejected clip edits preserve approval; failed saves roll back pe
 test('a clip approved during a due slot can still post, with fresh creator permissions and no duplicate slot', () => withTikTokBank(async ({ api, id, contentId, request, account, posting }) => {
   const slot = { time: '12:00', date: '2026-09-25' }
   const [waiting] = await api.runAutomation(id, slot)
-  assert.equal(waiting.lastSlots[slot.time], undefined, 'waiting for approval does not consume the posting slot')
+  assert.notEqual(waiting.lastSlots[slot.time], slot.date, 'waiting for approval does not consume the posting slot')
   const review = await api.prepareAutomationTikTokReview(id, contentId)
   await api.approveAutomationTikTokReview(id, contentId, request(review.reviewId))
   assert.equal(api.listAutomations()[0].content[0].tiktokApproval.options.accounts[account._id].allowStitch, false, 'approval freezes disabled interactions as off')
@@ -121,7 +121,7 @@ test('a changed approved clip can be reviewed again during the same due slot', (
   const [changed] = await api.runAutomation(id, slot)
   assert.match(changed.lastError, /clip file changed/i)
   assert.equal(changed.content[0].tiktokApproval, null)
-  assert.equal(changed.lastSlots[slot.time], undefined, 'no upload started, so the due slot remains available')
+  assert.notEqual(changed.lastSlots[slot.time], slot.date, 'no upload started, so the due slot remains available')
   assert.equal(posting.state.uploads.length, 0)
 
   const fresh = await api.prepareAutomationTikTokReview(id, contentId)

@@ -70,7 +70,7 @@ test('a slot that comes due during a long enhancement posts when the lock frees,
   const slot = { time: '12:00', date: '2026-09-28' }
   await f.main.automations.runAutomation(f.id, slot)
   assert.equal(f.posting.state.creates.length, 0, 'the lock is held, so nothing posts yet')
-  assert.equal(f.bank().lastSlots['12:00'], undefined, 'the slot is not consumed while waiting')
+  assert.notEqual(f.bank().lastSlots['12:00'], slot.date, 'the slot is not consumed while waiting')
   await enhancing
   f.chat.delay = 0
   await waitFor(() => f.posting.state.creates.length === 1 && f.bank().content[1].status === 'posted', 'the deferred slot posted')

@@ -152,6 +152,24 @@ export interface Automation {
   lastRunAt: string | null
   lastError: string | null
   lastErrorAcknowledged?: boolean
+  /** Slots that passed while BridgeClip was closed or asleep. Informational, not a failure. */
+  missedNotice?: MissedSlotNotice | null
+}
+
+export interface MissedSlotNotice {
+  /** Local YYYY-MM-DD of the newest slot involved. */
+  date: string
+  /** HH:mm slots that were skipped. */
+  skipped: string[]
+  /** HH:mm slot that still posted, late; null when none did. */
+  late: string | null
+}
+
+export function validMissedNotice(value: unknown): value is MissedSlotNotice {
+  const notice = value as MissedSlotNotice
+  const time = (entry: unknown): boolean => typeof entry === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(entry)
+  return Boolean(notice && typeof notice === 'object' && typeof notice.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(notice.date) &&
+    Array.isArray(notice.skipped) && notice.skipped.length <= 24 && notice.skipped.every(time) && (notice.late === null || time(notice.late)))
 }
 
 export function hasContentWarnings(item: AutomationContent): boolean {
@@ -226,4 +244,46 @@ export function dueSlots(times: readonly string[], timezone: string, now: number
     if (wanted.has(time) && !found.has(key)) { found.add(key); slots.push({ time, date }) }
   }
   return slots
+}
+
+/** Slots this old or newer are posted late after a closed or sleeping app; older ones are only reported. */
+export const CATCH_UP_HOURS = 12
+/** A late post is skipped when the next scheduled slot is this close, so two posts never land together. */
+export const CATCH_UP_GAP_MINUTES = 30
+
+/** The most recent past occurrence of each daily time in the time zone, newest first. */
+export function recentSlots(times: readonly string[], timezone: string, now: number): { time: string; date: string; minutesAgo: number }[] {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    hourCycle: 'h23'
+  })
+  const at = (instant: number): { date: string; minutes: number } => {
+    const parts = Object.fromEntries(formatter.formatToParts(instant).map((part) => [part.type, part.value]))
+    return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) }
+  }
+  const today = at(now)
+  const yesterday = at(now - 86_400_000).date
+  return [...new Set(times)].map((time) => {
+    const minutes = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5))
+    return minutes <= today.minutes
+      ? { time, date: today.date, minutesAgo: today.minutes - minutes }
+      : { time, date: yesterday, minutesAgo: today.minutes + 1440 - minutes }
+  }).sort((a, b) => a.minutesAgo - b.minutesAgo)
+}
+
+/**
+ * Slots that passed outside the restart grace period without a run, newest
+ * first: BridgeClip was closed, asleep or restarting at that time. A time with
+ * no recorded run yet never counts, so a newly added time cannot post at once.
+ */
+export function missedSlots(times: readonly string[], timezone: string, lastSlots: Readonly<Record<string, string>>, now: number, graceMinutes = 5): { time: string; date: string }[] {
+  return recentSlots(times, timezone, now)
+    .filter((slot) => slot.minutesAgo >= graceMinutes && slot.minutesAgo < CATCH_UP_HOURS * 60 &&
+      lastSlots[slot.time] !== undefined && lastSlots[slot.time] < slot.date)
+    .map(({ time, date }) => ({ time, date }))
+}
+
+/** True when a slot is due now or within CATCH_UP_GAP_MINUTES. */
+export function slotDueSoon(times: readonly string[], timezone: string, now: number, graceMinutes = 5): boolean {
+  return recentSlots(times, timezone, now).some((slot) => slot.minutesAgo < graceMinutes || 1440 - slot.minutesAgo <= CATCH_UP_GAP_MINUTES)
 }

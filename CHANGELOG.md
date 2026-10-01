@@ -36,6 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 - **Bake all** keeps going when one clip fails, and says what went wrong.
 - Titles with emoji at the length limit no longer break editor projects.
 - Automations: submitted and held clips can be removed, posted clips no longer count toward the 500-clip limit, a post deleted in Zernio no longer leaves its clip stuck, slots that come due during an enhancement are kept, and one pending draft no longer blocks the rest of the queue.
+- Automations no longer silently skip posts when BridgeClip was closed, asleep or restarting at a scheduled time. When it opens again, the most recent missed time from the last 12 hours posts late, unless another scheduled time is less than 30 minutes away. The automation lists any other missed times as a note, not as a failed run. While an automation is scheduled, BridgeClip keeps your computer from going to sleep when idle.
 - Unattended posts no longer use text from the source video's description, and refuse web addresses or @handles that aren't said in the video.
 - Deleting a clip also removes its caption and YouTube text files.
 - A missing transcript shows a clear message, and research citations can be selected and copied.

@@ -27,6 +27,120 @@ test('daily slots use the configured time zone and include a short restart grace
   assert.deepEqual(dueSlots(['20:00'], 'America/New_York', now), [{ time: '20:00', date: '2026-09-24' }])
 })
 
+test('missed slots cover a closed app, newest first, within the catch-up window', () => {
+  const { missedSlots, slotDueSoon, recentSlots } = loadMain("export { missedSlots, slotDueSoon, recentSlots } from './src/shared/automations'", { electron: {} })
+  const now = Date.parse('2026-10-01T23:40:00Z') // 19:40 in New York
+  const tz = 'America/New_York'
+  assert.deepEqual(recentSlots(['21:00', '09:00'], tz, now).map((slot) => [slot.time, slot.date, slot.minutesAgo]),
+    [['09:00', '2026-10-01', 640], ['21:00', '2026-09-30', 1360]])
+  const times = ['07:00', '09:00', '11:00', '13:00', '15:00', '19:00', '21:00']
+  const lastSlots = { '07:00': '2026-09-29', '09:00': '2026-09-29', '11:00': '2026-09-29', '13:00': '2026-10-01', '15:00': '2026-09-27', '19:00': '2026-10-01', '21:00': '2026-09-27' }
+  assert.deepEqual(missedSlots(times, tz, lastSlots, now), [
+    { time: '15:00', date: '2026-10-01' }, { time: '11:00', date: '2026-10-01' }, { time: '09:00', date: '2026-10-01' }
+  ], 'run slots, slots older than the window and the grace period are excluded')
+  assert.deepEqual(missedSlots(['19:38'], tz, { '19:38': '2026-09-30' }, now), [], 'the restart grace period belongs to dueSlots')
+  assert.deepEqual(missedSlots(['15:00'], tz, {}, now), [], 'a time with no recorded run never posts late')
+  assert.equal(slotDueSoon(times, tz, now), false)
+  assert.equal(slotDueSoon(times, tz, Date.parse('2026-10-02T00:31:00Z')), true, 'the 21:00 slot is 29 minutes away')
+  assert.equal(slotDueSoon(times, tz, Date.parse('2026-10-01T23:02:00Z')), true, 'the 19:00 slot is due now')
+})
+
+test('a closed app posts the newest missed slot late and reports the rest', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-automation-catch-up-')
+  const posting = createPostingMock()
+  const mock = await createMockZernio({ apiKey: KEY, extraRoutes: posting.routes })
+  const previousUrl = process.env.BRIDGECLIP_ZERNIO_API_URL
+  const previousPath = process.env.PATH
+  process.env.BRIDGECLIP_ZERNIO_API_URL = mock.apiUrl
+  process.env.PATH = `${previousPath}${path.delimiter}${path.join(ROOT, 'engine-bin')}`
+  const realNow = Date.now
+  let stop = () => {}
+  try {
+    Date.now = () => Date.parse('2026-10-01T16:00:00Z')
+    const library = path.join(dir, 'library')
+    const clips = [makeClip(path.join(library, 'one.mp4')), makeClip(path.join(library, 'two.mp4'), 'red')]
+    const { electron } = fakeElectron(dir)
+    const blockers = { started: 0, stopped: 0 }
+    electron.powerSaveBlocker = { start: () => ++blockers.started, stop: () => { blockers.stopped += 1 } }
+    const source = "export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'"
+    const main = loadMain(source, { electron })
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3' })
+    const [profile] = mock.state.profiles
+    const youtube = mock.addAccount('youtube', profile._id)
+    const [created] = main.automations.createAutomation('Catch up')
+    const [enabled] = await main.automations.updateAutomation(created.id, {
+      name: created.name, enabled: true, profileId: profile._id, metadataMode: 'manual', timezone: 'UTC', times: ['09:00', '11:00', '15:00'],
+      youtubeVisibility: 'unlisted', youtubeMadeForKids: false, accounts: [{ platform: 'youtube', accountId: youtube._id }]
+    })
+    assert.deepEqual(enabled.lastSlots, { '09:00': '2026-10-01', '11:00': '2026-10-01', '15:00': '2026-10-01' }, 'enabling never catches up earlier slots')
+    await main.automations.addAutomationContent(created.id, clips)
+
+    // BridgeClip was closed since Sep 29.
+    const dataFile = fs.readdirSync(path.join(dir, 'userData')).find((name) => /^automations-[a-f0-9]{64}\.json$/.test(name))
+    const dataPath = path.join(dir, 'userData', dataFile)
+    const saved = JSON.parse(fs.readFileSync(dataPath, 'utf8'))
+    saved.automations[0].lastSlots = { '09:00': '2026-09-29', '11:00': '2026-09-29', '15:00': '2026-09-29' }
+    fs.writeFileSync(dataPath, JSON.stringify(saved))
+    const restarted = loadMain(source, { electron })
+    stop = restarted.automations.startAutomationScheduler()
+    for (let i = 0; i < 200 && !restarted.automations.listAutomations()[0].missedNotice; i++) await new Promise((resolve) => setTimeout(resolve, 100))
+    stop()
+    const [after] = restarted.automations.listAutomations()
+    assert.equal(posting.state.creates.length, 1, 'only one late post')
+    assert.deepEqual(after.content.map((item) => item.status), ['posted', 'queued'])
+    assert.deepEqual(after.lastSlots, { '09:00': '2026-10-01', '11:00': '2026-10-01', '15:00': '2026-10-01' })
+    assert.equal(after.lastError, null, 'a late post is not a failed run')
+    assert.deepEqual(after.missedNotice, { date: '2026-10-01', skipped: ['09:00', '11:00'], late: '15:00' })
+    restarted.automations.acknowledgeAutomationWarnings(created.id)
+    assert.equal(restarted.automations.listAutomations()[0].missedNotice, null, 'acknowledging clears the notice')
+
+    // The earlier build reported misses as a failed run; that message is cleared on load.
+    const legacy = JSON.parse(fs.readFileSync(dataPath, 'utf8'))
+    legacy.automations[0].lastError = 'BridgeClip was closed or asleep at 09:00, 11:00, so those posts were skipped.'
+    fs.writeFileSync(dataPath, JSON.stringify(legacy))
+    assert.equal(loadMain(source, { electron }).automations.listAutomations()[0].lastError, null)
+    assert.deepEqual(blockers, { started: 1, stopped: 1 }, 'the system stays awake while a schedule is active')
+  } finally {
+    stop()
+    Date.now = realNow
+    if (previousUrl === undefined) delete process.env.BRIDGECLIP_ZERNIO_API_URL
+    else process.env.BRIDGECLIP_ZERNIO_API_URL = previousUrl
+    process.env.PATH = previousPath
+    await mock.close()
+    cleanup()
+  }
+})
+
+test('a late slot with nothing ready is used up, so new clips wait for the next time', async () => {
+  const { dir, cleanup } = tempDir('bridgeclip-automation-catch-up-empty-')
+  const mock = await createMockZernio({ apiKey: KEY })
+  const previousUrl = process.env.BRIDGECLIP_ZERNIO_API_URL
+  process.env.BRIDGECLIP_ZERNIO_API_URL = mock.apiUrl
+  try {
+    const main = loadMain("export * as automations from './src/main/automations'; export * as settings from './src/main/settings-store'", { electron: fakeElectron(dir).electron })
+    main.settings.replaceApiKey('zernioApiKey', KEY)
+    const [profile] = mock.state.profiles
+    const youtube = mock.addAccount('youtube', profile._id)
+    const [created] = main.automations.createAutomation('Empty')
+    await main.automations.updateAutomation(created.id, {
+      name: created.name, enabled: true, profileId: profile._id, metadataMode: 'manual', timezone: 'UTC', times: ['09:00'],
+      youtubeVisibility: 'unlisted', youtubeMadeForKids: false, accounts: [{ platform: 'youtube', accountId: youtube._id }]
+    })
+    const slot = { time: '09:00', date: '2099-01-01' }
+    const [due] = await main.automations.runAutomation(created.id, slot)
+    assert.notEqual(due.lastSlots['09:00'], slot.date, 'an on-time slot keeps its grace period for clips added in it')
+    const [late] = await main.automations.runAutomation(created.id, slot, undefined, true)
+    assert.equal(late.lastSlots['09:00'], slot.date)
+    assert.equal(late.lastError, 'No queued clips are available.')
+  } finally {
+    if (previousUrl === undefined) delete process.env.BRIDGECLIP_ZERNIO_API_URL
+    else process.env.BRIDGECLIP_ZERNIO_API_URL = previousUrl
+    await mock.close()
+    cleanup()
+  }
+})
+
 test('reordered queues and original media provenance survive a fresh load', async () => {
   const { dir, cleanup } = tempDir('bridgeclip-reorder-')
   try {

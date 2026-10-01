@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from '@hello-pangea/dnd'
 import { Check, FolderOpen, GripVertical, Info, Pencil, Play, Plus, RefreshCw, Sparkles, Trash2, Workflow, X } from 'lucide-react'
 import { canReorderContent, reorderQueuedContent, hasAutomationWarnings, hasContentWarnings, hasEnhancedMetadata } from '../../shared/automations'
-import { MAX_ENHANCEMENT_GUIDANCE, AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate, type AutomationSourceGroup } from '../../shared/automations'
+import { MAX_ENHANCEMENT_GUIDANCE, AUTOMATION_PLATFORMS, needsTikTokReview, nextAutomationContent, type Automation, type AutomationContent, type AutomationContentStatus, type AutomationUpdate, type AutomationSourceGroup, type MissedSlotNotice } from '../../shared/automations'
 import { isPostableAccount, isValidProfileName } from '../../shared/zernio'
 import { AutomationTikTokReviewDialog } from '../components/AutomationTikTokReviewDialog'
 import { ZernioStatusCheck } from '../components/ZernioStatusCheck'
@@ -52,6 +52,17 @@ function missingSetup(value: Pick<AutomationUpdate, 'profileId' | 'accounts' | '
 function formatTime(time: string): string {
   const [hours, minutes] = time.split(':').map(Number)
   return `${((hours + 11) % 12) + 1}:${String(minutes).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`
+}
+
+function timeList(times: readonly string[]): string {
+  const labels = times.map(formatTime)
+  return labels.length <= 1 ? labels.join('') : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
+}
+
+function missedNoticeText(notice: MissedSlotNotice): string {
+  const skipped = notice.skipped.length
+    ? `Skipped ${timeList(notice.skipped)} because BridgeClip was closed or asleep.` : 'BridgeClip was closed or asleep at the scheduled time.'
+  return `${skipped}${notice.late ? ` The ${formatTime(notice.late)} post went out late.` : ''} Keep BridgeClip open to post on schedule.`
 }
 
 /** The next daily slot in the automation's own time zone. */
@@ -523,6 +534,7 @@ export function AutomationsPage({ onNavigate, onViewLibrary }: { onNavigate: (pa
                     >Run now</Button>
                     <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${selected.name}`} title="Delete automation" icon={<Trash2 className="h-3.5 w-3.5" />} disabled={Boolean(busy)} onClick={remove} />
                   </div>
+                  {selected.missedNotice && <p className="basis-full text-2xs text-ink-subtle" data-selectable>{missedNoticeText(selected.missedNotice)}</p>}
                   {(selected.lastError || hasAutomationWarnings(selected)) && <div className="flex basis-full flex-wrap items-start justify-between gap-2">
                     {selected.lastError && <details className="min-w-0 flex-1 text-2xs">
                       <summary className={cn('w-fit cursor-pointer', selected.lastErrorAcknowledged ? 'text-ink-subtle' : 'text-warning')}>{selected.lastErrorAcknowledged ? 'Previous run issue · Acknowledged' : 'Last run failed · View details'}</summary>
