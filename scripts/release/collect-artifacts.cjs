@@ -9,7 +9,7 @@ const targets = {
   'mac-arm64': { metadata: 'latest-mac.yml', extensions: ['dmg', 'zip'] },
   'mac-x64': { metadata: 'latest-mac.yml', extensions: ['dmg', 'zip'] },
   'windows-x64': { metadata: 'latest.yml', extensions: ['exe'] },
-  'linux-x64': { metadata: 'latest-linux.yml', extensions: ['AppImage', 'deb'] }
+  'linux-x64': { metadata: 'latest-linux.yml', extensions: ['AppImage', 'deb', 'rpm'] }
 }
 const platformTargets = {
   all: Object.keys(targets),
@@ -40,9 +40,10 @@ async function collect(root, output, version, sourceSha, platform = 'all') {
       const name = `BridgeClip-${version}-${platform}-${target.split('-').at(-1)}.${extension}`
       const file = path.join(directory, name)
       if (!fs.lstatSync(file).isFile()) throw new Error(`Missing release asset ${name}`)
-      // These are the actual updater payloads for each platform. A valid hash
-      // for a differently named file is not a complete update feed.
-      if (['zip', 'exe', 'AppImage'].includes(extension) && !doc.files.some(entry => entry.url === name)) {
+      // These are the actual updater payloads for each platform; DEB and RPM
+      // installs update from their own package. A valid hash for a differently
+      // named file is not a complete update feed.
+      if (['zip', 'exe', 'AppImage', 'deb', 'rpm'].includes(extension) && !doc.files.some(entry => entry.url === name)) {
         throw new Error(`Update metadata omits ${name}`)
       }
       fs.copyFileSync(file, path.join(output, name), fs.constants.COPYFILE_EXCL)

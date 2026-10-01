@@ -3,6 +3,7 @@
 
 bridgeclip/.github/ISSUE_TEMPLATE/bug_report.yml
 bridgeclip/.github/PULL_REQUEST_TEMPLATE.md
+bridgeclip/.github/workflows/linux-packages.yml
 bridgeclip/.github/dependabot.yml
 bridgeclip/.gitignore
 bridgeclip/CODE_OF_CONDUCT.md
@@ -24,6 +25,14 @@ bridgeclip/build/entitlements.mac.plist
 bridgeclip/build/icon.icns
 bridgeclip/build/icon.ico
 bridgeclip/build/icon.png
+bridgeclip/build/icons/16x16.png
+bridgeclip/build/icons/24x24.png
+bridgeclip/build/icons/32x32.png
+bridgeclip/build/icons/48x48.png
+bridgeclip/build/icons/64x64.png
+bridgeclip/build/icons/128x128.png
+bridgeclip/build/icons/256x256.png
+bridgeclip/build/icons/512x512.png
 bridgeclip/docs/ARCHITECTURE.md
 bridgeclip/docs/AV_SYNC_REVIEW_2026-09-24.md
 bridgeclip/docs/OPEN_SOURCE_READINESS.md
@@ -59,9 +68,11 @@ bridgeclip/scripts/prepare-resources.sh
 bridgeclip/scripts/public-draft-manifest.txt
 bridgeclip/scripts/resource-staging.test.cjs
 bridgeclip/scripts/stage-ffmpeg-libs-mac.sh
+bridgeclip/scripts/stage-runtime.test.cjs
 bridgeclip/scripts/stage-python-license.sh
 bridgeclip/scripts/verify-packaged-mac.sh
 bridgeclip/src/main/auto-updater.ts
+bridgeclip/src/main/password-store.ts
 bridgeclip/src/main/automation-metadata.ts
 bridgeclip/src/main/automations.ts
 bridgeclip/src/main/file-manager.ts
@@ -282,6 +293,7 @@ bridgeclip/scripts/release/collect-artifacts.cjs
 bridgeclip/scripts/release/refresh-metadata.cjs
 bridgeclip/scripts/release/verify-windows.ps1
 bridgeclip/scripts/release/build-launcher.ps1
+bridgeclip/scripts/release/linux-package-smoke.sh
 bridgeclip/scripts/release/verify-runtime.py
 bridgeclip/scripts/release/stage-runtime.py
 bridgeclip/scripts/release/windows-config.cjs
@@ -313,3 +325,5 @@ bridgeclip/tests/audit-renderer.test.cjs
 bridgeclip/tests/main/audit-main-core.test.cjs
 bridgeclip/tests/main/audit-pipeline.test.cjs
 bridgeclip/tests/zernio/audit-zernio.test.cjs
+bridgeclip/tests/main/password-store.test.cjs
+bridgeclip/tests/main/key-storage.e2e.cjs

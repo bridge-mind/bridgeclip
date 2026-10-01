@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,10 @@ def main():
     assert BRIDGE_CONTRACT_VERSION == 3 and LayoutAnalyzer().available
     assert cv2.__version__ and yt_dlp.version.__version__ and callable(run_editor)
     subprocess.run([str(binaries / f"yt-dlp{suffix}"), "--version"], check=True, timeout=20)
+    if sys.platform == "linux":
+        # YouTube challenges need a JavaScript runtime; Linux releases ship Deno.
+        deno = yt_dlp.YoutubeDL({"quiet": True})._js_runtimes["deno"].info
+        assert deno and deno.supported and shutil.which("deno") == str(binaries / "deno"), deno
     with tempfile.TemporaryDirectory(prefix="BridgeClip packaged smoke ") as temporary:
         work = Path(temporary)
         source, output = work / "source.mp4", work / "output.mp4"
@@ -54,7 +59,7 @@ def main():
             source_height=240, include_captions=False, apply_padding=False, pacing="natural",
             manual_ranges_ms=[(0, 3000)], manual_plan=manual_plan({"width": 320, "height": 240}, edit))))
         assert moved.stat().st_size > 0
-    print("Packaged H.264, captions, speed, audio, editor movement, framing model and downloader passed")
+    print("Packaged H.264, captions, speed, audio, editor movement, framing model, downloader and its JavaScript runtime passed")
 
 
 if __name__ == "__main__":

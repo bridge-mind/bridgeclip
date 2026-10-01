@@ -10,6 +10,8 @@ export type UpdatesOffReason =
   | 'move-to-applications'
   /** Turned off with BRIDGECLIP_DISABLE_AUTO_UPDATE. */
   | 'disabled'
+  /** A Linux copy that isn't the AppImage, DEB or RPM, such as an extracted AppImage, which the updater can't replace. */
+  | 'unsupported-install'
 
 export interface UpdateProgress {
   percent: number
@@ -33,10 +35,11 @@ export type UpdateState = Base & (
   | { status: 'downloading'; version: string; progress: UpdateProgress | null }
   /**
    * Downloaded and checked against its SHA-512 (and on Windows, its signature):
-   * installs on restart, or the next time BridgeClip quits. On macOS, Squirrel
-   * checks the signature just after this; a failure there becomes 'error'.
+   * installs on restart and, when `installsOnQuit`, the next time BridgeClip
+   * quits. On macOS, Squirrel checks the signature just after this; a failure
+   * there becomes 'error'.
    */
-  | { status: 'ready'; version: string }
+  | { status: 'ready'; version: string; installsOnQuit: boolean }
   | { status: 'error'; message: string }
 )
 
@@ -51,7 +54,7 @@ export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
  * the network stack or electron-updater can include URLs and paths, so only
  * known codes are translated and everything else gets a generic message.
  */
-export function updateErrorMessage(error: unknown): string {
+export function updateErrorMessage(error: unknown, during: 'check' | 'install' = 'check'): string {
   const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : ''
   // Electron's net module reports failures as "net::ERR_…" messages without a code.
   const message = error instanceof Error ? error.message : ''
@@ -66,5 +69,6 @@ export function updateErrorMessage(error: unknown): string {
   if (code === 'ERR_CHECKSUM_MISMATCH' || code === 'ERR_UPDATER_INVALID_SIGNATURE') {
     return 'The downloaded update failed verification and was discarded.'
   }
+  if (during === 'install') return 'Could not install the update. Try again, or download it from GitHub Releases.'
   return 'Could not check for or download the update. Try again later.'
 }

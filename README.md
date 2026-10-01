@@ -35,7 +35,7 @@ Get BridgeClip from **[bridgeclip.ai](https://www.bridgeclip.ai)** or [GitHub Re
 | --- | --- | --- |
 | macOS | Apple silicon, Intel | Open the matching DMG and drag BridgeClip to Applications. |
 | Windows | x64 | Run the signed EXE installer. |
-| Linux | x64 | Install the DEB, or make the AppImage executable and open it. |
+| Linux | x64 | Install the DEB (Debian, Ubuntu) or RPM (Fedora, openSUSE), or make the AppImage executable and open it. On Ubuntu 24.04 and later, use the DEB. |
 
 Packages include Python, FFmpeg and yt-dlp. macOS builds are signed and notarized; Linux needs an unlocked desktop secret service to save API keys. Installed releases support [automatic updates](docs/usage.md#automatic-updates).
 

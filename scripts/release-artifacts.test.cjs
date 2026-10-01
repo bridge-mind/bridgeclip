@@ -32,7 +32,7 @@ test('Linux artifact names stay consistent across Builder architecture aliases',
   for (const method of ['artifactPatternConfig', 'expandArtifactNamePattern', 'computeArtifactName', 'expandMacro']) {
     packager[method] = PlatformPackager.prototype[method]
   }
-  for (const extension of ['AppImage', 'deb']) {
+  for (const extension of ['AppImage', 'deb', 'rpm']) {
     assert.equal(packager.expandArtifactNamePattern({}, extension, Arch.x64), `BridgeClip-1.2.3-linux-x64.${extension}`)
   }
 })
@@ -60,7 +60,7 @@ test('a release includes all platforms and metadata matches the final bytes', as
   const manifest = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
   assert.equal(manifest.sourceSha, 'a'.repeat(40))
   assert.equal(manifest.platform, 'all')
-  assert.equal(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb)$/.test(file.name)).length, 7)
+  assert.equal(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb|rpm)$/.test(file.name)).length, 8)
   assert.equal(yaml.load(fs.readFileSync(path.join(output, 'latest-mac.yml'), 'utf8')).files.length, 4)
   for (const entry of manifest.files) assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(output, entry.name))).digest('hex'), entry.sha256)
 })
@@ -71,13 +71,32 @@ test('a Mac-only release includes both architectures and no other update feed', 
   await collect(root, output, '1.2.3', 'a'.repeat(40), 'macos')
   const manifest = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
   assert.equal(manifest.platform, 'macos')
-  assert.deepEqual(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb)$/.test(file.name)).map(file => file.name).sort(), [
+  assert.deepEqual(manifest.files.filter(file => /\.(dmg|zip|exe|AppImage|deb|rpm)$/.test(file.name)).map(file => file.name).sort(), [
     'BridgeClip-1.2.3-mac-arm64.dmg', 'BridgeClip-1.2.3-mac-arm64.zip',
     'BridgeClip-1.2.3-mac-x64.dmg', 'BridgeClip-1.2.3-mac-x64.zip'
   ])
   assert.equal(yaml.load(fs.readFileSync(path.join(output, 'latest-mac.yml'), 'utf8')).files.length, 4)
   assert.equal(fs.existsSync(path.join(output, 'latest.yml')), false)
   assert.equal(fs.existsSync(path.join(output, 'latest-linux.yml')), false)
+})
+test('a Linux release ships the AppImage, DEB and RPM with one update feed', async t => {
+  const root = fixture(t), output = path.join(root, 'publish')
+  for (const target of ['mac-arm64', 'mac-x64', 'windows-x64']) fs.rmSync(path.join(root, target), { recursive: true })
+  await collect(root, output, '1.2.3', 'a'.repeat(40), 'linux')
+  const manifest = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
+  const packages = ['BridgeClip-1.2.3-linux-x64.AppImage', 'BridgeClip-1.2.3-linux-x64.deb', 'BridgeClip-1.2.3-linux-x64.rpm']
+  assert.deepEqual(manifest.files.map(file => file.name).filter(name => packages.includes(name)), packages)
+  assert.deepEqual(yaml.load(fs.readFileSync(path.join(output, 'latest-linux.yml'), 'utf8')).files.map(file => file.url), packages)
+  assert.equal(fs.existsSync(path.join(output, 'latest-mac.yml')), false)
+})
+test('a Linux release fails without the RPM or without its update entry', async t => {
+  const root = fixture(t), directory = path.join(root, 'linux-x64'), rpm = 'BridgeClip-1.2.3-linux-x64.rpm'
+  const filename = path.join(directory, 'latest-linux.yml'), metadata = yaml.load(fs.readFileSync(filename, 'utf8'))
+  fs.writeFileSync(filename, yaml.dump({ ...metadata, files: metadata.files.filter(file => file.url !== rpm) }))
+  await assert.rejects(collect(root, path.join(root, 'no-entry'), '1.2.3', 'a'.repeat(40), 'linux'), /Update metadata omits BridgeClip-1\.2\.3-linux-x64\.rpm/)
+  fs.writeFileSync(filename, yaml.dump(metadata))
+  fs.rmSync(path.join(directory, rpm))
+  await assert.rejects(collect(root, path.join(root, 'no-rpm'), '1.2.3', 'a'.repeat(40), 'linux'), /ENOENT|Missing release asset/)
 })
 test('invalid platform and incomplete selected platform fail closed', async t => {
   const root = fixture(t)

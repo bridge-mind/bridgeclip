@@ -13,7 +13,7 @@ import { ConfirmDialog, type ConfirmRequest } from './ui/ConfirmDialog'
  * Restart into the downloaded update. Restarting stops clipping jobs, so ask
  * first when any are queued or running.
  */
-function useRestartToUpdate(): { restart: () => void; dialog: React.JSX.Element | null } {
+function useRestartToUpdate(installsOnQuit: boolean): { restart: () => void; dialog: React.JSX.Element | null } {
   const activeJobs = useActiveJobs().length
   const [request, setRequest] = useState<ConfirmRequest | null>(null)
   const close = useCallback(() => setRequest(null), [])
@@ -22,7 +22,7 @@ function useRestartToUpdate(): { restart: () => void; dialog: React.JSX.Element 
     if (activeJobs === 0) return install()
     setRequest({
       title: 'Restart to update?',
-      body: `${activeJobs === 1 ? 'A clipping job is' : `${activeJobs} clipping jobs are`} still running. Restarting stops ${activeJobs === 1 ? 'it' : 'them'}; the update also installs the next time you quit BridgeClip.`,
+      body: `${activeJobs === 1 ? 'A clipping job is' : `${activeJobs} clipping jobs are`} still running. Restarting stops ${activeJobs === 1 ? 'it' : 'them'}${installsOnQuit ? '; the update also installs the next time you quit BridgeClip.' : '.'}`,
       confirmLabel: 'Restart anyway',
       tone: 'danger',
       onConfirm: install
@@ -34,7 +34,7 @@ function useRestartToUpdate(): { restart: () => void; dialog: React.JSX.Element 
 /** Sidebar footer: appears once an update has downloaded. */
 export function SidebarUpdateButton({ expanded }: { expanded: boolean }): React.JSX.Element | null {
   const update = useUpdateStore((s) => s.update)
-  const { restart, dialog } = useRestartToUpdate()
+  const { restart, dialog } = useRestartToUpdate(update?.status === 'ready' && update.installsOnQuit)
   if (update?.status !== 'ready') return null
   const label = `BridgeClip ${update.version} is ready. Restart to update`
   return (
@@ -64,7 +64,8 @@ function describe(update: UpdateState): string {
         development: 'Updates are off when running from source. Pull the latest code to update.',
         unofficial: 'Updates are off for builds not signed by BridgeMind. Download the official app from bridgeclip.ai to get updates.',
         'move-to-applications': 'Move BridgeClip to your Applications folder to get updates.',
-        disabled: 'Updates are turned off (BRIDGECLIP_DISABLE_AUTO_UPDATE).'
+        disabled: 'Updates are turned off (BRIDGECLIP_DISABLE_AUTO_UPDATE).',
+        'unsupported-install': 'This copy can’t update itself. Install the AppImage, DEB or RPM from bridgeclip.ai or GitHub Releases to get updates.'
       }[update.reason]
     case 'idle':
       return `BridgeClip checks for updates automatically.${checked}`
@@ -77,7 +78,9 @@ function describe(update: UpdateState): string {
       return `Downloading version ${update.version}…${percent}`
     }
     case 'ready':
-      return `Version ${update.version} is ready. Restart to install it, or it installs the next time you quit.`
+      return update.installsOnQuit
+        ? `Version ${update.version} is ready. Restart to install it, or it installs the next time you quit.`
+        : `Version ${update.version} is ready. Restart to install it; your system asks for an administrator password.`
     case 'error':
       return `${update.message}${checked}`
   }
@@ -86,7 +89,7 @@ function describe(update: UpdateState): string {
 /** Settings → About: current state and the one action that fits it. */
 export function UpdatesRow(): React.JSX.Element | null {
   const update = useUpdateStore((s) => s.update)
-  const { restart, dialog } = useRestartToUpdate()
+  const { restart, dialog } = useRestartToUpdate(update?.status === 'ready' && update.installsOnQuit)
   if (!update) return null
   const api = getApi().update
   const busy = update.status === 'checking' || update.status === 'downloading'

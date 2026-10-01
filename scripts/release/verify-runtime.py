@@ -11,7 +11,10 @@ from pathlib import Path
 def verify(resources):
     resources = Path(resources).resolve()
     interpreter = resources / "engine-venv" / ("python.exe" if sys.platform == "win32" else "bin/python3")
-    for required in ["LICENSE", "THIRD_PARTY_NOTICES.md", "RENDERER-THIRD-PARTY-LICENSES.txt", "engine-venv/PYTHON-LICENSE", "engine-bin/FFMPEG-LICENSE"]:
+    required_files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "RENDERER-THIRD-PARTY-LICENSES.txt", "engine-venv/PYTHON-LICENSE", "engine-bin/FFMPEG-LICENSE"]
+    if sys.platform == "linux":
+        required_files.append("engine-bin/DENO-LICENSE")
+    for required in required_files:
         if not (resources / required).is_file():
             raise RuntimeError(f"Missing packaged resource: {required}")
     environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(resources / "engine")}

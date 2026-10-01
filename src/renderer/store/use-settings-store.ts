@@ -24,6 +24,7 @@ let latestToolCheck = 0
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   openrouterConfigured: false,
   zernioConfigured: false,
+  unreadableKeys: [],
   ...JEV_DEFAULTS,
   ...JEV_FEATURE_DEFAULTS,
   outputDirectory: '',
@@ -100,6 +101,7 @@ function pickSettings(s: ClipSettings): ClipSettings {
     jevVisualContext: s.jevVisualContext ?? JEV_FEATURE_DEFAULTS.jevVisualContext,
     sourceContextWebResearch: s.sourceContextWebResearch ?? JEV_FEATURE_DEFAULTS.sourceContextWebResearch,
     zernioConfigured: s.zernioConfigured,
+    unreadableKeys: s.unreadableKeys ?? [],
     outputDirectory: s.outputDirectory,
     pythonPath: s.pythonPath,
     customVocabulary: s.customVocabulary

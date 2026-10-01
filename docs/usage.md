@@ -10,15 +10,15 @@ Choose your platform on [bridgeclip.ai](https://www.bridgeclip.ai) or [GitHub Re
 
 - **macOS (Apple silicon or Intel):** open the matching DMG and drag BridgeClip to Applications. Official builds are Developer ID signed and notarized by Apple.
 - **Windows x64:** run the signed EXE installer.
-- **Linux x64:** install the DEB with your package manager, or make the AppImage executable before opening it. An unlocked desktop secret service is required to save API keys.
+- **Linux x64:** install the DEB (Debian, Ubuntu) or the RPM (Fedora, RHEL, openSUSE) with your package manager, or make the AppImage executable before opening it. The AppImage needs no extra libraries such as libfuse2. On Ubuntu 24.04 and later, prefer the DEB: Ubuntu blocks the Chromium sandbox for AppImages, so an AppImage there runs without it. An unlocked desktop keyring (GNOME Keyring, KWallet, or another Secret Service provider such as KeePassXC) is required to save API keys, on any desktop including sway, i3 and Hyprland.
 
 See [release verification](RELEASING.md#verify-a-download) for signatures and checksums.
 
 ### Automatic updates
 
-BridgeClip keeps itself up to date. It checks [Releases](https://github.com/bridge-mind/bridgeclip/releases) shortly after launch and every four hours, downloads a new version in the background, and installs it when you choose **Restart to update** (in the sidebar or **Settings → About**) or the next time you quit. macOS only installs an update signed by the same developer, and every download is checked against the SHA-512 published with the release.
+BridgeClip keeps itself up to date. It checks [Releases](https://github.com/bridge-mind/bridgeclip/releases) shortly after launch and every four hours, downloads a new version in the background, and installs it when you choose **Restart to update** (in the sidebar or **Settings → About**) or the next time you quit. Linux DEB and RPM installs update only from **Restart to update**, which asks for an administrator password. macOS only installs an update signed by the same developer, and every download is checked against the SHA-512 published with the release.
 
-Copies run from source, local package builds and apps opened straight from the disk image don't update themselves; **Settings → About** says why. To turn updates off, start BridgeClip with `BRIDGECLIP_DISABLE_AUTO_UPDATE=1`.
+Copies run from source, local package builds, apps opened straight from the disk image and Linux copies that aren't the installed AppImage, DEB or RPM (such as an extracted AppImage) don't update themselves; **Settings → About** says why. To turn updates off, start BridgeClip with `BRIDGECLIP_DISABLE_AUTO_UPDATE=1`.
 
 ## Create your first clips
 

@@ -8,7 +8,7 @@
 // Uses the pinned playwright-core dev dependency. BRIDGECLIP_E2E_TOOLS can
 // point to an isolated installation when running against a local checkout.
 
-const { execFileSync } = require('node:child_process')
+const { execFileSync, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -22,6 +22,28 @@ function playwright() {
     } catch { /* try the next place */ }
   }
   throw new Error('playwright-core not found. Install it outside the repo and set BRIDGECLIP_E2E_TOOLS to that folder.')
+}
+
+/**
+ * Playwright passes --no-sandbox unless asked otherwise, which would hide a
+ * regression that only appears in the sandboxed renderer users get. Linux
+ * needs unprivileged user namespaces or a root-owned setuid chrome-sandbox;
+ * hosts with neither (Ubuntu 24.04 restricts namespaces) and root, which
+ * Chromium refuses to sandbox, run unsandboxed.
+ */
+function chromiumSandboxAvailable(electronPath) {
+  if (process.platform !== 'linux') return true
+  if (process.getuid() === 0) {
+    console.warn('Chromium cannot sandbox root; Electron tests run without the sandbox.')
+    return false
+  }
+  try {
+    const helper = fs.statSync(path.join(path.dirname(electronPath), 'chrome-sandbox'))
+    if (helper.uid === 0 && (helper.mode & fs.constants.S_ISUID)) return true
+  } catch { /* No helper: user namespaces are the only option. */ }
+  if (spawnSync('unshare', ['--user', '--map-root-user', 'true']).status === 0) return true
+  console.warn('Chromium sandbox unavailable on this host; Electron tests run without it.')
+  return false
 }
 
 /**
@@ -66,6 +88,7 @@ async function launchApp({ appDir, userDataDir, mock, apiUrl, env = {} }) {
   for (const name of ['ELECTRON_RUN_AS_NODE', 'ELECTRON_RENDERER_URL', 'BRIDGECLIP_ZERNIO_API_URL', 'BRIDGECLIP_E2E_BROWSER_URL']) delete cleanEnv[name]
   const app = await _electron.launch({
     executablePath: electronPath,
+    chromiumSandbox: chromiumSandboxAvailable(electronPath),
     // A mock keychain keeps safeStorage off the developer's real keychain.
     args: [appDir, '--use-mock-keychain'],
     env: {

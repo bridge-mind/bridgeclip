@@ -78,8 +78,11 @@ test('About shows output storage and update state, and restart installs updates'
   assert.equal(await page.getByRole('button', { name: 'Check for updates' }).isDisabled(), true)
   assert.equal(await page.getByRole('button', { name: /Restart to update/ }).count(), 0)
 
-  await report({ status: 'ready', version: '0.1.18' })
-  await page.getByText('Version 0.1.18 is ready.', { exact: false }).waitFor()
+  // DEB and RPM installs update only from Restart to update, behind a password prompt.
+  await report({ status: 'ready', version: '0.1.18', installsOnQuit: false })
+  await page.getByText('Restart to install it; your system asks for an administrator password.', { exact: false }).waitFor()
+  await report({ status: 'ready', version: '0.1.18', installsOnQuit: true })
+  await page.getByText('Version 0.1.18 is ready. Restart to install it, or it installs the next time you quit.', { exact: false }).waitFor()
   const sidebar = page.getByRole('button', { name: 'BridgeClip 0.1.18 is ready. Restart to update' })
   await sidebar.waitFor()
   if (shots) {
@@ -97,6 +100,10 @@ test('About shows output storage and update state, and restart installs updates'
   await report({ status: 'error', message: 'Could not reach GitHub. Check your connection and try again.' })
   await page.getByText('Could not reach GitHub.', { exact: false }).waitFor()
   assert.equal(await sidebar.count(), 0)
+
+  await report({ status: 'off', reason: 'unsupported-install' })
+  await page.getByText('This copy can’t update itself.', { exact: false }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Check for updates' }).count(), 0)
   assert.deepEqual(errors, [])
 
   // Reproduce renderer hot-reload against an older preload in a real Electron window.

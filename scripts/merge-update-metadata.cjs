@@ -22,7 +22,7 @@ function mergeMetadata(documents) {
 async function verifyArtifacts(document, directory) {
   for (const file of document.files) {
     if (typeof file.url !== 'string' || basename(file.url) !== file.url ||
-        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:zip|dmg|exe|AppImage|deb)$/.test(file.url)) {
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:zip|dmg|exe|AppImage|deb|rpm)$/.test(file.url)) {
       throw new Error('Invalid update artifact name')
     }
     const artifact = join(directory, file.url)

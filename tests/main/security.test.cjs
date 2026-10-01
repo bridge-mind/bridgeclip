@@ -339,6 +339,72 @@ test('saved provider keys remain in main and migrate away from legacy encoding',
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
+test('a key the keychain cannot decrypt leaves the app usable and stays saved until replaced', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-unreadable-key-'))
+  const userData = path.join(root, 'userdata')
+  fs.mkdirSync(userData)
+  const file = path.join(userData, 'settings.json')
+  // Encrypted under another desktop's keychain: this one can't decrypt it.
+  const foreign = { scheme: 'safeStorage', value: Buffer.from('foreign:openrouter-key').toString('base64') }
+  fs.writeFileSync(file, JSON.stringify({ version: 12, outputDirectory: root, customVocabulary: 'BridgeMind',
+    openrouterApiKey: foreign, zernioApiKey: { scheme: 'safeStorage', value: Buffer.from('zernio-key').toString('base64') } }))
+  const store = loadSource('settings-store.ts', { electron: {
+    app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
+    safeStorage: { isEncryptionAvailable: () => true, getSelectedStorageBackend: () => 'gnome_libsecret', encryptString: (value) => Buffer.from(value),
+      decryptString: (value) => { if (value.toString().startsWith('foreign:')) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.'); return value.toString() } }
+  } })
+  try {
+    const loaded = store.loadSettings()
+    assert.equal(loaded.openrouterApiKey, '')
+    assert.equal(loaded.zernioApiKey, 'zernio-key')
+    assert.equal(loaded.customVocabulary, 'BridgeMind')
+    const view = store.publicSettings(loaded)
+    assert.deepEqual([...view.unreadableKeys], ['openrouterApiKey'])
+    assert.equal(view.openrouterConfigured, false)
+    assert.equal(view.zernioConfigured, true)
+
+    // Saving anything else must not overwrite the encrypted key with an empty one.
+    store.savePublicSettings({ ...view, customVocabulary: 'BridgeMind\nBridgeClip' })
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).openrouterApiKey, foreign)
+    assert.equal(store.loadSettings().customVocabulary, 'BridgeMind\nBridgeClip')
+    assert.deepEqual([...store.publicSettings(store.loadSettings()).unreadableKeys], ['openrouterApiKey'])
+
+    // Entering the key again replaces the unreadable copy.
+    const replaced = store.replaceApiKey('openrouterApiKey', 'new-openrouter-key')
+    assert.deepEqual([...replaced.unreadableKeys], [])
+    assert.equal(store.loadSettings().openrouterApiKey, 'new-openrouter-key')
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test('with no keychain at all, settings still load, keys stay saved, and removing one deletes it', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-no-keychain-'))
+  const userData = path.join(root, 'userdata')
+  fs.mkdirSync(userData)
+  const file = path.join(userData, 'settings.json')
+  const openrouter = { scheme: 'safeStorage', value: Buffer.from('openrouter-key').toString('base64') }
+  const zernio = { scheme: 'safeStorage', value: Buffer.from('zernio-key').toString('base64') }
+  fs.writeFileSync(file, JSON.stringify({ version: 12, outputDirectory: root, openrouterApiKey: openrouter, zernioApiKey: zernio }))
+  const store = loadSource('settings-store.ts', { electron: {
+    app: { getPath: (name) => ({ home: root, appData: root, userData }[name]), isReady: () => true },
+    safeStorage: { isEncryptionAvailable: () => false, getSelectedStorageBackend: () => 'basic_text',
+      encryptString: () => { throw new Error('encryption is unavailable') }, decryptString: () => { throw new Error('decryption is unavailable') } }
+  } })
+  try {
+    const view = store.publicSettings(store.loadSettings())
+    assert.deepEqual([...view.unreadableKeys], ['openrouterApiKey', 'zernioApiKey'])
+    store.savePublicSettings({ ...view, pythonPath: '/usr/bin/python3.12' })
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+    assert.deepEqual(saved.openrouterApiKey, openrouter)
+    assert.deepEqual(saved.zernioApiKey, zernio)
+    assert.equal(saved.pythonPath, '/usr/bin/python3.12')
+    // A new key still needs a keychain, and the message says which ones work on Linux.
+    assert.throws(() => store.replaceApiKey('openrouterApiKey', 'new-key'), process.platform === 'linux' ? /GNOME Keyring, KWallet/ : /Secure key storage is unavailable/)
+    store.replaceApiKey('zernioApiKey', '')
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).zernioApiKey, '')
+    assert.deepEqual([...store.publicSettings(store.loadSettings()).unreadableKeys], ['openrouterApiKey'])
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
 test('settings migration retires ElevenLabs without decrypting it and preserves the OpenRouter key', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-single-key-'))
   const userData = path.join(root, 'userdata')

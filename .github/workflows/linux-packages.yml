@@ -1,0 +1,184 @@
+name: Linux packages
+
+# Builds the Linux AppImage, DEB and RPM, installs each one on clean
+# distributions, and publishes a draft GitHub release for version tags.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-packages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate release version
+        if: github.ref_type == 'tag'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Release tags look like v1.2.3" >&2; exit 1; }
+          version="$(jq -r .version package.json)"
+          [[ "v$version" == "$TAG_NAME" ]] || { echo "package.json is $version but the tag is $TAG_NAME" >&2; exit 1; }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Install packaging and test tools
+        # The media tests run the system FFmpeg, as in local development.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf rpm ffmpeg
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate application
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Stage the pinned Python, FFmpeg and Deno runtime
+        env:
+          # Upstream FFmpeg daily archives expire. A repository variable may
+          # point to an HTTPS mirror of the same archive; its digest is checked.
+          BRIDGECLIP_FFMPEG_MIRROR: ${{ vars.BRIDGECLIP_FFMPEG_MIRROR }}
+        run: python scripts/release/stage-runtime.py
+
+      - name: Build packages
+        run: |
+          npm run build
+          npx electron-builder --linux --x64 --publish never
+
+      - name: Verify the packaged clipping runtime
+        run: dist/linux-unpacked/resources/engine-venv/bin/python3 scripts/release/verify-runtime.py dist/linux-unpacked/resources
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-x64
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/latest-linux.yml
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            package: deb
+          - image: ubuntu:24.04
+            package: deb
+          - image: debian:12
+            package: deb
+          - image: fedora:44
+            package: rpm
+          - image: opensuse/tumbleweed
+            package: rpm
+          - image: ubuntu:24.04
+            package: AppImage
+    name: smoke (${{ matrix.package }}, ${{ matrix.image }})
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-x64
+          path: dist
+
+      - name: Allow the namespaces a desktop gives Chromium's sandbox
+        # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
+        # Fedora, Debian and Arch allow them, and the smoke test requires the
+        # sandbox to start.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install and run the package on a clean system
+        env:
+          IMAGE: ${{ matrix.image }}
+          PACKAGE: ${{ matrix.package }}
+        run: |
+          docker run --rm --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
+            -v "$PWD:/repo:ro" -w /repo "$IMAGE" \
+            bash scripts/release/linux-package-smoke.sh dist/BridgeClip-*-linux-x64."$PACKAGE"
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [build, smoke]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install release script dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-x64
+          path: release-input/linux-x64
+
+      - name: Verify packages against update metadata and write checksums
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: node scripts/release/collect-artifacts.cjs release-input release-output "${TAG_NAME#v}" "$SOURCE_SHA" linux
+
+      - name: Publish draft release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: BridgeClip ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            release-output/BridgeClip-*-linux-x64.AppImage
+            release-output/BridgeClip-*-linux-x64.deb
+            release-output/BridgeClip-*-linux-x64.rpm
+            release-output/latest-linux.yml
+            release-output/release-manifest.json
+            release-output/SHA256SUMS.txt

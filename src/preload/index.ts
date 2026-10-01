@@ -40,6 +40,8 @@ import type {
 export interface ClipSettings extends JevThresholdSettings {
   openrouterConfigured: boolean
   zernioConfigured: boolean
+  /** Saved keys the system keychain can't decrypt right now. */
+  unreadableKeys: ('openrouterApiKey' | 'zernioApiKey')[]
   jevEnabled: string
   jevVisualContext: string
   sourceContextWebResearch: string

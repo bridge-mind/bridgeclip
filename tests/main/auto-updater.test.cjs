@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict')
-const { test } = require('node:test')
+const { test, after } = require('node:test')
 const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -34,6 +34,8 @@ test('update errors become short messages without URLs or paths', () => {
   assert.match(updates.updateErrorMessage(coded('ENOSPC')), /disk space/)
   const generic = updates.updateErrorMessage(coded('SOMETHING_ELSE'))
   assert.doesNotMatch(generic, /github\.com|\/Users/)
+  assert.equal(updates.updateErrorMessage(coded('SOMETHING_ELSE'), 'install'), 'Could not install the update. Try again, or download it from GitHub Releases.')
+  assert.match(updates.updateErrorMessage(coded('ERR_CHECKSUM_MISMATCH'), 'install'), /failed verification/)
 })
 
 // ---- PlatformGitHubProvider ------------------------------------------------
@@ -130,9 +132,19 @@ test('other update errors are not retried', async () => {
 
 // ---- auto-updater state machine ---------------------------------------------
 
+/** A packaged resources directory, with electron-builder's package-type marker for DEB and RPM. */
+const resourceDirectories = []
+after(() => { for (const directory of resourceDirectories) fs.rmSync(directory, { recursive: true, force: true }) })
+function resources(packageType) {
+  const directory = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'bridgeclip-resources-'))
+  resourceDirectories.push(directory)
+  if (packageType) fs.writeFileSync(path.join(directory, 'package-type'), `${packageType}\n`)
+  return directory
+}
+
 const SIGNED = 'Executable=/Applications/BridgeClip.app/Contents/MacOS/BridgeClip\nAuthority=Developer ID Application: BRIDGEMIND LLC (9CBJCDR3J2)\nTeamIdentifier=9CBJCDR3J2\n'
 
-function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, codesign = SIGNED, holdCodesign = false, exe = '/Applications/BridgeClip.app/Contents/MacOS/BridgeClip' } = {}) {
+function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, codesign = SIGNED, holdCodesign = false, exe = '/Applications/BridgeClip.app/Contents/MacOS/BridgeClip', resourcesPath = resources() } = {}) {
   const handlers = {}
   let releaseCodesign = null
   const sent = []
@@ -170,7 +182,7 @@ function setup({ platform = 'darwin', dev = false, packaged = true, env = {}, co
     './logger': { logger: { info() {}, warn() {}, error() {} } },
     './update-provider': { PlatformGitHubProvider: class {} }
   }, {
-    process: { platform, env },
+    process: { platform, env, resourcesPath },
     setTimeout: (fn) => { timers.push(fn); return timers.length },
     setInterval: (fn) => { timers.push(fn); return timers.length },
     setImmediate: (fn) => fn()
@@ -211,7 +223,9 @@ for (const [name, options, reason] of [
   ['a macOS build not signed by BridgeMind', { codesign: '' }, 'unofficial'],
   ['a macOS build signed by another team', { codesign: 'Authority=Developer ID Application: Someone Else (ABCDE12345)\nTeamIdentifier=ABCDE12345\n' }, 'unofficial'],
   ['a macOS app running from its disk image', { exe: '/Volumes/BridgeClip/BridgeClip.app/Contents/MacOS/BridgeClip' }, 'move-to-applications'],
-  ['a quarantined macOS app', { exe: '/private/var/folders/x/AppTranslocation/ABC/d/BridgeClip.app/Contents/MacOS/BridgeClip' }, 'move-to-applications']
+  ['a quarantined macOS app', { exe: '/private/var/folders/x/AppTranslocation/ABC/d/BridgeClip.app/Contents/MacOS/BridgeClip' }, 'move-to-applications'],
+  ['an extracted Linux AppImage or other unpackaged copy', { platform: 'linux', codesign: '' }, 'unsupported-install'],
+  ['a Linux package type the updater cannot replace', { platform: 'linux', codesign: '', resourcesPath: resources('pacman') }, 'unsupported-install']
 ]) {
   test(`updates are off for ${name}`, async () => {
     const t = setup(options)
@@ -260,11 +274,47 @@ test('Help → Check for Updates… checks and shows the Updates row', async () 
 })
 
 test('Windows and Linux packages update without the macOS signature check', async () => {
-  for (const platform of ['win32', 'linux']) {
-    const t = setup({ platform, codesign: '' })
+  for (const options of [{ platform: 'win32' }, { platform: 'linux', env: { APPIMAGE: '/home/me/BridgeClip.AppImage' } }, { platform: 'linux', resourcesPath: resources('deb') }, { platform: 'linux', resourcesPath: resources('rpm') }]) {
+    const t = setup({ ...options, codesign: '' })
     await t.init()
     assert.equal(t.updater.feed.provider, 'custom')
+    assert.equal(t.updater.autoDownload, true)
   }
+})
+
+test('DEB and RPM updates install only from Restart to update, which reports a failed install', async () => {
+  for (const packageType of ['deb', 'rpm']) {
+    const t = setup({ platform: 'linux', codesign: '', resourcesPath: resources(packageType) })
+    await t.init()
+    // Nothing could show a failed or cancelled password prompt while quitting.
+    assert.equal(t.updater.autoInstallOnAppQuit, false)
+    t.updater.nextCheck = async () => {
+      t.updater.emit('update-available', { version: '0.1.18' })
+      t.updater.emit('update-downloaded', { version: '0.1.18' })
+      return { downloadPromise: Promise.resolve() }
+    }
+    const ready = await t.invoke('update:check')
+    assert.equal(ready.status, 'ready')
+    assert.equal(ready.installsOnQuit, false)
+    assert.equal(await t.invoke('update:install'), true)
+    // electron-updater reports a failed pkexec install as an error and keeps the app open.
+    t.updater.emit('error', Object.assign(new Error('Command failed: pkexec /bin/bash -c dpkg -i /tmp/x.deb'), { code: '' }))
+    const failed = await t.invoke('update:getState')
+    assert.equal(failed.status, 'error')
+    assert.equal(failed.message, 'Could not install the update. Try again, or download it from GitHub Releases.')
+  }
+})
+
+test('an AppImage installs a downloaded update on quit like macOS and Windows', async () => {
+  const t = setup({ platform: 'linux', codesign: '', env: { APPIMAGE: '/home/me/BridgeClip.AppImage' } })
+  await t.init()
+  assert.equal(t.updater.autoInstallOnAppQuit, true)
+  t.updater.nextCheck = async () => {
+    t.updater.emit('update-available', { version: '0.1.18' })
+    t.updater.emit('update-downloaded', { version: '0.1.18' })
+    return { downloadPromise: Promise.resolve() }
+  }
+  assert.equal((await t.invoke('update:check')).installsOnQuit, true)
 })
 
 test('a check that finds an update downloads it, then it is ready to install', async () => {
@@ -290,6 +340,7 @@ test('a check that finds an update downloads it, then it is ready to install', a
   await assert.rejects(async () => t.invoke('update:install'), /No update is ready/)
   t.updater.emit('update-downloaded', { version: '0.1.18' })
   assert.equal(t.last().status, 'ready')
+  assert.equal(t.last().installsOnQuit, true)
 
   assert.equal(await t.invoke('update:install'), true)
   assert.deepEqual(t.updater.installs, [[false, true]])

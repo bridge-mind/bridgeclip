@@ -5,7 +5,7 @@ The app icon is a simple gold-and-cyan C with a play symbol on a charcoal rounde
 ## Source and exports
 
 - **Source:** `resources/bridgeclip-icon.png`, the unmodified 1254 × 1254 RGBA output from the built-in imagegen tool, generated September 24, 2026.
-- **App assets:** `build/icon.png` (1024px), `build/icon.icns` (macOS), and `build/icon.ico` (Windows: 16, 24, 32, 48, 64, 128, 256px).
+- **App assets:** `build/icon.png` (1024px), `build/icon.icns` (macOS), and `build/icon.ico` (Windows: 16, 24, 32, 48, 64, 128, 256px), and `build/icons/` (Linux hicolor sizes 16–512px).
 - **Renderer/public compatibility assets:** `resources/bridgeclip-icon.svg` (1024px) and `resources/bridgeclip-icon-small.svg` (128px). These embed PNG data; they are not vector masters. The app's 48px icon uses the compact export, with enough resolution for Retina displays.
 - **Preview:** open `scripts/icon/icon.html` to inspect 16–128px sizes against dark and light surfaces.
 

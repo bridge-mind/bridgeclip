@@ -2,6 +2,7 @@
   "name": "bridgeclip",
   "private": true,
   "productName": "BridgeClip",
+  "desktopName": "bridgeclip.desktop",
   "version": "0.1.19",
   "description": "BridgeClip: open-source AI video clipping by BridgeMind. Turn long videos into captioned short-form clips, locally, with your own API keys.",
   "main": "./out/main/index.js",
@@ -36,7 +37,7 @@
     "test:renderer": "node --test tests/renderer-state.test.cjs tests/create-form.test.cjs tests/opus-clip.test.cjs tests/audit-renderer.test.cjs",
     "test:main": "node --test tests/main/*.test.cjs",
     "test:zernio": "node --test tests/zernio/*.test.cjs",
-    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/main/jobs-library.e2e.cjs tests/main/library-bookmarks.e2e.cjs tests/main/job-progress.e2e.cjs tests/main/delete-clips.e2e.cjs tests/main/edit-details.e2e.cjs tests/main/clip-editor.e2e.cjs tests/main/camera-changes.e2e.cjs tests/main/video-speed.e2e.cjs tests/main/workflow-choice.e2e.cjs tests/main/youtube-preview.e2e.cjs tests/main/caption-preview.e2e.cjs tests/main/caption-position.e2e.cjs tests/main/advanced-models.e2e.cjs tests/main/updates.e2e.cjs tests/main/changelog.e2e.cjs tests/main/zoom.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/main/local-file.e2e.cjs tests/main/jobs-library.e2e.cjs tests/main/library-bookmarks.e2e.cjs tests/main/job-progress.e2e.cjs tests/main/delete-clips.e2e.cjs tests/main/edit-details.e2e.cjs tests/main/clip-editor.e2e.cjs tests/main/camera-changes.e2e.cjs tests/main/video-speed.e2e.cjs tests/main/workflow-choice.e2e.cjs tests/main/youtube-preview.e2e.cjs tests/main/caption-preview.e2e.cjs tests/main/caption-position.e2e.cjs tests/main/advanced-models.e2e.cjs tests/main/updates.e2e.cjs tests/main/changelog.e2e.cjs tests/main/key-storage.e2e.cjs tests/main/zoom.e2e.cjs tests/zernio/e2e/accounts.e2e.cjs tests/zernio/e2e/automations.e2e.cjs tests/zernio/posts.e2e.cjs",
     "test": "npm run test:main && npm run test:renderer && npm run test:zernio && npm run test:bridge && npm run test:release",
     "dist:linux-x64": "electron-vite build && electron-builder --linux --x64"
   },

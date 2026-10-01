@@ -16,6 +16,7 @@ import { cancelZernioConnect } from './zernio/service'
 import { isAutomationMedia, startAutomationScheduler } from './automations'
 import { sweepDeletingRuns } from './library-management'
 import { registerAssistant, type AssistantRuntime } from './assistant/ipc'
+import { linuxPasswordStore } from './password-store'
 
 // Catch crashes anywhere in the main process so we get a log line instead
 // of a silent exit. Without these, an unhandled rejection in an IPC handler
@@ -56,6 +57,11 @@ if (hiddenForTests) {
     try { host = new URL(url).hostname } catch { /* logged as invalid */ }
     logger.info('e2e.openExternal.blocked', { host })
   }
+}
+
+if (process.platform === 'linux') {
+  const passwordStore = linuxPasswordStore(process.env, app.commandLine.hasSwitch('password-store'))
+  if (passwordStore) app.commandLine.appendSwitch('password-store', passwordStore)
 }
 
 const gotTheLock = app.requestSingleInstanceLock()

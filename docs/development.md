@@ -21,7 +21,7 @@ BridgeClip finds its in-repo engine and virtual environment automatically. **Set
 
 Local macOS runs apply the BridgeClip Dock icon when the window appears and when the app is activated. Restart Electron after changing startup code; refreshing the renderer only updates the UI.
 
-On Linux, use system FFmpeg with the libass-backed `ass` filter (`ffmpeg -hide_banner -filters | grep -E '[[:space:]]ass[[:space:]]'`) and Python 3.12. Arch: `sudo pacman -S ffmpeg`. Skip `scripts/prepare-resources.sh` during development; it prepares macOS release resources. Official Linux AppImage and DEB packages are available through [Releases](https://github.com/bridge-mind/bridgeclip/releases).
+On Linux, use system FFmpeg with the libass-backed `ass` filter (`ffmpeg -hide_banner -filters | grep -E '[[:space:]]ass[[:space:]]'`) and Python 3.12. Arch: `sudo pacman -S ffmpeg`. Skip `scripts/prepare-resources.sh` during development; it prepares macOS release resources. Official Linux AppImage, DEB and RPM packages are available through [Releases](https://github.com/bridge-mind/bridgeclip/releases).
 
 ### Windows
 

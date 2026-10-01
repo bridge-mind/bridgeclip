@@ -23,12 +23,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 - **Chat**: run BridgeClip in plain words. It uses your Claude (Pro or Max, through Claude Code) or ChatGPT (through Codex) subscription, or any OpenRouter model with your OpenRouter key; connect them in **Settings → Assistant**. The assistant can start clipping jobs, manage the Library and automations, and post or schedule clips. Anything that publishes, deletes or spends OpenRouter credit on clipping asks you first.
 - Chat's model menu has a tab each for Claude, OpenAI and OpenRouter (search every OpenRouter model that can use tools, with prices), and each reply shows the logo and model that wrote it. Recent chats are listed beside the conversation, with search.
 - Chat can find YouTube videos by channel or search, so "clip the latest BridgeMind video" works without a link, and can search the web and read web pages.
+- An **RPM** package for Linux on Fedora, RHEL and openSUSE, alongside the AppImage and DEB.
 
 ### Changed
 
 - Smart framing ignores weak background faces, stays on a speaker who briefly looks away, follows talking heads inside 4:3 video, and analyzes footage faster.
 - Screen + webcam clips fill the top panel again.
 - Editor previews use much less disk space, and downloaded sources are moved into the project instead of copied.
+- Linux packages are smaller: the media libraries are no longer stored three times. They now also include the JavaScript runtime that the YouTube downloader needs.
 
 ### Fixed
 
@@ -40,6 +42,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 - Deleting a clip also removes its caption and YouTube text files.
 - A missing transcript shows a clear message, and research citations can be selected and copied.
 - Screen + webcam clips fill the bottom panel with the webcam, instead of showing a small webcam over a blurred copy of itself when the webcam in the source video is small.
+- The Linux AppImage starts without libfuse2, which current Ubuntu, Debian and Fedora no longer install, and keeps the app sandbox where the system allows it.
+- The Linux DEB installs everything it needs to start on minimal Ubuntu 22.04 and 24.04 systems.
+- Linux launchers and docks show the BridgeClip icon and group its windows with the launcher.
+- Linux DEB and RPM installs update from **Restart to update**, which asks for an administrator password and says so if the install fails. They no longer try to install silently when you quit.
+- **Settings → About** says when a Linux copy can't update itself, such as an extracted AppImage, instead of doing nothing.
+- On Linux desktops such as sway, i3 and Hyprland, API keys save to your keyring (GNOME Keyring, KWallet or KeePassXC) instead of being refused, and the message says what to do when no keyring is running.
+- A locked or changed system keychain no longer stops BridgeClip with "Could not load settings". **Settings → API keys** says which saved key can't be read and keeps it until you unlock the keychain or enter the key again.
 
 ## [0.1.19] - 2026-09-27
 

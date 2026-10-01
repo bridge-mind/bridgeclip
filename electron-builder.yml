@@ -108,30 +108,81 @@ nsis:
   installerHeaderIcon: build/icon.ico
 
 linux:
-  # Builder otherwise expands x64 as x86_64 for AppImage and amd64 for DEB.
-  # Linux currently supports x64 only; keep one stable release naming contract.
+  # Builder otherwise expands x64 as x86_64 for AppImage and RPM and amd64 for
+  # DEB. Linux currently supports x64 only; keep one stable release naming contract.
   artifactName: BridgeClip-${version}-linux-x64.${ext}
   executableName: bridgeclip
   category: AudioVideo
-  icon: build/icon.png
+  # hicolor sizes; desktops find no theme directory for a single 1024px icon.
+  icon: build/icons
+  # Wayland app_id and X11 WM_CLASS match bridgeclip.desktop, so docks group
+  # the window with its launcher.
+  syncDesktopName: true
   target:
     - target: AppImage
       arch: [x64]
     - target: deb
       arch: [x64]
+    - target: rpm
+      arch: [x64]
   maintainer: BridgeMind LLC <support@bridgemind.ai>
+
+# The static AppImage runtime needs no libfuse2, which current Ubuntu, Debian
+# and Fedora installs lack. Its desktop entry also keeps the Chromium sandbox.
+toolsets:
+  appimage: "1.0.3"
 
 deb:
   depends:
     - libgtk-3-0
     - libnss3
-    - libasound2
+    # Name the real ALSA library first. Otherwise apt can satisfy libasound2
+    # with liboss4-salsa-asound2 on Ubuntu 24.04, which Electron cannot load.
+    - libasound2t64 | libasound2
+    - libgbm1
     - libxss1
     - libxtst6
     - xdg-utils
     - libatspi2.0-0
     - libuuid1
     - libsecret-1-0
+
+rpm:
+  # Shared-library capabilities resolve on Fedora, RHEL and openSUSE alike,
+  # where the package names for the same libraries differ.
+  depends:
+    - libgtk-3.so.0()(64bit)
+    - libglib-2.0.so.0()(64bit)
+    - libgobject-2.0.so.0()(64bit)
+    - libgio-2.0.so.0()(64bit)
+    - libpango-1.0.so.0()(64bit)
+    - libcairo.so.2()(64bit)
+    - libatk-1.0.so.0()(64bit)
+    - libatk-bridge-2.0.so.0()(64bit)
+    - libatspi.so.0()(64bit)
+    - libnss3.so()(64bit)
+    - libnssutil3.so()(64bit)
+    - libsmime3.so()(64bit)
+    - libnspr4.so()(64bit)
+    - libcups.so.2()(64bit)
+    - libdbus-1.so.3()(64bit)
+    - libexpat.so.1()(64bit)
+    - libudev.so.1()(64bit)
+    - libasound.so.2()(64bit)
+    - libgbm.so.1()(64bit)
+    - libxkbcommon.so.0()(64bit)
+    - libX11.so.6()(64bit)
+    - libxcb.so.1()(64bit)
+    - libXcomposite.so.1()(64bit)
+    - libXdamage.so.1()(64bit)
+    - libXext.so.6()(64bit)
+    - libXfixes.so.3()(64bit)
+    - libXrandr.so.2()(64bit)
+    - libsecret-1.so.0()(64bit)
+    - xdg-utils
+    # Chromium aborts without any font; minimal openSUSE installs have none.
+    # The same package name exists on Fedora and openSUSE.
+    - liberation-fonts
 
 # Auto-updates come from GitHub Releases: electron-updater reads
 # latest-mac.yml / latest.yml / latest-linux.yml from the published release.

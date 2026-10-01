@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates the BridgeClip app icon: build/icon.png, build/icon.icns,
-# build/icon.ico and SVG compatibility exports in resources/.
+# build/icon.ico, build/icons/ (Linux) and SVG compatibility exports in resources/.
 # Source: resources/bridgeclip-icon.png (imagegen). macOS only (sips + iconutil).
 #
 #   bash scripts/icon/build-icons.sh
@@ -31,6 +31,12 @@ for size in 16 32 128 256 512; do
   resize $((size * 2)) "$ICONSET/icon_${size}x${size}@2x.png"
 done
 iconutil -c icns "$ICONSET" -o "$ROOT/build/icon.icns"
+
+# Linux desktops look icons up in fixed hicolor sizes, which stop at 512px.
+mkdir -p "$ROOT/build/icons"
+for size in 16 24 32 48 64 128 256 512; do
+  resize "$size" "$ROOT/build/icons/${size}x${size}.png"
+done
 
 # Windows .ico with PNG-compressed entries (supported since Vista).
 for size in 16 24 32 48 64 128 256; do

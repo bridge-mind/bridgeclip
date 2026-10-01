@@ -1,6 +1,7 @@
 import { app, dialog, ipcMain, powerMonitor, shell, type BrowserWindow, type MessageBoxSyncOptions } from 'electron'
 import { execFile } from 'child_process'
-import { posix } from 'path'
+import { existsSync, readFileSync } from 'fs'
+import { join, posix } from 'path'
 import { autoUpdater } from 'electron-updater'
 import { is } from '@electron-toolkit/utils'
 import { REPO_URL } from '../shared/brand'
@@ -52,6 +53,28 @@ function signedByBridgeMind(): Promise<boolean> {
   })
 }
 
+/**
+ * How this Linux copy was installed, using the marker electron-updater reads to
+ * pick its DEB or RPM updater. Other copies (an extracted AppImage, a distro
+ * repackage) can't be replaced by the updater.
+ */
+function linuxPackage(): 'AppImage' | 'deb' | 'rpm' | null {
+  if (process.env.APPIMAGE) return 'AppImage'
+  const marker = join(process.resourcesPath, 'package-type')
+  if (!existsSync(marker)) return null
+  const type = readFileSync(marker, 'utf8').trim()
+  return type === 'deb' || type === 'rpm' ? type : null
+}
+
+/**
+ * DEB and RPM updates run the package manager behind an administrator prompt.
+ * When BridgeClip quits nothing can show that prompt failing, so those install
+ * only from "Restart to update", which reports a failure and keeps the app open.
+ */
+function installsOnQuit(): boolean {
+  return process.platform !== 'linux' || linuxPackage() === 'AppImage'
+}
+
 async function updatesOffReason(): Promise<UpdatesOffReason | null> {
   if (process.env.BRIDGECLIP_DISABLE_AUTO_UPDATE === '1') return 'disabled'
   if (is.dev || !app.isPackaged) return 'development'
@@ -62,6 +85,7 @@ async function updatesOffReason(): Promise<UpdatesOffReason | null> {
     const bundle = macBundlePath()
     if (bundle.startsWith('/Volumes/') || bundle.includes('/AppTranslocation/')) return 'move-to-applications'
   }
+  if (process.platform === 'linux' && !linuxPackage()) return 'unsupported-install'
   return null
 }
 
@@ -155,7 +179,7 @@ async function start(): Promise<void> {
 
   autoUpdater.setFeedURL({ provider: 'custom', updateProvider: PlatformGitHubProvider })
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = installsOnQuit()
   autoUpdater.allowPrerelease = false
   autoUpdater.allowDowngrade = false
 
@@ -180,7 +204,7 @@ async function start(): Promise<void> {
   })
   autoUpdater.on('update-downloaded', (info) => {
     logger.info('update.ready', { version: info.version })
-    publish({ ...base(), status: 'ready', version: info.version })
+    publish({ ...base(), status: 'ready', version: info.version, installsOnQuit: autoUpdater.autoInstallOnAppQuit })
   })
   autoUpdater.on('error', (error) => {
     const httpStatus = error && typeof error === 'object' && 'statusCode' in error ? Number((error as { statusCode: unknown }).statusCode) : null
@@ -188,8 +212,10 @@ async function start(): Promise<void> {
     // Checks don't run once an update is ready, so an error then comes from
     // installing it: on macOS, Squirrel verifies the signature only after
     // electron-updater reports the download. Leaving "ready" up would offer a
-    // restart that does nothing, so report it and allow a fresh check.
-    publish({ ...base(), status: 'error', message: updateErrorMessage(error) })
+    // restart that does nothing, so report it and allow a fresh check. On Linux,
+    // a DEB or RPM install that fails or is cancelled at the password prompt
+    // also lands here.
+    publish({ ...base(), status: 'error', message: updateErrorMessage(error, state.status === 'ready' ? 'install' : 'check') })
   })
 
   setTimeout(() => void check('scheduled'), UPDATE_CHECK_DELAY_MS)
@@ -203,7 +229,7 @@ async function start(): Promise<void> {
 /**
  * Updates from GitHub Releases: check shortly after launch and every few
  * hours, download in the background, and install when the user restarts from
- * the app or the next time they quit.
+ * the app or (except DEB and RPM installs) the next time they quit.
  */
 export function initAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   getWindow = getMainWindow

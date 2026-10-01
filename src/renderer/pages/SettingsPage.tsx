@@ -29,8 +29,9 @@ type SectionTone = 'success' | 'warning' | 'danger' | 'idle'
 
 /** `showUpdates` changes each time Help → Check for Updates… asks for the Updates row. */
 export function SettingsPage({ showUpdates = 0 }: { showUpdates?: number }): React.JSX.Element {
-  const { outputDirectory, pythonPath, customVocabulary, openrouterConfigured, zernioConfigured, sourceContextWebResearch, saving, save, toolStatus, toolError, checkTools, checkingTools } =
+  const { outputDirectory, pythonPath, customVocabulary, openrouterConfigured, zernioConfigured, unreadableKeys, sourceContextWebResearch, saving, save, toolStatus, toolError, checkTools, checkingTools } =
     useSettingsStore()
+  const unreadableNames = unreadableKeys.map((key) => (key === 'openrouterApiKey' ? 'OpenRouter' : 'Zernio'))
   const keys = useApiKeyDrafts()
   const [isPackaged, setIsPackaged] = useState(true)
   const [savedAt, setSavedAt] = useState<number | null>(null)
@@ -85,7 +86,7 @@ export function SettingsPage({ showUpdates = 0 }: { showUpdates?: number }): Rea
   }, [])
 
   const checks: { label: string; ok: boolean | null; detail: string; section: SectionId; optional?: boolean; tone?: 'danger' }[] = [
-    { label: 'OpenRouter', ok: openrouterConfigured, detail: openrouterConfigured ? 'Key saved' : 'Needed to transcribe and pick clips', section: 'keys' },
+    { label: 'OpenRouter', ok: openrouterConfigured, detail: openrouterConfigured ? 'Key saved' : unreadableKeys.includes('openrouterApiKey') ? 'Saved key can’t be read' : 'Needed to transcribe and pick clips', section: 'keys' },
     { label: 'Tools', ok: toolsChecked ? toolsMissing === 0 : null, detail: !toolsChecked ? (checkingTools ? 'Checking…' : 'Not checked') : toolsMissing ? `${toolsMissing} missing` : 'All installed', section: 'system', tone: 'danger' },
     { label: 'Zernio', ok: zernioConfigured, detail: zernioConfigured ? 'Posting on' : 'Optional, for posting', section: 'keys', optional: true }
   ]
@@ -155,6 +156,11 @@ export function SettingsPage({ showUpdates = 0 }: { showUpdates?: number }): Rea
               title="API keys"
               description="Encrypted with your system keychain. BridgeClip has no account and no server of its own."
             />
+            {unreadableNames.length > 0 && (
+              <Callout tone="warning" className="mt-3" title={`Your saved ${unreadableNames.join(' and ')} ${unreadableNames.length === 1 ? 'key' : 'keys'} can’t be read`}>
+                The system keychain is locked, missing, or not the one the {unreadableNames.length === 1 ? 'key was' : 'keys were'} saved with. Unlock it, or sign back in to the desktop you saved {unreadableNames.length === 1 ? 'it' : 'them'} on, and restart BridgeClip. Or enter the {unreadableNames.length === 1 ? 'key' : 'keys'} again to replace {unreadableNames.length === 1 ? 'it' : 'them'}.
+              </Callout>
+            )}
             <div className="mt-4 space-y-2">
               <KeyRow>
                 <ApiKeyInput

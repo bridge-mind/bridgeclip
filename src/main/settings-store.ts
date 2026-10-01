@@ -29,6 +29,8 @@ export type ApiKeyName = 'openrouterApiKey' | 'zernioApiKey'
 export type PublicSettings = Pick<AppSettings, 'outputDirectory' | 'pythonPath' | 'customVocabulary' | 'jevEnabled' | 'jevVisualContext' | 'sourceContextWebResearch' | keyof JevThresholdSettings> & {
   openrouterConfigured: boolean
   zernioConfigured: boolean
+  /** Saved keys the system keychain can't decrypt right now. They stay saved until replaced or removed. */
+  unreadableKeys: ApiKeyName[]
 }
 
 const SECRET_KEYS = ['openrouterApiKey', 'zernioApiKey'] as const
@@ -54,6 +56,16 @@ const OPT_IN_BETA_VERSION = 12
 const SWITCHES = ['off', 'on']
 
 type PersistedSecret = { scheme: 'safeStorage' | 'base64'; value: string } | ''
+
+/** The keychain is locked, missing, or not the one that encrypted a saved key. */
+class SecretUnavailableError extends Error {}
+
+/**
+ * Saved keys that the last load could not decrypt, as stored. A locked or
+ * changed keychain must not lock people out of the app or lose their keys, so
+ * these load as empty and are written back unchanged until replaced or removed.
+ */
+const unreadableSecrets = new Map<SecretKey, PersistedSecret>()
 
 interface PersistedSettings extends JevThresholdSettings {
   version: number
@@ -150,7 +162,9 @@ function encodeSecret(value: string): PersistedSecret {
   if (canEncrypt()) {
     return { scheme: 'safeStorage', value: safeStorage.encryptString(value).toString('base64') }
   }
-  throw new Error('Secure key storage is unavailable. Unlock or configure your operating system keychain before saving API keys.')
+  throw new Error(process.platform === 'linux'
+    ? 'No desktop keyring is available to encrypt API keys. Start and unlock GNOME Keyring, KWallet or another Secret Service keyring (such as KeePassXC), then try again.'
+    : 'Secure key storage is unavailable. Unlock or configure your operating system keychain before saving API keys.')
 }
 
 /**
@@ -161,7 +175,7 @@ function encodeSecret(value: string): PersistedSecret {
 function decodeSecret(value: unknown): { value: string; legacy: boolean } {
   if (!value) return { value: '', legacy: false }
   if (typeof value === 'string') {
-    if (!canEncrypt()) throw new Error('Secure key storage is unavailable')
+    if (!canEncrypt()) throw new SecretUnavailableError('Secure key storage is unavailable')
     try {
       return { value: Buffer.from(value, 'base64').toString('utf-8'), legacy: true }
     } catch {
@@ -171,17 +185,14 @@ function decodeSecret(value: unknown): { value: string; legacy: boolean } {
   if (typeof value === 'object') {
     const obj = value as { scheme?: string; value?: string }
     if (!obj.value) return { value: '', legacy: false }
-    try {
-      if (obj.scheme === 'safeStorage') {
-        if (!canEncrypt()) throw new Error('Secure key storage is unavailable')
+    if (obj.scheme === 'safeStorage' || obj.scheme === 'base64') {
+      if (!canEncrypt()) throw new SecretUnavailableError('Secure key storage is unavailable')
+      if (obj.scheme === 'base64') return { value: Buffer.from(obj.value, 'base64').toString('utf-8'), legacy: true }
+      try {
         return { value: safeStorage.decryptString(Buffer.from(obj.value, 'base64')), legacy: false }
+      } catch {
+        throw new SecretUnavailableError('Could not decrypt a saved API key')
       }
-      if (obj.scheme === 'base64') {
-        if (!canEncrypt()) throw new Error('Secure key storage is unavailable')
-        return { value: Buffer.from(obj.value, 'base64').toString('utf-8'), legacy: true }
-      }
-    } catch {
-      throw new Error('Could not decrypt saved API keys. Unlock the system keychain and retry.')
     }
   }
   return { value: '', legacy: false }
@@ -189,6 +200,7 @@ function decodeSecret(value: unknown): { value: string; legacy: boolean } {
 
 export function loadSettings(): AppSettings {
   const path = getSettingsPath()
+  unreadableSecrets.clear()
   if (!existsSync(path)) return { ...DEFAULT_SETTINGS }
 
   try {
@@ -196,9 +208,15 @@ export function loadSettings(): AppSettings {
     let needsMigration = raw.version !== SETTINGS_VERSION || Object.hasOwn(raw, 'elevenLabsApiKey') || Object.hasOwn(raw, 'typesafeApiKey')
     const secrets = {} as Record<SecretKey, string>
     for (const key of SECRET_KEYS) {
-      const decoded = decodeSecret(raw[key])
-      secrets[key] = decoded.value
-      if (decoded.legacy) needsMigration = true
+      try {
+        const decoded = decodeSecret(raw[key])
+        secrets[key] = decoded.value
+        if (decoded.legacy) needsMigration = true
+      } catch (error) {
+        if (!(error instanceof SecretUnavailableError)) throw error
+        secrets[key] = ''
+        unreadableSecrets.set(key, raw[key] as PersistedSecret)
+      }
     }
 
     const settings = normalizeSettings({
@@ -216,6 +234,12 @@ export function loadSettings(): AppSettings {
   }
 }
 
+/** A key that can't be decrypted right now stays saved until it is replaced or removed. */
+function persistSecret(key: SecretKey, value: string): PersistedSecret {
+  const unreadable = unreadableSecrets.get(key)
+  return !value && unreadable !== undefined ? unreadable : encodeSecret(value)
+}
+
 function writeSettings(settings: AppSettings): void {
   const path = getSettingsPath()
   const tempPath = `${path}.${randomUUID()}.tmp`
@@ -230,8 +254,8 @@ function writeSettings(settings: AppSettings): void {
     jevEvidenceThreshold: settings.jevEvidenceThreshold,
     jevCutThreshold: settings.jevCutThreshold,
 
-    openrouterApiKey: encodeSecret(settings.openrouterApiKey),
-    zernioApiKey: encodeSecret(settings.zernioApiKey),
+    openrouterApiKey: persistSecret('openrouterApiKey', settings.openrouterApiKey),
+    zernioApiKey: persistSecret('zernioApiKey', settings.zernioApiKey),
     jevEnabled: settings.jevEnabled,
     jevVisualContext: settings.jevVisualContext,
     sourceContextWebResearch: settings.sourceContextWebResearch,
@@ -275,6 +299,7 @@ export function publicSettings(settings: AppSettings): PublicSettings {
     customVocabulary: settings.customVocabulary,
     openrouterConfigured: Boolean(settings.openrouterApiKey),
     zernioConfigured: Boolean(settings.zernioApiKey),
+    unreadableKeys: SECRET_KEYS.filter((key) => unreadableSecrets.has(key)),
     jevEnabled: settings.jevEnabled,
     jevVisualContext: settings.jevVisualContext,
     sourceContextWebResearch: settings.sourceContextWebResearch
@@ -324,6 +349,8 @@ export function vocabularyTerms(value: string): string[] {
 export function replaceApiKey(key: ApiKeyName, value: string): PublicSettings {
   if (!SECRET_KEYS.includes(key) || typeof value !== 'string' || value.length > 8192 || value.includes('\0')) throw new Error('Invalid API key update')
   const current = loadSettings()
+  // Replacing or removing a key ends its unreadable copy.
+  unreadableSecrets.delete(key)
   return publicSettings(saveSettings({ ...current, [key]: value.trim() }))
 }
 
