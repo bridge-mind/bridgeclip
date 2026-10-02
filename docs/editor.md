@@ -48,6 +48,10 @@ Older projects get a frame-preserving preview on their first scan. Outside the s
 
 New Smart framing runs also scan during the pipeline: strong cuts and sustained face-composition changes refine automatic boundaries to source frames, while weaker markers remain available for review. Extra face checks are bounded to 160 likely changes and 6,000 frames per clip. Optional AI layout checks are limited to the first 12 image decisions per clip, with cached decisions reusable afterward; camera scanning itself makes no AI requests. If detailed scanning cannot complete, the sampled framing pass remains available.
 
+## Choose a caption style
+
+The **Captions** tab separates bundled defaults from **Your styles**, saved in the Captions lab. Selecting a style stores a copy in the candidate; later changes to your library do not alter it. Changing styles marks a previously baked clip as needing a new export.
+
 ## Position captions
 
 The right-hand tab stays selected when you switch candidates. In **Transcript**, a steady **Captions go here** sample shows subtitle placement over the output video in the selected style. Drag them up or down, use the vertical position slider, or choose Top, Middle or Bottom; the saved position applies throughout this clip when baked. **Automatic** restores layout-based placement. The sample stays visible while playing or seeking, including gaps and caption-free sections, so you can adjust placement without following spoken words.

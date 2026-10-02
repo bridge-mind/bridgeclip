@@ -171,6 +171,8 @@ class CaptionStyle:
     position: Literal["top", "center", "bottom"] = "bottom"
     alignment: Literal["left", "center", "right"] = "center"
     max_words_per_line: int = 3
+    # None keeps automatic wrapping; numeric choices balance groups across rows.
+    max_lines: Optional[int] = None
     word_by_word_highlight: bool = True
 
     primary_color: str = "#FFFFFF"

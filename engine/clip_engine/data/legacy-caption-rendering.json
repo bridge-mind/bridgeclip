@@ -1,0 +1,80 @@
+{
+  "common": {
+    "bold": false,
+    "letter_spacing": 0,
+    "position": "bottom",
+    "alignment": "center",
+    "word_by_word_highlight": true,
+    "shadow_color": "#000000",
+    "shadow_opacity": 0.6,
+    "shadow_blur": 10,
+    "shadow_offset": 7,
+    "shadow_spread": 2,
+    "highlight_box_padding": 16,
+    "glow_opacity": 0.8,
+    "glow_radius": 8,
+    "glow_blur": 14,
+    "glow_active_only": true,
+    "line_box_padding": 22
+  },
+  "presets": {
+    "pop": {},
+    "spotlight": {},
+    "impact": {
+      "letter_spacing": 1,
+      "shadow_opacity": 0.9,
+      "shadow_blur": 1,
+      "shadow_offset": 10
+    },
+    "glow": {
+      "shadow_opacity": 0.75,
+      "shadow_blur": 12,
+      "shadow_offset": 4,
+      "shadow_spread": 5,
+      "glow_opacity": 0.85,
+      "glow_blur": 16
+    },
+    "boxed": {
+      "shadow_opacity": 0.0
+    },
+    "sweep": {},
+    "editorial": {
+      "shadow_opacity": 0.9,
+      "shadow_blur": 20,
+      "shadow_offset": 3,
+      "shadow_spread": 8
+    },
+    "hype": {
+      "shadow_opacity": 0.95,
+      "shadow_blur": 1,
+      "shadow_offset": 9
+    },
+    "punch": {
+      "letter_spacing": 1,
+      "shadow_opacity": 0.9,
+      "shadow_blur": 1,
+      "shadow_offset": 12
+    },
+    "neon": {
+      "shadow_opacity": 0.75,
+      "shadow_blur": 12,
+      "shadow_offset": 4,
+      "shadow_spread": 5,
+      "glow_opacity": 0.9,
+      "glow_radius": 9,
+      "glow_blur": 18
+    },
+    "headline": {
+      "highlight_box_padding": 14
+    },
+    "paper": {
+      "shadow_opacity": 0.0
+    },
+    "subtle": {
+      "shadow_opacity": 0.85,
+      "shadow_blur": 16,
+      "shadow_offset": 3,
+      "shadow_spread": 6
+    }
+  }
+}

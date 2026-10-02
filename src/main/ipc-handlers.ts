@@ -1,5 +1,6 @@
 import { openEditor, saveEditor, runEditor, cancelEditor, replaceEditorSource } from './clip-editor'
 import { editorCloseReady, freeEditorMedia, readEditorProgress } from './clip-editor'
+import { listCaptionStyles, saveCaptionStyle, deleteCaptionStyle } from './caption-library'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, realpathSync } from 'fs'
 import { loadSettings, publicSettings, replaceApiKey, savePublicSettings, type ApiKeyName, type PublicSettings } from './settings-store'
@@ -18,7 +19,7 @@ import { automationEnhancementGroups, enhanceAutomationBatch, automationContentS
 import { acknowledgeAutomationWarnings, retryAutomationContent, dismissAutomationMetadataError, automationLibraryClip, reorderAutomationContent, reviewAutomationContent, showAutomationContentInFolder } from './automations'
 import { libraryPostingStatus, libraryMetadataSource, enhanceLibraryMetadata } from './library-posting'
 import { libraryPostingSummary } from './library-posting'
-import { deleteLibraryClips, deleteLibraryRun, setLibraryFavorite, setLibraryPosted } from './library-management'
+import { deleteLibraryClips, deleteLibraryRun, libraryStorageUsage, previewLibraryDeletion, setLibraryFavorite, setLibraryPosted } from './library-management'
 import {
   cancelZernioConnect,
   connectZernioAccount,
@@ -57,6 +58,9 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return publicSettings(loadSettings())
   })
   handle('settings:storageUsage', (_event, fresh: unknown = false) => measureOutputStorage(loadSettings().outputDirectory, { fresh: fresh === true }))
+  handle('captions:list', () => listCaptionStyles())
+  handle('captions:save', (_event, style: unknown) => saveCaptionStyle(style))
+  handle('captions:delete', (_event, id: unknown) => deleteCaptionStyle(id))
   handle('models:list', (_event, refresh: unknown = false) => getModelCatalog(refresh))
   handle('source:youtubePreview', (_event, source: unknown, details: unknown = false) => getYouTubePreview(source, details))
 
@@ -187,6 +191,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('history:setPosted', (_event, outputDir: unknown, clipIndex: unknown, posted: unknown) => setLibraryPosted(outputDir, clipIndex, posted))
   handle('history:setFavorite', (_event, outputDir: unknown, favorite: unknown) => setLibraryFavorite(outputDir, favorite))
   handle('history:delete', (_event, outputDir: unknown) => deleteLibraryRun(outputDir))
+  handle('history:deletionPreview', (_event, outputDir: unknown) => previewLibraryDeletion(outputDir))
+  handle('history:storageUsage', (_event, outputDir: unknown) => libraryStorageUsage(outputDir))
   handle('history:deleteClips', (_event, outputDir: unknown, indices: unknown) => deleteLibraryClips(outputDir, indices))
   handle('history:metadataSource', (_event, outputDir: unknown, clipIndex: unknown) => libraryMetadataSource(outputDir, clipIndex))
   handle('history:enhanceMetadata', (_event, outputDir: unknown, clipIndex: unknown, options: unknown) => enhanceLibraryMetadata(outputDir, clipIndex, options))

@@ -40,19 +40,33 @@ In **Create**, choose a workflow before continuing: **Automatic · Beginner frie
 
 ### Models
 
-In **Create → Clips**, choose **Quality**, **Economy**, or **Advanced**. Advanced offers searchable OpenRouter model pickers for transcription and clip planning, with model IDs, planning prices and compatibility notes. Both selections are required and appear in Review. Advanced retries the selected models without automatically switching models. Transcription must provide word timestamps; planning must support structured output. See [model selection and transcription](transcription.md).
+In **Create → Clips**, choose **Quality**, **Economy**, or **Advanced**. Advanced offers searchable OpenRouter model pickers for transcription and clip planning, with model IDs, planning prices and compatibility notes. Both selections are required and appear in Review. Quality finds moments with Claude Opus 5.5, with Gemini 3.8 Flash and GPT-6 Sol as fallbacks; Economy uses GLM 5.3 Flash. GPT-6 Sol also handles Quality boundary repairs when automatic Jev review is enabled. Advanced retries the selected models without automatically switching models. Transcription must provide word timestamps; planning must support structured output. See [model selection and transcription](transcription.md).
 
 ### Framing, captions and speed
 
 Smart framing follows faces and arranges screen shares with facecams shot by shot. Optional AI vision checks help with ambiguous layouts and can add OpenRouter cost. Use [Review & edit](editor.md) to adjust crops and camera changes before exporting.
 
-Choose from nine caption styles: Viral, Hormozi, Bold, Clean, Minimal, Fire, Glow, Neon and Karaoke. In **Create → Captions**, the selected style plays an animated sample showing how words appear and highlights advance. Pause or restart it to compare styles.
+Choose from 13 default caption styles: Pop, Spotlight, Impact, Glow, Boxed, Sweep, Editorial, Hype, Punch, Neon, Headline, Paper and Subtle. In **Create → Captions**, the selected style plays an animated sample showing how words appear and highlights advance. Pause or restart it to compare styles.
 
 In **Create → Format → Video speed**, choose **1×** (normal), **1.1×**, **1.25×**, **1.5×**, **1.75×**, or **2×** for every clip in the job. Exports preserve voice pitch and keep captions synchronized. Speed works with **Cut dead air** and appears in Review and the saved results. Clip lengths and source trim times refer to the original footage: a 60-second clip at 1.5× exports in about 40 seconds, before any dead-air cuts. The choice stays selected when you clip another video in the same session.
 
 Existing exports stay as they are; generate a new job to change their speed.
 
 See [video speed](video-speed.md) for timing and export details.
+
+### Make a caption style
+
+Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. The sample follows a bundled voice recording; pause or scrub it to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound choice carries across styles while the app is open.
+
+Give it a name and choose **Save preset**. Once you have a saved preset, Captions opens your preset table with edit, duplicate and delete actions. **New preset** starts the base-selection wizard again. When opened from Create, **Save & use** returns to the same draft with the preset selected, or you can use one directly from the table. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
+
+Saved presets are independent copies of their starting default. Changing or retiring a default does not change your preset’s appearance or prevent you from editing, duplicating or exporting it.
+
+**Words at once** controls the size of each caption group. **Lines** lets you choose Auto, 1, 2 or 3 lines. A number balances each group across that many rows, using fewer rows only when there are fewer words. Groups advance sooner when needed to fit the video width, keeping your font size and every spoken word. The layout applies to previews and exported clips. Existing presets keep Auto wrapping.
+
+### Review before generating
+
+Review reuses the video preview and groups format, pace, clip lengths, caption styling and models into editable cards. Use each card’s pencil to return to that step. **Review & edit** keeps manual cuts and has no title overlay; Automatic applies the selected pacing and title options. Clip lengths describe source footage, before playback speed changes.
 
 ### Clip a Twitch VOD
 
@@ -63,6 +77,8 @@ Live channels, Twitch clips, collections, subscriber-only videos and deleted or 
 ## Follow jobs
 
 Every run gets its own folder. The **Library** shows completed clips with virality scores, timecodes and tags. **Jobs** shows what is running or queued right now (up to two clipping runs go at once; more wait in a queue) and every earlier run, including completed, failed, cancelled and interrupted jobs; completed runs open directly in Library, and failed runs from this session can run again.
+
+**Previous** shows ten runs per page. Search and filters apply across the full history and return to the first page; **Active** always shows every running and queued job. Page transitions respect reduced-motion preferences.
 
 Each previous job has a three-dot menu for **Open in Library** (or **Open job** for session jobs), **Open folder** and **Details**. Details opens the saved transcript and edit trace, including for failed runs. Older runs without a saved status appear as unfinished. You can optionally connect social accounts through Zernio to publish or schedule a selected clip.
 
@@ -88,9 +104,9 @@ Select clips to reveal the red trash button for deleting just those exports, wit
 
 ### Bookmarks and run deletion
 
-Library overview cards show the total clip count at the top left and separate **Posted** / **Not Posted** counts below the title. Bookmark a run to keep it in the **Bookmarked** section. Cards move smoothly between Bookmarked and Recent runs without reloading their thumbnails; removing the last bookmark returns to one **All runs** grid. Bookmarks persist across restarts, and reduced-motion preferences turn off movement.
+Library overview cards show the total clip count at the top left, the run's local file size beside its date and cost, and separate **Posted** / **Not Posted** counts below the title. Sizes include all files in the run folder and update when you refresh the Library; **≥** marks an incomplete total. Bookmark a run to keep it in the **Bookmarked** section. Cards move smoothly between Bookmarked and Recent runs without reloading their thumbnails; removing the last bookmark returns to one **All runs** grid. Bookmarks persist across restarts, and reduced-motion preferences turn off movement.
 
-The trash action asks for confirmation before permanently deleting the run folder, all clips and other files inside it, and cached clip previews. It does not remove published social posts or copies stored elsewhere. Active runs cannot be deleted.
+The trash action shows estimated space freed and a visual summary before permanently deleting the run folder, all clips and other files inside it, and cached clip previews. The estimate counts the run's files, including saved edits and source copies; incomplete scans are marked. Published social posts and copies stored elsewhere are kept. Expand **Folder location** to check the exact folder. Active runs cannot be deleted.
 
 **Settings → About → Content storage** shows the total file size and file count in your output folder. Refresh to recalculate; inaccessible files are reported as a partial total.
 

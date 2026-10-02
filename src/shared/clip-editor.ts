@@ -1,3 +1,5 @@
+import { parseCustomCaption, type CustomCaptionPreset } from './custom-captions'
+
 /** Persisted source-time edits. Media paths and review results are main-process owned. */
 export type Crop = [number, number, number, number]
 export type CropCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
@@ -22,7 +24,7 @@ export interface EditorReview {
 }
 export interface CandidateEdit {
   id: string; title: string; ranges: EditorRange[]; scenes: EditorScene[]
-  captions: boolean; caption_preset: string; video_speed: number
+  captions: boolean; caption_preset: string; custom_caption?: CustomCaptionPreset; video_speed: number
   status: 'refining' | 'ready' | 'baked' | 'discarded'
   caption_edits: { segment: number; text: string }[]
   /** Source-time intervals where our burned-in captions are hidden. */
@@ -167,6 +169,8 @@ export function parseCandidateEdit(value: unknown, duration: number, transcriptC
   const id = str(v.id, 64); if (!/^[a-zA-Z0-9_-]+$/.test(id)) fail()
   const title = clampText(v.title, 200); if (!title.trim()) fail()
   const caption_preset = str(v.caption_preset, 64); if (!/^[a-z0-9_-]+$/i.test(caption_preset)) fail()
+  const custom_caption = v.custom_caption === undefined ? undefined : parseCustomCaption(v.custom_caption)
+  if (custom_caption && custom_caption.baseId !== caption_preset) fail()
   if (typeof v.captions !== 'boolean') fail()
   const status = v.status === undefined ? 'refining' : v.status
   if (!['refining', 'ready', 'baked', 'discarded'].includes(status as string)) fail()
@@ -182,7 +186,9 @@ export function parseCandidateEdit(value: unknown, duration: number, transcriptC
     return [Math.round(num(a[0], 0, duration)), Math.round(num(a[1], 0, duration))] as EditorRange
   })
   if (caption_suppression_ranges.some(([a, b], i) => b - a < 100 || (i > 0 && a < caption_suppression_ranges[i - 1][1]))) fail()
-  return { id, title, ranges, scenes, captions: v.captions as boolean, caption_preset, video_speed: num(v.video_speed, 1, 2),
+  // Keep an explicit undefined when returning to a default: saveEditor merges edits
+  // into the saved candidate, so an omitted field would retain its old snapshot.
+  return { id, title, ranges, scenes, captions: v.captions as boolean, caption_preset, custom_caption, video_speed: num(v.video_speed, 1, 2),
     status: status as CandidateEdit['status'], caption_edits, caption_suppression_ranges,
     caption_y: v.caption_y == null ? null : num(v.caption_y, .1, .9),
     ...(v.dismissed_camera_markers === undefined ? {} : { dismissed_camera_markers: [...new Set(arr(v.dismissed_camera_markers, 5000).map((t) => num(t, 0, duration)))].sort((a, b) => a - b) }) }
@@ -234,7 +240,7 @@ export function parseEditorProject(value: unknown): EditorProject {
 }
 export function candidateEdit(c: CandidateEdit): CandidateEdit {
   const { id, title, ranges, scenes, captions, caption_preset, video_speed, status, caption_edits, caption_suppression_ranges = [], dismissed_camera_markers } = c
-  return { id, title, ranges, scenes, captions, caption_preset, video_speed, status, caption_edits, caption_suppression_ranges, caption_y: c.caption_y ?? null, ...(dismissed_camera_markers ? { dismissed_camera_markers } : {}) }
+  return { id, title, ranges, scenes, captions, caption_preset, ...(c.custom_caption ? { custom_caption: c.custom_caption } : {}), video_speed, status, caption_edits, caption_suppression_ranges, caption_y: c.caption_y ?? null, ...(dismissed_camera_markers ? { dismissed_camera_markers } : {}) }
 }
 export function renderEditKey(c: CandidateEdit): string {
   return JSON.stringify({ ...candidateEdit(c), status: undefined, dismissed_camera_markers: undefined })

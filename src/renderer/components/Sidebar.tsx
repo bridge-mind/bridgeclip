@@ -1,3 +1,4 @@
+import { Captions } from 'lucide-react'
 import { ChevronRight, Film, Layers, MessagesSquare, PanelLeftClose, PanelLeftOpen, Send, Settings, UsersRound, WandSparkles, Workflow, type LucideIcon } from 'lucide-react'
 import { cn, MOD_KEY, sourceLabel } from '../lib/utils'
 import { useIsWide, useSidebarExpanded, useSidebarStore } from '../store/use-sidebar-store'
@@ -11,12 +12,13 @@ import { STAGE_LABELS } from './JobProgress'
 import { SidebarUpdateButton } from './Updates'
 import { useAssistantStore } from '../store/use-assistant-store'
 
-export type Page = 'clip' | 'library' | 'jobs' | 'assistant' | 'accounts' | 'posts' | 'automations' | 'settings'
+export type Page = 'clip' | 'library' | 'jobs' | 'captions' | 'assistant' | 'accounts' | 'posts' | 'automations' | 'settings'
 
 export const NAV_ITEMS: { id: Page; label: string; icon: LucideIcon; shortcut: string; group: 'studio' | 'app' }[] = [
   { id: 'clip', label: 'Create', icon: WandSparkles, shortcut: '1', group: 'studio' },
   { id: 'library', label: 'Library', icon: Film, shortcut: '2', group: 'studio' },
   { id: 'jobs', label: 'Jobs', icon: Layers, shortcut: '3', group: 'studio' },
+  { id: 'captions', label: 'Captions', icon: Captions, shortcut: '8', group: 'studio' },
   { id: 'assistant', label: 'Chat', icon: MessagesSquare, shortcut: '7', group: 'studio' },
   { id: 'accounts', label: 'Accounts', icon: UsersRound, shortcut: '4', group: 'app' },
   { id: 'posts', label: 'Posts', icon: Send, shortcut: '5', group: 'app' },

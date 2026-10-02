@@ -9,9 +9,11 @@ import { parseJobOutput, type JobOutput } from '../shared/job-output'
 import { parseEditorProject } from '../shared/clip-editor'
 import { dismissJob, liveJobIds } from './job-manager'
 import { loadSettings } from './settings-store'
+import { scanOutputStorage, STORAGE_SCAN_LIMITS } from './output-storage'
+import type { LibraryDeletionPreview, OutputStorageUsage } from '../shared/output-storage'
 
 /** Only a completed, immediate child of the configured Library can be changed. */
-async function checkedRun(raw: unknown): Promise<{ check: () => string; output: JobOutput; library: string; identity: { dev: number; ino: number } }> {
+async function checkedRun(raw: unknown, { allowBusy = false }: { allowBusy?: boolean } = {}): Promise<{ check: () => string; output: JobOutput; library: string; identity: { dev: number; ino: number } }> {
   const librarySetting = loadSettings().outputDirectory
   if (typeof raw !== 'string' || !isAbsolute(raw) || raw.includes('\0')) throw new Error('Choose a run in your Library.')
   const library = realpathSync(librarySetting)
@@ -24,8 +26,8 @@ async function checkedRun(raw: unknown): Promise<{ check: () => string; output: 
         !current.isDirectory() || current.isSymbolicLink() || realpathSync(path) !== canonical ||
         dirname(canonical) !== library || realpathSync(dirname(path)) !== library ||
         current.dev !== original.dev || current.ino !== original.ino) throw new Error('The Library run changed. Refresh and try again.')
-    if (editorBusy(path)) throw new Error('Wait for the editor to finish before changing this run.')
-    if (liveJobIds().has(basename(path))) throw new Error('Wait for this run to finish before changing it.')
+    if (!allowBusy && editorBusy(path)) throw new Error('Wait for the editor to finish before changing this run.')
+    if (!allowBusy && liveJobIds().has(basename(path))) throw new Error('Wait for this run to finish before changing it.')
     return path
   }
   check()
@@ -33,6 +35,25 @@ async function checkedRun(raw: unknown): Promise<{ check: () => string; output: 
   if (!output) throw new Error('This completed run is no longer available in your Library.')
   check()
   return { check, output, library, identity: { dev: original.dev, ino: original.ino } }
+}
+
+/** Total local file size for a Library card; reading is safe while an editor is open. */
+export async function libraryStorageUsage(outputDir: unknown): Promise<OutputStorageUsage> {
+  const { check } = await checkedRun(outputDir, { allowBusy: true })
+  const usage = await scanOutputStorage(check())
+  check()
+  return usage
+}
+
+/** Fresh, read-only estimate of the same folder that run deletion removes. */
+export async function previewLibraryDeletion(outputDir: unknown): Promise<LibraryDeletionPreview> {
+  const { check, output } = await checkedRun(outputDir)
+  const path = check()
+  const usage = await scanOutputStorage(path, STORAGE_SCAN_LIMITS, { reclaimable: true })
+  check()
+  if (!usage.exists) throw new Error('This Library folder is no longer available.')
+  return { outputDirectory: path, bytes: usage.bytes, fileCount: usage.fileCount, clipCount: output.clips.length,
+    partial: Boolean(usage.truncated || usage.unreadableCount) }
 }
 
 export async function setLibraryFavorite(outputDir: unknown, favorite: unknown): Promise<boolean> {

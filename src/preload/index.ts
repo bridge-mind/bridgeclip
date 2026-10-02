@@ -1,3 +1,4 @@
+import type { CustomCaptionPreset } from '../shared/custom-captions'
 import type { JevThresholdSettings } from '../shared/jev-settings'
 import type { LibraryClipTarget } from '../shared/library-posting'
 import type { AutomationReviewResult } from '../shared/automations'
@@ -22,7 +23,7 @@ import type { MetadataEnhancement, AutomationSourceGroup, AutomationBatchResult,
 import type { LibraryClipPostingStatus, LibraryEnhancementOptions, LibraryRunPostingCounts } from '../shared/library-posting'
 import type { OpenRouterCatalog } from '../shared/openrouter-models'
 import type { UpdateState } from '../shared/updates'
-import type { OutputStorageUsage } from '../shared/output-storage'
+import type { LibraryDeletionPreview, OutputStorageUsage } from '../shared/output-storage'
 import type { YouTubePreview } from '../shared/youtube-preview'
 import type {
   AppDataScope,
@@ -130,6 +131,7 @@ export interface BridgeClipAPI {
     closeReady: (saved: boolean) => Promise<void>
   }
   edits: { inspect: (outputDir: string) => Promise<EditAudit> }
+  captions: { list: () => Promise<CustomCaptionPreset[]>; save: (style: CustomCaptionPreset) => Promise<CustomCaptionPreset[]>; delete: (id: string) => Promise<CustomCaptionPreset[]> }
   models: { list: (refresh?: boolean) => Promise<OpenRouterCatalog> }
   automations: {
     reviewContent: (id: string, contentId: string, returnToQueue: boolean) => Promise<AutomationReviewResult>
@@ -217,6 +219,8 @@ export interface BridgeClipAPI {
   history: {
     setFavorite: (outputDir: string, favorite: boolean) => Promise<boolean>
     delete: (outputDir: string) => Promise<void>
+    deletionPreview: (outputDir: string) => Promise<LibraryDeletionPreview>
+    storageUsage: (outputDir: string) => Promise<OutputStorageUsage>
     deleteClips: (outputDir: string, indices: number[]) => Promise<JobOutput>
     postingStatus: (outputDir: string) => Promise<LibraryClipPostingStatus[]>
     /** Posted counts for many runs at once, for the Library list. */
@@ -317,6 +321,7 @@ const api: BridgeClipAPI = {
     closeReady: (saved) => ipcRenderer.invoke('editor:closeReady', saved)
   },
   edits: { inspect: (outputDir) => ipcRenderer.invoke('edits:inspect', outputDir) },
+  captions: { list: () => ipcRenderer.invoke('captions:list'), save: (style) => ipcRenderer.invoke('captions:save', style), delete: (id) => ipcRenderer.invoke('captions:delete', id) },
   models: { list: (refresh = false) => ipcRenderer.invoke('models:list', refresh) },
   automations: {
     reviewContent: (id, contentId, returnToQueue) => ipcRenderer.invoke('automations:reviewContent', id, contentId, returnToQueue),
@@ -388,6 +393,8 @@ const api: BridgeClipAPI = {
   history: {
     setFavorite: (outputDir, favorite) => ipcRenderer.invoke('history:setFavorite', outputDir, favorite),
     delete: (outputDir) => ipcRenderer.invoke('history:delete', outputDir),
+    deletionPreview: (outputDir) => ipcRenderer.invoke('history:deletionPreview', outputDir),
+    storageUsage: (outputDir) => ipcRenderer.invoke('history:storageUsage', outputDir),
     deleteClips: (outputDir, indices) => ipcRenderer.invoke('history:deleteClips', outputDir, indices),
     postingStatus: (outputDir) => ipcRenderer.invoke('history:postingStatus', outputDir),
     postingSummary: (outputDirs) => ipcRenderer.invoke('history:postingSummary', outputDirs),

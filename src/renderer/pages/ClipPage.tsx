@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { useSetupState } from '../store/use-settings-store'
+import { isCaptionPresetId } from '../../shared/caption-presets'
+import { useCaptionStore } from '../store/use-caption-store'
 import { useDraftStore } from '../store/use-draft-store'
 import { useJobStore } from '../store/use-job-store'
 import { errorMessage } from '../lib/utils'
@@ -51,6 +53,22 @@ export function ClipPage({ onNavigate }: { onNavigate: (page: PageId) => void })
     onNavigate('jobs')
   }, [onNavigate])
 
+  const openCaptionsLab = (): void => {
+    const draft = useDraftStore.getState()
+    const lab = useCaptionStore.getState()
+    const savedStyle = lab.styles.find(style => style.id === lab.editing?.id)
+    const hasUnsavedChanges = lab.editing !== null && JSON.stringify(lab.editing) !== JSON.stringify(savedStyle)
+    useCaptionStore.setState({
+      fromWizard: true,
+      ...(!hasUnsavedChanges ? {
+        view: 'home' as const,
+        editing: null,
+        selectedBaseId: isCaptionPresetId(draft.captionPreset) ? draft.captionPreset : 'pop'
+      } : {})
+    })
+    onNavigate('captions')
+  }
+
   const blockedReason =
     setup.missingKeys.length > 0
       ? `Add your ${setup.missingKeys.join(' and ')} key${setup.missingKeys.length > 1 ? 's' : ''} above to start.`
@@ -74,7 +92,7 @@ export function ClipPage({ onNavigate }: { onNavigate: (page: PageId) => void })
         </Callout>
       )}
 
-      <JobForm className="mt-4" onSubmit={handleSubmit} onViewJob={viewJob} blockedReason={blockedReason} submitting={starting} />
+      <JobForm onOpenCaptionsLab={openCaptionsLab} className="mt-4" onSubmit={handleSubmit} onViewJob={viewJob} blockedReason={blockedReason} submitting={starting} />
     </Page>
   )
 }

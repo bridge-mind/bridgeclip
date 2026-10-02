@@ -87,6 +87,22 @@ test('Settings requests share one walk, reuse a recent result, and Refresh count
   assert.equal((await storage.measureOutputStorage(other)).outputDirectory, other, 'a different folder is never served from the cache')
 })
 
+test('reclaimable estimates count internal hard links once and exclude links retained elsewhere', async (t) => {
+  const temp = tempDir()
+  t.after(temp.cleanup)
+  const run = path.join(temp.dir, 'run')
+  fs.mkdirSync(run)
+  fs.writeFileSync(path.join(run, 'clip.mp4'), Buffer.alloc(100))
+  fs.linkSync(path.join(run, 'clip.mp4'), path.join(run, 'duplicate.mp4'))
+  fs.writeFileSync(path.join(temp.dir, 'original.mp4'), Buffer.alloc(200))
+  fs.linkSync(path.join(temp.dir, 'original.mp4'), path.join(run, 'source.mp4'))
+  fs.writeFileSync(path.join(run, 'metadata'), Buffer.alloc(20))
+  const estimate = await measureOutputStorage(run, undefined, { reclaimable: true })
+  assert.equal(estimate.bytes, 120)
+  assert.equal(estimate.fileCount, 4)
+  assert.equal((await measureOutputStorage(run)).bytes, 420, 'Settings still reports logical file size')
+})
+
 test('a huge or deeply nested folder stops at the scan limits and reports a lower bound', async (t) => {
   const temp = tempDir()
   t.after(temp.cleanup)

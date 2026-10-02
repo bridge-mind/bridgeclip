@@ -1,3 +1,4 @@
+import type { CustomCaptionPreset } from './custom-captions'
 import type { RunDiagnostics } from './run-diagnostics'
 import type { PipelineStage } from './job-progress'
 import type { JobOutput } from './job-output'
@@ -24,6 +25,7 @@ export interface ClipJobRequest {
   videoSpeed?: number
   includeCaptions: boolean
   captionPreset: string
+  customCaption?: CustomCaptionPreset
   /** Title card at the top of Automatic clips. Older requests default to shown. */
   includeTitle?: boolean
   startTimeSeconds: number | null

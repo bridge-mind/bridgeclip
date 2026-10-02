@@ -41,6 +41,58 @@ test('favorites persist across reloads and are returned in Library history', asy
   } finally { f.cleanup() }
 })
 
+test('deletion preview freshly counts the whole validated run without changing files', async (t) => {
+  const f = fixture()
+  t.after(f.cleanup)
+  const before = fs.readFileSync(path.join(f.run, 'job_output.json'))
+  const initialBytes = before.length + fs.statSync(f.clip).size
+  fs.mkdirSync(path.join(f.run, '.editor'))
+  fs.writeFileSync(path.join(f.run, '.editor', 'source.mp4'), Buffer.alloc(1234))
+  fs.writeFileSync(path.join(f.run, 'transcript.json'), '{}')
+  const outside = path.join(f.dir, 'outside')
+  fs.mkdirSync(outside)
+  fs.writeFileSync(path.join(outside, 'keep'), Buffer.alloc(9000))
+  if (directoryLinkType) fs.symlinkSync(outside, path.join(f.run, 'linked-folder'), directoryLinkType)
+  assert.deepEqual(await f.main.previewLibraryDeletion(f.run), {
+    outputDirectory: f.run, bytes: initialBytes + 1236, fileCount: 4, clipCount: 1, partial: false
+  })
+  assert.equal((await f.main.libraryStorageUsage(f.run)).bytes, initialBytes + 1236)
+  fs.writeFileSync(path.join(f.run, 'run.log'), 'new log')
+  assert.equal((await f.main.previewLibraryDeletion(f.run)).bytes, initialBytes + 1243)
+  assert.equal((await f.main.libraryStorageUsage(f.run)).bytes, initialBytes + 1243)
+  assert.deepEqual(fs.readFileSync(path.join(f.run, 'job_output.json')), before)
+  assert.equal(fs.statSync(path.join(outside, 'keep')).size, 9000)
+  assert.deepEqual(f.dismissed, [])
+  for (const invalid of [null, '.', f.library, outside, path.join(f.run, '.editor')]) {
+    await assert.rejects(f.main.previewLibraryDeletion(invalid))
+    await assert.rejects(f.main.libraryStorageUsage(invalid))
+  }
+  if (directoryLinkType) {
+    const alias = path.join(f.library, 'alias')
+    fs.symlinkSync(f.run, alias, directoryLinkType)
+    await assert.rejects(f.main.previewLibraryDeletion(alias))
+    await assert.rejects(f.main.libraryStorageUsage(alias))
+  }
+  f.active.add('completed-run')
+  await assert.rejects(f.main.previewLibraryDeletion(f.run), /finish/)
+  assert.equal((await f.main.libraryStorageUsage(f.run)).bytes, initialBytes + 1243, 'Read-only sizes remain available while a run is busy')
+})
+
+test('deletion preview flags incomplete estimates and rechecks the run after scanning', async (t) => {
+  let afterScan = () => {}
+  const f = fixture({ './output-storage': {
+    STORAGE_SCAN_LIMITS: {},
+    scanOutputStorage: async (directory) => {
+      afterScan()
+      return { outputDirectory: directory, bytes: 10, fileCount: 1, exists: true, unreadableCount: 1 }
+    }
+  } })
+  t.after(f.cleanup)
+  assert.equal((await f.main.previewLibraryDeletion(f.run)).partial, true)
+  afterScan = () => f.active.add('completed-run')
+  await assert.rejects(f.main.previewLibraryDeletion(f.run), /finish/)
+})
+
 test('manual posted marks persist, undo independently, and validate clip IDs and run state', async () => {
   const f = fixture()
   try {

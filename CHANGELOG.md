@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets open in a table with edit, duplicate and delete actions, ready for Create and the editor.
+- Caption presets can arrange captions across 1, 2 or 3 balanced lines, or keep Auto wrapping, in both previews and exports.
+
 - **What to clip** in Create → Clips: describe the moments you want, such as "every time they talk about pricing". Leave it blank to get the strongest moments as before.
 - **Show title at the top** in Create → Captions turns off the title card on Automatic clips.
 - **Review & edit** workflow: look over clip candidates before exporting. Trim, split and extend cuts, change layouts and camera changes, fix and place captions, then bake one clip or every ready clip with **Bake all**. You can also swap in a higher-quality copy of the source video.
@@ -26,11 +29,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- Library deletion shows estimated space freed and a visual summary of what is deleted and kept.
+- Library cards show each run's local file size, loaded in the background and updated on refresh.
+- **Jobs → Previous** shows ten runs per page with animated navigation. Active jobs stay visible, and search and filters cover the full history.
+- **Create → Review** shows the source thumbnail and metadata alongside editable cards for format, moments, captions and models.
+- Caption previews follow a recorded voice sample with synchronized word timing and an optional sound toggle.
+
 - Smart framing ignores weak background faces, stays on a speaker who briefly looks away, follows talking heads inside 4:3 video, and analyzes footage faster.
 - Screen + webcam clips fill the top panel again.
 - Editor previews use much less disk space, and downloaded sources are moved into the project instead of copied.
 
 ### Fixed
+
+- Caption drafts survive restarts, and development runs rebuild background code when shared settings change.
+- Custom presets keep their complete appearance when a starting default is changed or retired; the preset table no longer shows Base.
+- Captions lab previews wrap larger text and word groups within the portrait video's width.
+- Quality mode now correctly identifies **Claude Opus 5.5** as the model that finds moments. Review reflects the selected settings and the effective behavior of each workflow.
 
 - Smooth camera movement in the editor works in installed apps.
 - **Bake all** keeps going when one clip fails, and says what went wrong.

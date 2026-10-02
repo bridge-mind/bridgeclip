@@ -28,7 +28,7 @@ const bundled = buildSync({
   platform: 'node',
   format: 'cjs',
   packages: 'external',
-  loader: { '.svg': 'dataurl', '.css': 'empty' },
+  loader: { '.svg': 'dataurl', '.css': 'empty', '.mp3': 'dataurl' },
   define: { __APP_VERSION__: JSON.stringify(require('../package.json').version) },
   jsx: 'automatic',
   write: false

@@ -26,10 +26,10 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
     observer.observe(element); observer.observe(parent); measure()
     return () => observer.disconnect()
   }, [canvas, project.aspect_ratio])
-  const preset = captionPreviewPreset(candidate.caption_preset), landscape = project.aspect_ratio === '16:9'
+  const preset = captionPreviewPreset(candidate.caption_preset, candidate.custom_caption), landscape = project.aspect_ratio === '16:9'
   const anchor = captionAnchor(project, candidate, time)
   const scale = bounds.width / (landscape ? 1920 : 1080)
-  const size = (SIZES[preset.id] ?? 84) * (landscape ? .65 : 1) * scale * .8
+  const size = (candidate.custom_caption?.style.font_size ?? SIZES[preset.id] ?? 84) * (landscape ? .65 : 1) * scale * .8
   const shadow = textShadow(preset, scale * 3)
   if (!candidate.captions || !bounds.width) return null
   return <div className="editor-caption-overlay" style={bounds}>
@@ -63,7 +63,7 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
         {['Captions', 'go', 'here'].map((word, i) => <span key={i} style={{ color: i === 1 ? preset.highlight : preset.primary,
           background: i === 1 ? preset.pill : undefined,
           padding: preset.pill ? '0 .15em' : undefined, borderRadius: '.15em',
-          textShadow: i === 1 && preset.glow ? `${shadow}, 0 0 ${size / 3}px ${preset.glow}` : undefined }}>{word}</span>)}
+          textShadow: i === 1 && preset.glow ? [shadow === 'none' ? '' : shadow, `0 0 ${size / 3}px ${preset.glow}`].filter(Boolean).join(', ') : undefined }}>{word}</span>)}
       </span>
     </button>
   </div>

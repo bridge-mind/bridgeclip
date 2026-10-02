@@ -244,8 +244,9 @@ async def run(config: dict) -> bool:
         return False
 
     caption_style = None
+    custom_caption = config.get("custom_caption")
     preset_name = config.get("caption_preset", "pop")
-    if config.get("include_captions", True):
+    if custom_caption is None and config.get("include_captions", True):
         try:
             caption_style = get_caption_preset(preset_name)
         except ValueError:
@@ -253,6 +254,10 @@ async def run(config: dict) -> bool:
                 caption_style = get_caption_preset("pop")
             except ValueError:
                 pass
+
+    if custom_caption is not None:
+        from clip_engine.custom_captions import resolve_caption_style
+        caption_style = resolve_caption_style(preset_name, custom_caption)
 
     duration_ranges = config.get("duration_ranges")
 
@@ -264,6 +269,7 @@ async def run(config: dict) -> bool:
         video_url=video_source,
         workflow=config.get('workflow', 'automatic'),
         caption_preset=preset_name,
+        custom_caption=custom_caption,
         job_id=config.get("job_id"),
         max_clips=config.get("max_clips"),
         auto_clip_count=config.get("auto_clip_count", True),
@@ -381,6 +387,9 @@ def validate_config(config: object) -> dict:
         value = config.get(field)
         if value is not None and (type(value) not in (int, float) or not 0 <= value <= 1000):
             raise ValueError("Invalid planner price")
+    if config.get("custom_caption") is not None:
+        from clip_engine.custom_captions import validate_custom_caption
+        config["custom_caption"] = validate_custom_caption(config["custom_caption"], config.get("caption_preset", "pop"))
     keyterms = config.get("keyterms")
     if keyterms is not None and (
         not isinstance(keyterms, list) or len(keyterms) > 1000 or

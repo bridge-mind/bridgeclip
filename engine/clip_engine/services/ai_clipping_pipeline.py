@@ -123,9 +123,14 @@ class ClippingJobRequest:
     video_speed: float = 1.0
     workflow: str = 'automatic'
     caption_preset: str = 'pop'
+    custom_caption: Optional[dict] = None
 
     def __post_init__(self):
         validate_video_speed(self.video_speed)
+        if self.custom_caption is not None:
+            from clip_engine.custom_captions import resolve_caption_style, validate_custom_caption
+            self.custom_caption = validate_custom_caption(self.custom_caption, self.caption_preset)
+            self.caption_style = resolve_caption_style(self.caption_preset, self.custom_caption)
         # Blank means no request, so the run and its no-match error agree with the planner.
         self.clip_request = (self.clip_request or '').strip()[:MAX_CLIP_REQUEST_CHARS] or None
         if self.job_id is None:

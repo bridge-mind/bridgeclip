@@ -1,3 +1,4 @@
+import type { CustomCaptionPreset } from '../../shared/custom-captions'
 import { create } from 'zustand'
 
 /** The Create wizard's steps, in order. */
@@ -36,6 +37,7 @@ export interface ClipDraft {
   maxClips: number
   includeCaptions: boolean
   captionPreset: string
+  customCaption?: CustomCaptionPreset
   /** Automatic clips: the title card at the top of each clip. */
   includeTitle: boolean
   trimOpen: boolean

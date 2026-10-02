@@ -3,12 +3,7 @@ import { HardDrive, RefreshCw } from 'lucide-react'
 import type { OutputStorageUsage } from '../../shared/output-storage'
 import { getApi } from '../lib/ipc'
 import { Button } from './ui/Button'
-
-function formatSize(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const unit = bytes > 0 ? Math.min(Math.floor(Math.log10(bytes) / 3), units.length - 1) : 0
-  return `${(bytes / 1000 ** unit).toLocaleString(undefined, { maximumFractionDigits: unit === 0 ? 0 : 1 })} ${units[unit]}`
-}
+import { formatBytes } from '../lib/utils'
 
 export function OutputStorage({ outputDirectory }: { outputDirectory: string }): React.JSX.Element {
   const [refresh, setRefresh] = useState(0)
@@ -62,7 +57,7 @@ export function OutputStorage({ outputDirectory }: { outputDirectory: string }):
           <p className="text-xs text-warning">{failure}</p>
         ) : usage && (
           <>
-            <p className="text-xl font-semibold tabular-nums text-ink">{(usage.unreadableCount > 0 || usage.truncated) && 'At least '}{formatSize(usage.bytes)}</p>
+            <p className="text-xl font-semibold tabular-nums text-ink">{(usage.unreadableCount > 0 || usage.truncated) && 'At least '}{formatBytes(usage.bytes)}</p>
             <p className="mt-0.5 text-2xs text-ink-muted">
               {usage.exists ? `${usage.fileCount.toLocaleString()} ${usage.fileCount === 1 ? 'file' : 'files'} · Total file size in your output folder` : 'Your output folder has not been created yet.'}
             </p>

@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Check, Pause, Play, RotateCcw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Check, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { defaultCaptionStyle, type CustomCaptionPreset } from '../../shared/custom-captions'
+import type { CaptionPresetId } from '../../shared/caption-presets'
+import { useCaptionStore } from '../store/use-caption-store'
+import { useCaptionPreviewStore } from '../store/use-caption-preview-store'
+import { CAPTION_DEMO_DURATION_MS, CAPTION_DEMO_WORDS } from '../lib/caption-demo'
+import { captionPreviewGroups } from '../lib/caption-layout'
+import captionDemoAudio from '../assets/audio/captions-demo.mp3'
+import { onRadioKeyDown } from './ui/Segmented'
 import { cn } from '../lib/utils'
 import { Button } from './ui/Button'
 
@@ -9,7 +17,7 @@ import { Button } from './ui/Button'
  * plate and karaoke sweep. BridgeClip engine renders with its bundled fonts; the preview
  * uses the same bundled faces, with a system fallback while they load.
  */
-interface CaptionPreset {
+export interface CaptionPreset {
   id: string
   name: string
   description: string
@@ -17,9 +25,12 @@ interface CaptionPreset {
   weight: number
   italic?: boolean
   size: number
+  /** Font size in the engine's 1080px-wide portrait coordinate system. */
+  exportSize?: number
   primary: string
   highlight: string
   stroke: number
+  outline?: string
   shadow: 'soft' | 'hard' | 'halo' | 'none'
   uppercase: boolean
   /** Rounded pill behind the active word. */
@@ -32,13 +43,15 @@ interface CaptionPreset {
   /** How unspoken words look. */
   future?: 'show' | 'dim' | 'hide'
   maxWords?: number
+  maxLines?: number | null
+  letterSpacing?: number
   entrancePop?: boolean
   colorTransition?: boolean
   dimOpacity?: number
   words: [string, string, string]
 }
 
-const PRESETS: CaptionPreset[] = [
+export const PRESETS: CaptionPreset[] = [
   {
     id: 'pop',
     name: 'Pop',
@@ -70,6 +83,7 @@ const PRESETS: CaptionPreset[] = [
   },
   {
     id: 'impact',
+    letterSpacing: 1,
     name: 'Impact',
     description: 'Tall, two words at a time',
     font: '"Anton", "Impact", "Arial Narrow", sans-serif',
@@ -167,6 +181,7 @@ const PRESETS: CaptionPreset[] = [
   },
   {
     id: 'punch',
+    letterSpacing: 1,
     maxWords: 1,
     name: 'Punch',
     description: 'One huge word at a time',
@@ -255,7 +270,28 @@ export const CAPTION_PRESET_NAMES: Record<string, string> = Object.fromEntries(P
  * Preset `size` and `stroke` are tuned for an 84px-tall preview. The compact
  * tile is 60px tall, so samples render at this fraction to keep the same fit.
  */
-export const captionPreviewPreset = (id: string): CaptionPreset => PRESETS.find(p => p.id === id) ?? PRESETS[0]
+export function captionPreviewPreset(id: string, custom?: CustomCaptionPreset): CaptionPreset {
+  if (!custom) {
+    const base = PRESETS.find(p => p.id === id) ?? PRESETS[0]
+    return { ...base, exportSize: defaultCaptionStyle(base.id as CaptionPresetId).font_size }
+  }
+  const s = custom.style
+  const font = s.font_name.startsWith('Montserrat') ? '"Montserrat", sans-serif'
+    : s.font_name.startsWith('Poppins') ? '"Poppins", sans-serif'
+    : s.font_name.startsWith('Instrument') ? '"Instrument Serif", serif' : `"${s.font_name}", sans-serif`
+  return { id: custom.id, name: custom.name, description: 'Custom style', font,
+    weight: s.font_name.includes('Black') && !s.font_name.includes('Archivo') ? 900 : s.font_name.includes('ExtraBold') ? 800 : 400,
+    size: s.font_size * 15 / 84, exportSize: s.font_size,
+    shadow: s.shadow_opacity === 0 ? 'none' : s.shadow_blur <= 1 ? 'hard' : s.shadow_spread >= 5 ? 'halo' : 'soft',
+    letterSpacing: s.letter_spacing,
+    italic: s.italic, primary: s.primary_color, highlight: s.highlight_color, outline: s.outline_color,
+    stroke: s.outline_width, uppercase: s.uppercase, maxWords: s.max_words_per_line, maxLines: s.max_lines,
+    entrancePop: s.entrance_pop, karaoke: s.karaoke_fill, colorTransition: s.color_transition,
+    future: s.future_words, dimOpacity: s.dim_opacity, pill: s.highlight_box_color ?? undefined,
+    glow: s.glow_color ?? undefined,
+    words: s.max_words_per_line === 1 ? ['', 'yours', ''] : s.max_words_per_line === 2 ? ['make', 'yours', ''] : ['make', 'it', 'yours'],
+    plate: s.line_box_color ? `rgb(${parseInt(s.line_box_color.slice(1, 3), 16)} ${parseInt(s.line_box_color.slice(3, 5), 16)} ${parseInt(s.line_box_color.slice(5, 7), 16)} / ${s.line_box_opacity})` : undefined }
+}
 const SAMPLE_SCALE = 60 / 84
 
 /** Stroke + shadow as stacked text-shadows, scaled to the tile. */
@@ -265,7 +301,7 @@ export function textShadow(p: CaptionPreset, scale = SAMPLE_SCALE): string {
   if (w > 0) {
     for (let a = 0; a < 16; a++) {
       const r = (a / 16) * Math.PI * 2
-      layers.push(`${(Math.cos(r) * w).toFixed(2)}px ${(Math.sin(r) * w).toFixed(2)}px 0 #000`)
+      layers.push(`${(Math.cos(r) * w).toFixed(2)}px ${(Math.sin(r) * w).toFixed(2)}px 0 ${p.outline ?? '#000'}`)
     }
   }
   if (p.shadow === 'soft') layers.push(`0 ${(w + 1.5).toFixed(2)}px 4px rgb(0 0 0 / 0.6)`)
@@ -274,7 +310,7 @@ export function textShadow(p: CaptionPreset, scale = SAMPLE_SCALE): string {
   return layers.join(', ') || 'none'
 }
 
-function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.Element {
+export function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.Element {
   const [before, active, after] = preset.words
   const base: CSSProperties = {
     color: preset.primary,
@@ -306,12 +342,13 @@ function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.Element
       </span>
     )
   } else {
-    const bloom = preset.glow ? `, 0 0 4px ${preset.glow}, 0 0 10px ${preset.glow}` : ''
-    activeWord = <span style={{ color: preset.highlight, textShadow: `${textShadow(preset)}${bloom}` }}>{active}</span>
+    const shadow = textShadow(preset)
+    const bloom = preset.glow ? `0 0 4px ${preset.glow}, 0 0 10px ${preset.glow}` : ''
+    activeWord = <span style={{ color: preset.highlight, textShadow: [shadow === 'none' ? '' : shadow, bloom].filter(Boolean).join(', ') || 'none' }}>{active}</span>
   }
 
   const afterStyle: CSSProperties | undefined =
-    preset.future === 'dim' ? { opacity: 0.6 } : preset.future === 'hide' ? { visibility: 'hidden' } : undefined
+    preset.future === 'dim' ? { opacity: preset.dimOpacity ?? 0.6 } : preset.future === 'hide' ? { visibility: 'hidden' } : undefined
   // Karaoke: words already swept keep the highlight colour.
   const beforeStyle: CSSProperties | undefined = preset.karaoke ? { color: preset.highlight } : undefined
 
@@ -339,159 +376,301 @@ function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.Element
 /** A stand-in "frame" behind each sample: a flat, dim video-like tone. */
 const SCENE = '#14161d'
 
-// One shared sentence makes timing and word grouping easy to compare across styles.
-const PREVIEW_WORDS = ['This', 'is', 'how', 'your', 'captions', 'come', 'to', 'life.']
-const WORD_MS = 600
-const SPEECH_MS = PREVIEW_WORDS.length * WORD_MS
-const PREVIEW_MS = SPEECH_MS + 700 + 350 // Match the engine's linger, then clear before looping.
+// libass sizes the font's OS/2 winAscent + winDescent, rather than the CSS em.
+// These ratios come from the same bundled fonts used by caption_generator.py.
+function captionFontHeight(font: string): number {
+  if (font.includes('Montserrat')) return 1.562
+  if (font.includes('Poppins')) return 1.762
+  if (font.includes('Anton')) return 1.7334
+  if (font.includes('Archivo')) return 1.347
+  if (font.includes('Instrument')) return 1.3
+  return 1.562
+}
 
-function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPreset; disabled?: boolean }): React.JSX.Element {
+export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPreset; disabled?: boolean }): React.JSX.Element {
   const [reducedMotion, setReducedMotion] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const [playing, setPlaying] = useState(!reducedMotion)
+  const { audioEnabled, setAudioEnabled } = useCaptionPreviewStore()
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stageSize, setStageSize] = useState({ width: 480, height: 128 })
+  const [playRequested, setPlayRequested] = useState(!reducedMotion)
+  const [playAttempt, setPlayAttempt] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
+  const [playbackError, setPlaybackError] = useState(false)
+  const [duration, setDuration] = useState(CAPTION_DEMO_DURATION_MS)
   const [time, setTime] = useState(0)
-  const elapsed = useRef(0)
+  const [fontRevision, setFontRevision] = useState(0)
+  const exportSize = preset.exportSize ?? defaultCaptionStyle((PRESETS.find(item => item.id === preset.id)?.id ?? 'pop') as CaptionPresetId).font_size
+  const fontSize = exportSize / captionFontHeight(preset.font)
+  const fontSpec = `${preset.italic ? 'italic ' : ''}${preset.weight} ${fontSize}px ${preset.font}`
+  const separator = preset.pill && !preset.karaoke ? '  ' : ' '
+
+  useEffect(() => {
+    let live = true
+    const refresh = (): void => { if (live) setFontRevision(revision => revision + 1) }
+    document.fonts.addEventListener('loadingdone', refresh)
+    void document.fonts.load(fontSpec).then(refresh, () => undefined)
+    return () => { live = false; document.fonts.removeEventListener('loadingdone', refresh) }
+  }, [fontSpec])
+
+  const layout = useMemo(() => {
+    const context = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+    if (context) context.font = fontSpec
+    const measure = (text: string): number => {
+      const shown = preset.uppercase ? text.toUpperCase() : text
+      return (context?.measureText(shown).width ?? shown.length * fontSize * .6) + (preset.letterSpacing ?? 0) * shown.length
+    }
+    return { groups: captionPreviewGroups(CAPTION_DEMO_WORDS, preset.maxWords ?? 3, preset.maxLines, measure, separator), gap: measure(separator) }
+  // Loaded font metrics are different from the system fallback used on first paint.
+  }, [fontSpec, fontSize, preset.uppercase, preset.letterSpacing, preset.maxWords, preset.maxLines, separator, fontRevision])
+
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const measure = (): void => setStageSize({ width: stage.clientWidth, height: stage.clientHeight })
+    const observer = new ResizeObserver(measure)
+    observer.observe(stage)
+    measure()
+    return () => observer.disconnect()
+  }, [])
+
+  const syncTime = (): void => {
+    const audio = audioRef.current
+    if (audio) setTime(audio.currentTime * 1000)
+  }
+
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = (): void => {
       setReducedMotion(media.matches)
-      if (media.matches) setPlaying(false)
+      if (media.matches) {
+        audioRef.current?.pause()
+        setPlayRequested(false)
+      }
     }
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [])
+
   useEffect(() => {
-    if (!playing || disabled) return
+    const audio = audioRef.current
+    const onVisibilityChange = (): void => {
+      // Pause immediately; rendering the hidden state may happen later.
+      if (document.hidden) audio?.pause()
+      setVisible(!document.hidden)
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      audio?.pause()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = !audioEnabled
+  }, [audioEnabled])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (!playRequested || disabled || !visible) {
+      audio.pause()
+      setPlaying(false)
+      return
+    }
+    let cancelled = false
+    setPlaybackError(false)
+    void audio.play().catch(() => {
+      if (cancelled) return
+      setPlaying(false)
+      setPlayRequested(false)
+      setPlaybackError(true)
+    })
+    return () => {
+      cancelled = true
+      audio.pause()
+    }
+  }, [playRequested, playAttempt, disabled, visible])
+
+  useEffect(() => {
+    if (!playing || disabled || !visible) return
     let frame = 0
-    let previous = performance.now()
-    const tick = (now: number): void => {
-      if (!document.hidden) {
-        elapsed.current = (elapsed.current + Math.min(now - previous, 100)) % PREVIEW_MS
-        setTime(elapsed.current)
-      }
-      previous = now
+    const tick = (): void => {
+      // The media clock owns both sound and captions, including seeks and loops.
+      const audio = audioRef.current
+      if (audio) setTime(audio.currentTime * 1000)
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [playing, disabled])
+  }, [playing, disabled, visible])
 
-  const seek = (ms: number): void => { elapsed.current = ms; setTime(ms) }
-  const active = Math.min(Math.floor(time / WORD_MS), PREVIEW_WORDS.length - 1)
-  const groupSize = preset.maxWords ?? 3
-  const groupStart = Math.floor(active / groupSize) * groupSize
-  const groupTime = time - groupStart * WORD_MS
-  const wordProgress = Math.min(1, (time - active * WORD_MS) / WORD_MS)
-  const scale = !reducedMotion && preset.entrancePop !== false && groupTime < 170
+  const seek = (ms: number): void => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.currentTime = Math.max(0, Math.min(ms, duration)) / 1000
+    syncTime()
+  }
+  const pause = (): void => {
+    audioRef.current?.pause()
+    setPlayRequested(false)
+    setPlaying(false)
+  }
+  const play = (): void => {
+    if (audioRef.current?.ended) seek(0)
+    setPlayRequested(true)
+    setPlayAttempt((attempt) => attempt + 1)
+  }
+  const active = Math.max(0, CAPTION_DEMO_WORDS.findLastIndex((word) => time >= word.start))
+  const group = layout.groups.find(item => active >= item.start && active < item.end) ?? layout.groups[0]
+  const groupStart = group.start
+  const words = CAPTION_DEMO_WORDS.slice(groupStart, group.end)
+  const groupTime = time - words[0].start
+  const groupEnd = Math.min(words[words.length - 1].end + 700, CAPTION_DEMO_WORDS[group.end]?.start ?? duration, duration)
+  const activeWord = CAPTION_DEMO_WORDS[active]
+  const wordProgress = Math.max(0, Math.min(1, (time - activeWord.start) / Math.max(1, activeWord.end - activeWord.start)))
+  const scale = !reducedMotion && preset.entrancePop !== false && groupTime >= 0 && groupTime < 170
     ? groupTime < 90 ? 0.82 + 0.24 * groupTime / 90 : 1.06 - 0.06 * (groupTime - 90) / 80
     : 1
-  const shadow = textShadow(preset, 1.2)
+  // Keep the export's font-to-width ratio at every panel size. Reserve the
+  // engine's 60px side margins, and enough height for up to three wrapped rows.
+  const frameWidth = Math.max(1, Math.min(stageSize.width - 32, 480, (stageSize.height - 16) * 1080 / (exportSize * 3)))
+  const frameScale = frameWidth / 1080
+  const shadow = textShadow(preset, frameScale / .28)
   const base: CSSProperties = {
     color: preset.primary, fontFamily: preset.font, fontWeight: preset.weight,
-    fontStyle: preset.italic ? 'italic' : 'normal', fontSize: preset.size * 1.65,
+    fontStyle: preset.italic ? 'italic' : 'normal', fontSize: fontSize * frameScale,
+    width: 960 * frameScale, lineHeight: `${exportSize * frameScale}px`,
+    letterSpacing: preset.maxLines != null ? (preset.letterSpacing ?? 0) * frameScale : undefined,
     textShadow: shadow, textTransform: preset.uppercase ? 'uppercase' : 'none',
-    transform: `scale(${scale})`, visibility: time >= SPEECH_MS + 700 ? 'hidden' : undefined
+    transform: `scale(${scale})`, visibility: groupTime < 0 || time >= groupEnd ? 'hidden' : undefined
+  }
+
+  const renderWord = (index: number): React.JSX.Element => {
+    const word = CAPTION_DEMO_WORDS[index].text
+    const state = index === active ? 'active' : index < active ? 'past' : 'future'
+    const style: CSSProperties = {
+      visibility: state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
+      opacity: state === 'future' && preset.future === 'dim' ? preset.dimOpacity ?? 0.6 : 1,
+      // Reserve pill padding on every word so the line stays put as it advances.
+      padding: preset.pill && !preset.karaoke ? `0 ${10 * frameScale}px` : undefined,
+      marginInline: preset.maxLines != null && preset.pill && !preset.karaoke ? -10 * frameScale : undefined,
+      borderRadius: 10 * frameScale
+    }
+    if (preset.karaoke) {
+      if (state === 'past') style.color = preset.highlight
+    } else if (state === 'active') {
+      style.color = preset.colorTransition
+        ? `color-mix(in srgb, ${preset.highlight} ${Math.min(1, wordProgress / 0.3) * 100}%, ${preset.primary})`
+        : preset.highlight
+      if (preset.pill) { style.background = preset.pill; style.textShadow = 'none' }
+    }
+    if (preset.glow && (state === 'active' || preset.karaoke)) style.textShadow = [shadow === 'none' ? '' : shadow, `0 0 8px ${preset.glow}`, `0 0 18px ${preset.glow}`].filter(Boolean).join(', ')
+    return (
+      <span key={index} data-caption-state={state} className="relative inline-block whitespace-nowrap" style={style}>
+        {word}
+        {preset.karaoke && state === 'active' && (
+          <span className="absolute inset-0" style={{ color: preset.highlight, textShadow: 'none', clipPath: `inset(0 ${(1 - wordProgress) * 100}% 0 0)` }}>{word}</span>
+        )}
+      </span>
+    )
   }
 
   return (
     <section aria-label="Caption preview" className="mb-3 overflow-hidden rounded-xl border border-white/[0.08]" style={{ background: SCENE }}>
       <div className="flex items-center justify-between gap-2 px-3 pt-3 text-xs">
         <span className="font-semibold text-ink">{preset.name} preview</span>
-        <span className="text-2xs text-ink-subtle">Sample timing · No audio</span>
+        <span className="text-2xs text-ink-subtle" role={playbackError ? 'status' : undefined}>{playbackError ? 'Couldn’t play preview' : audioEnabled ? 'Sound on' : 'Sound off'}</span>
       </div>
-      <div aria-hidden="true" className="flex h-32 items-center justify-center overflow-hidden px-4">
+      <div ref={stageRef} aria-hidden="true" className="caption-preview-stage flex h-32 items-center justify-center overflow-hidden px-4">
         <div className="text-center leading-snug" style={base}>
-          <span className="inline-flex flex-wrap justify-center gap-x-[0.3em] rounded-md px-2 py-1" style={{ background: preset.plate }}>
-            {PREVIEW_WORDS.slice(groupStart, groupStart + groupSize).map((word, offset) => {
-              const index = groupStart + offset
-              const state = index === active ? 'active' : index < active ? 'past' : 'future'
-              const style: CSSProperties = {
-                visibility: state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
-                opacity: state === 'future' && preset.future === 'dim' ? preset.dimOpacity ?? 0.6 : 1,
-                // Reserve pill padding on every word so the line stays put as it advances.
-                padding: preset.pill ? '1px 5px' : undefined,
-                borderRadius: 5
-              }
-              if (preset.karaoke) {
-                if (state === 'past') style.color = preset.highlight
-              } else if (state === 'active') {
-                style.color = preset.colorTransition
-                  ? `color-mix(in srgb, ${preset.highlight} ${Math.min(1, wordProgress / 0.3) * 100}%, ${preset.primary})`
-                  : preset.highlight
-                if (preset.pill) { style.background = preset.pill; style.textShadow = 'none' }
-                if (preset.glow) style.textShadow = `${shadow}, 0 0 8px ${preset.glow}, 0 0 18px ${preset.glow}`
-              }
-              return (
-                <span key={index} data-caption-state={state} className="relative inline-block whitespace-nowrap" style={style}>
-                  {word}
-                  {preset.karaoke && state === 'active' && (
-                    <span className="absolute inset-0" style={{ color: preset.highlight, textShadow: 'none', clipPath: `inset(0 ${(1 - wordProgress) * 100}% 0 0)` }}>{word}</span>
-                  )}
-                </span>
-              )
-            })}
+          {preset.maxLines == null ? <span className="inline-flex max-w-full flex-wrap justify-center gap-x-[0.3em] rounded-md" style={{ background: preset.plate }}>
+            {words.map((_, offset) => renderWord(groupStart + offset))}
+          </span> : <span className="inline-flex max-w-full flex-col items-center rounded-md" style={{ background: preset.plate }}>
+            {group.lines.map(line => <span key={line.start} data-caption-line className="inline-flex flex-nowrap justify-center whitespace-nowrap" style={{ gap: layout.gap * frameScale, fontSize: line.scale < 1 ? fontSize * frameScale * line.scale : undefined, letterSpacing: line.scale < 1 ? (preset.letterSpacing ?? 0) * frameScale * line.scale : undefined }}>
+              {CAPTION_DEMO_WORDS.slice(line.start, line.end).map((_, offset) => renderWord(line.start + offset))}
+            </span>)}
           </span>
+          }
         </div>
       </div>
       <div className="flex items-center gap-2 border-t border-white/[0.06] px-2 py-2">
-        <Button size="sm" variant="ghost" iconOnly disabled={disabled} aria-label={playing && !disabled ? 'Pause caption preview' : 'Play caption preview'} icon={playing && !disabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />} onClick={() => setPlaying((value) => !value)} />
-        <Button size="sm" variant="ghost" iconOnly disabled={disabled} aria-label="Replay caption preview" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => { seek(0); setPlaying(true) }} />
-        <input type="range" aria-label="Caption preview position" aria-valuetext={`${(time / 1000).toFixed(1)} seconds`} min={0} max={PREVIEW_MS} step={100} value={time} disabled={disabled} className="min-w-0 flex-1 accent-accent" onChange={(event) => { setPlaying(false); seek(Number(event.target.value)) }} />
-        <span aria-hidden="true" className="w-16 text-right text-2xs tabular-nums text-ink-subtle">{(time / 1000).toFixed(1)} / {(PREVIEW_MS / 1000).toFixed(1)}s</span>
+        <Button size="sm" variant="ghost" iconOnly disabled={disabled} aria-label={playing && !disabled ? 'Pause caption preview' : 'Play caption preview'} icon={playing && !disabled ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />} onClick={() => { if (audioRef.current?.paused) play(); else pause() }} />
+        <Button size="sm" variant="ghost" iconOnly disabled={disabled} aria-label="Replay caption preview" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => { seek(0); play() }} />
+        <Button size="sm" variant="ghost" iconOnly disabled={disabled} aria-label={audioEnabled ? 'Mute preview audio' : 'Enable preview audio'} aria-pressed={audioEnabled} title={audioEnabled ? 'Mute preview audio' : 'Enable preview audio'} className={audioEnabled ? 'text-accent' : undefined} icon={audioEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />} onClick={() => {
+          // Apply in the user gesture so browsers can permit unmuted playback.
+          if (audioRef.current) audioRef.current.muted = audioEnabled
+          setAudioEnabled(!audioEnabled)
+        }} />
+        <input type="range" aria-label="Caption preview position" aria-valuetext={`${(time / 1000).toFixed(1)} seconds`} min={0} max={duration} step={10} value={Math.min(time, duration)} disabled={disabled} className="min-w-0 flex-1 accent-accent" onChange={(event) => { pause(); seek(Number(event.target.value)) }} />
+        <span aria-hidden="true" className="w-16 shrink-0 text-right text-2xs tabular-nums text-ink-subtle">{(time / 1000).toFixed(1)} / {(duration / 1000).toFixed(1)}s</span>
       </div>
+      <audio ref={audioRef} src={captionDemoAudio} preload="auto" loop muted={!audioEnabled} aria-hidden="true" className="hidden"
+        onLoadedMetadata={() => {
+          const actualDuration = (audioRef.current?.duration ?? 0) * 1000
+          if (Number.isFinite(actualDuration) && actualDuration > 0) setDuration(actualDuration)
+          syncTime()
+        }}
+        onTimeUpdate={syncTime} onSeeked={syncTime}
+        onPlaying={() => {
+          if (disabled || document.hidden || !playRequested) { audioRef.current?.pause(); return }
+          setPlaybackError(false)
+          setPlaying(true)
+        }}
+        onPause={() => { setPlaying(false); syncTime() }}
+        onWaiting={() => setPlaying(false)}
+        onError={() => { audioRef.current?.pause(); setPlaying(false); setPlayRequested(false); setPlaybackError(true) }} />
     </section>
   )
 }
 
 interface CaptionPresetPickerProps {
   value: string
-  onChange: (preset: string) => void
+  onChange: (preset: string, custom?: CustomCaptionPreset) => void
+  customCaption?: CustomCaptionPreset
   disabled?: boolean
   showPreview?: boolean
 }
 
-export function CaptionPresetPicker({ value, onChange, disabled, showPreview = false }: CaptionPresetPickerProps): React.JSX.Element {
-  const current = PRESETS.find((preset) => preset.id === value) ?? PRESETS[0]
+export function CaptionPresetPicker({ value, customCaption, onChange, disabled, showPreview = false }: CaptionPresetPickerProps): React.JSX.Element {
+  const { styles, error, load } = useCaptionStore()
+  useEffect(() => { void load() }, [load])
+  const current = captionPreviewPreset(value, customCaption)
+  // A draft owns its snapshot: editing or deleting a library style must not
+  // quietly change the selected tile or the style that this job will receive.
+  const customStyles = customCaption
+    ? [customCaption, ...styles.filter(style => style.id !== customCaption.id)]
+    : styles
+  const groups = [
+    { label: 'Default', items: PRESETS },
+    { label: 'Your styles', items: customStyles.map(style => captionPreviewPreset(style.baseId, style)) }
+  ]
   return (
     <div>
       {showPreview && <CaptionMotionPreview key={current.id} preset={current} disabled={disabled} />}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2" role="radiogroup" aria-label="Caption style">
-        {PRESETS.map((preset) => {
-          const selected = value === preset.id
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              aria-label={preset.name}
-              aria-description={preset.description}
-              title={preset.description}
-              disabled={disabled}
-              onClick={() => onChange(preset.id)}
-              className={cn(
-                'glass-tile glass-tile-hover group relative rounded-xl p-1 text-left hover:-translate-y-0.5',
-                selected && 'glass-selected',
-                disabled && 'opacity-50'
-              )}
-            >
-              <span
-                className="relative flex h-[60px] items-end justify-center overflow-hidden rounded-lg px-1.5 pb-2.5 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
-                style={{ background: SCENE }}
-              >
-                <CaptionSample preset={preset} />
-                {selected && (
-                  <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-accent-ink shadow-[0_0_0_1px_rgb(var(--accent)/0.6)] animate-pop-in">
-                    <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
-                  </span>
-                )}
-              </span>
-              <span className={cn('block truncate px-1.5 pb-0.5 pt-1.5 text-xs font-semibold', selected ? 'text-ink' : 'text-ink/90')}>
-                {preset.name}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+      {error && <div role="status" className="mb-2 flex items-center gap-2 text-xs text-warning">{error}<Button size="sm" onClick={() => void load()}>Retry</Button></div>}
+      {groups.map(group => <div key={group.label} className="mt-3 first:mt-0">
+        <p className="eyebrow mb-2">{group.label}</p>
+        {group.items.length === 0 ? <p className="text-xs text-ink-subtle">Make your first style in the Captions lab.</p> :
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2" role="radiogroup" aria-label={group.label === 'Default' ? 'Caption style' : 'Your caption styles'}>
+            {group.items.map((preset, index) => <CaptionStyleTile key={preset.id} preset={preset} selected={current.id === preset.id} disabled={disabled}
+              tabIndex={current.id === preset.id || index === 0 && !group.items.some(item => item.id === current.id) ? 0 : -1}
+              onClick={() => { const custom = customStyles.find(style => style.id === preset.id); onChange(custom?.baseId ?? preset.id, custom) }} />)}
+          </div>}
+      </div>)}
     </div>
   )
+}
+
+export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex }: { preset: CaptionPreset; selected: boolean; disabled?: boolean; onClick: () => void; tabIndex?: number }): React.JSX.Element {
+  return <button type="button" role="radio" aria-checked={selected} aria-label={preset.name} aria-description={preset.description}
+    title={preset.description} disabled={disabled} tabIndex={tabIndex ?? (selected ? 0 : -1)} onClick={onClick} onKeyDown={onRadioKeyDown}
+    className={cn('glass-tile glass-tile-hover group relative min-w-0 rounded-xl p-1 text-left hover:-translate-y-0.5', selected && 'glass-selected', disabled && 'opacity-50')}>
+    <span className="relative flex h-[60px] items-end justify-center overflow-hidden rounded-lg px-1.5 pb-2.5 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" style={{ background: SCENE }}>
+      <CaptionSample preset={preset} />
+      {selected && <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-accent-ink animate-pop-in"><Check className="h-2.5 w-2.5" strokeWidth={3.5} /></span>}
+    </span>
+    <span className="block truncate px-1.5 pb-0.5 pt-1.5 text-xs font-semibold text-ink">{preset.name}</span>
+  </button>
 }

@@ -188,6 +188,7 @@ test('the native picker authorizes media and shell opening rejects aliased appli
       './pipeline-runner': {},
       './job-manager': { initJobManager() {} },
       './job-start': {},
+    './caption-library': {},
       './logger': {},
       './security': security,
       './network-policy': {},
@@ -205,6 +206,8 @@ test('the native picker authorizes media and shell opening rejects aliased appli
     assert.equal(handlers.has('framing:inspect'), false)
     assert.equal(handlers.has('framing:available'), false)
     const storage = handlers.get('settings:storageUsage')
+    assert.throws(() => handlers.get('history:deletionPreview')({ sender: contents, senderFrame: {} }, library), /Unauthorized application request/)
+    assert.throws(() => handlers.get('history:storageUsage')({ sender: contents, senderFrame: {} }, library), /Unauthorized application request/)
     assert.throws(() => handlers.get('source:youtubePreview')({ sender: contents, senderFrame: {} }, 'https://youtu.be/aqz-KE-bpKQ'), /Unauthorized application request/)
     assert.throws(() => storage({ sender: contents, senderFrame: {} }), /Unauthorized application request/)
     assert.equal((await storage({ sender: contents, senderFrame: frame }, root)).outputDirectory, library)
