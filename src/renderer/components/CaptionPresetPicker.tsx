@@ -4,10 +4,11 @@ import { defaultCaptionStyle, type CustomCaptionPreset } from '../../shared/cust
 import type { CaptionPresetId } from '../../shared/caption-presets'
 import { useCaptionStore } from '../store/use-caption-store'
 import { useCaptionPreviewStore } from '../store/use-caption-preview-store'
-import { CAPTION_DEMO_DURATION_MS, CAPTION_DEMO_WORDS } from '../lib/caption-demo'
+import { CAPTION_DEMO_DURATION_MS, CAPTION_DEMO_WORDS, CAPTION_LONG_DEMO_DURATION_MS, CAPTION_LONG_DEMO_WORDS } from '../lib/caption-demo'
 import { captionPreviewGroups } from '../lib/caption-layout'
 import captionDemoAudio from '../assets/audio/captions-demo.mp3'
-import { onRadioKeyDown } from './ui/Segmented'
+import captionLongDemoAudio from '../assets/audio/captions-demo-longer.mp3'
+import { onRadioKeyDown, Segmented } from './ui/Segmented'
 import { cn } from '../lib/utils'
 import { Button } from './ui/Button'
 
@@ -387,10 +388,15 @@ function captionFontHeight(font: string): number {
   return 1.562
 }
 
-export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPreset; disabled?: boolean }): React.JSX.Element {
+export function CaptionMotionPreview({ preset, disabled, labControls = false }: { preset: CaptionPreset; disabled?: boolean; labControls?: boolean }): React.JSX.Element {
   const [reducedMotion, setReducedMotion] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const { audioEnabled, setAudioEnabled } = useCaptionPreviewStore()
+  const { audioEnabled, setAudioEnabled, sample, setSample } = useCaptionPreviewStore()
+  const longSample = labControls && sample === 'long'
+  const demoWords = longSample ? CAPTION_LONG_DEMO_WORDS : CAPTION_DEMO_WORDS
+  const demoDuration = longSample ? CAPTION_LONG_DEMO_DURATION_MS : CAPTION_DEMO_DURATION_MS
+  const demoAudio = longSample ? captionLongDemoAudio : captionDemoAudio
   const audioRef = useRef<HTMLAudioElement>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 480, height: 128 })
   const [playRequested, setPlayRequested] = useState(!reducedMotion)
@@ -398,7 +404,7 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
   const [playing, setPlaying] = useState(false)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   const [playbackError, setPlaybackError] = useState(false)
-  const [duration, setDuration] = useState(CAPTION_DEMO_DURATION_MS)
+  const [duration, setDuration] = useState(demoDuration)
   const [time, setTime] = useState(0)
   const [fontRevision, setFontRevision] = useState(0)
   const exportSize = preset.exportSize ?? defaultCaptionStyle((PRESETS.find(item => item.id === preset.id)?.id ?? 'pop') as CaptionPresetId).font_size
@@ -421,9 +427,17 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
       const shown = preset.uppercase ? text.toUpperCase() : text
       return (context?.measureText(shown).width ?? shown.length * fontSize * .6) + (preset.letterSpacing ?? 0) * shown.length
     }
-    return { groups: captionPreviewGroups(CAPTION_DEMO_WORDS, preset.maxWords ?? 3, preset.maxLines, measure, separator), gap: measure(separator) }
+    return { groups: captionPreviewGroups(demoWords, preset.maxWords ?? 3, preset.maxLines, measure, separator), gap: measure(separator) }
   // Loaded font metrics are different from the system fallback used on first paint.
-  }, [fontSpec, fontSize, preset.uppercase, preset.letterSpacing, preset.maxWords, preset.maxLines, separator, fontRevision])
+  }, [demoWords, fontSpec, fontSize, preset.uppercase, preset.letterSpacing, preset.maxWords, preset.maxLines, separator, fontRevision])
+
+  useEffect(() => {
+    setDuration(demoDuration)
+    setTime(0)
+    setPlaybackError(false)
+    if (audioRef.current) audioRef.current.currentTime = 0
+    if (transcriptRef.current) transcriptRef.current.scrollTop = 0
+  }, [demoDuration])
 
   useEffect(() => {
     const stage = stageRef.current
@@ -491,7 +505,7 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
       cancelled = true
       audio.pause()
     }
-  }, [playRequested, playAttempt, disabled, visible])
+  }, [playRequested, playAttempt, disabled, visible, demoAudio])
 
   useEffect(() => {
     if (!playing || disabled || !visible) return
@@ -522,15 +536,15 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
     setPlayRequested(true)
     setPlayAttempt((attempt) => attempt + 1)
   }
-  const active = Math.max(0, CAPTION_DEMO_WORDS.findLastIndex((word) => time >= word.start))
+  const active = Math.max(0, demoWords.findLastIndex((word) => time >= word.start))
   const group = layout.groups.find(item => active >= item.start && active < item.end) ?? layout.groups[0]
   const groupStart = group.start
-  const words = CAPTION_DEMO_WORDS.slice(groupStart, group.end)
+  const words = demoWords.slice(groupStart, group.end)
   const groupTime = time - words[0].start
-  const groupEnd = Math.min(words[words.length - 1].end + 700, CAPTION_DEMO_WORDS[group.end]?.start ?? duration, duration)
-  const activeWord = CAPTION_DEMO_WORDS[active]
+  const groupEnd = Math.min(words[words.length - 1].end + 700, demoWords[group.end]?.start ?? duration, duration)
+  const activeWord = demoWords[active]
   const wordProgress = Math.max(0, Math.min(1, (time - activeWord.start) / Math.max(1, activeWord.end - activeWord.start)))
-  const scale = !reducedMotion && preset.entrancePop !== false && groupTime >= 0 && groupTime < 170
+  const scale = playing && !reducedMotion && preset.entrancePop !== false && groupTime >= 0 && groupTime < 170
     ? groupTime < 90 ? 0.82 + 0.24 * groupTime / 90 : 1.06 - 0.06 * (groupTime - 90) / 80
     : 1
   // Keep the export's font-to-width ratio at every panel size. Reserve the
@@ -544,11 +558,11 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
     width: 960 * frameScale, lineHeight: `${exportSize * frameScale}px`,
     letterSpacing: preset.maxLines != null ? (preset.letterSpacing ?? 0) * frameScale : undefined,
     textShadow: shadow, textTransform: preset.uppercase ? 'uppercase' : 'none',
-    transform: `scale(${scale})`, visibility: groupTime < 0 || time >= groupEnd ? 'hidden' : undefined
+    transform: `scale(${scale})`, visibility: groupTime < 0 && (!labControls || playing) || time >= groupEnd ? 'hidden' : undefined
   }
 
   const renderWord = (index: number): React.JSX.Element => {
-    const word = CAPTION_DEMO_WORDS[index].text
+    const word = demoWords[index].text
     const state = index === active ? 'active' : index < active ? 'past' : 'future'
     const style: CSSProperties = {
       visibility: state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
@@ -577,7 +591,22 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
     )
   }
 
-  return (
+  useEffect(() => {
+    const list = transcriptRef.current
+    if (!list) return
+    const followLine = (): void => {
+      const current = list.querySelector<HTMLElement>('[aria-current="true"]')
+      if (!current || list.matches(':hover, :focus-within')) return
+      const offset = current.offsetTop
+      if (offset < list.scrollTop || offset + current.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = offset
+    }
+    followLine()
+    const observer = new ResizeObserver(followLine)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [groupStart, layout.groups])
+
+  return (<>
     <section aria-label="Caption preview" className="mb-3 overflow-hidden rounded-xl border border-white/[0.08]" style={{ background: SCENE }}>
       <div className="flex items-center justify-between gap-2 px-3 pt-3 text-xs">
         <span className="font-semibold text-ink">{preset.name} preview</span>
@@ -589,7 +618,7 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
             {words.map((_, offset) => renderWord(groupStart + offset))}
           </span> : <span className="inline-flex max-w-full flex-col items-center rounded-md" style={{ background: preset.plate }}>
             {group.lines.map(line => <span key={line.start} data-caption-line className="inline-flex flex-nowrap justify-center whitespace-nowrap" style={{ gap: layout.gap * frameScale, fontSize: line.scale < 1 ? fontSize * frameScale * line.scale : undefined, letterSpacing: line.scale < 1 ? (preset.letterSpacing ?? 0) * frameScale * line.scale : undefined }}>
-              {CAPTION_DEMO_WORDS.slice(line.start, line.end).map((_, offset) => renderWord(line.start + offset))}
+              {demoWords.slice(line.start, line.end).map((_, offset) => renderWord(line.start + offset))}
             </span>)}
           </span>
           }
@@ -606,7 +635,7 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
         <input type="range" aria-label="Caption preview position" aria-valuetext={`${(time / 1000).toFixed(1)} seconds`} min={0} max={duration} step={10} value={Math.min(time, duration)} disabled={disabled} className="min-w-0 flex-1 accent-accent" onChange={(event) => { pause(); seek(Number(event.target.value)) }} />
         <span aria-hidden="true" className="w-16 shrink-0 text-right text-2xs tabular-nums text-ink-subtle">{(time / 1000).toFixed(1)} / {(duration / 1000).toFixed(1)}s</span>
       </div>
-      <audio ref={audioRef} src={captionDemoAudio} preload="auto" loop muted={!audioEnabled} aria-hidden="true" className="hidden"
+      <audio ref={audioRef} src={demoAudio} preload="auto" loop muted={!audioEnabled} aria-hidden="true" className="hidden"
         onLoadedMetadata={() => {
           const actualDuration = (audioRef.current?.duration ?? 0) * 1000
           if (Number.isFinite(actualDuration) && actualDuration > 0) setDuration(actualDuration)
@@ -622,7 +651,19 @@ export function CaptionMotionPreview({ preset, disabled }: { preset: CaptionPres
         onWaiting={() => setPlaying(false)}
         onError={() => { audioRef.current?.pause(); setPlaying(false); setPlayRequested(false); setPlaybackError(true) }} />
     </section>
-  )
+    {labControls && <section aria-label="Preview text" className="caption-demo-text mt-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h4 className="eyebrow">Preview text</h4>
+        <Segmented label="Preview sample" size="sm" value={sample} options={[{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }]} onChange={setSample} />
+      </div>
+      <div ref={transcriptRef} className="caption-demo-lines relative space-y-1 overflow-y-auto overscroll-contain" role="group" aria-label="Caption lines">
+        {layout.groups.map(item => <button key={item.start} type="button" disabled={disabled} aria-current={item.start === groupStart ? true : undefined} title="Jump to this line" onClick={() => seek(demoWords[item.start].start)} className={cn('flex w-full items-start gap-3 rounded-lg px-2.5 py-2 text-left text-xs transition-colors motion-reduce:transition-none', item.start === groupStart ? 'bg-accent/10 text-ink' : 'text-ink-muted hover:bg-white/[0.04] hover:text-ink')}>
+          <span aria-hidden="true" className={cn('w-7 shrink-0 pt-px font-mono text-2xs tabular-nums', item.start === groupStart ? 'text-accent' : 'text-ink-faint')}>{(demoWords[item.start].start / 1000).toFixed(1)}s</span>
+          <span>{demoWords.slice(item.start, item.end).map(word => word.text).join(' ')}</span>
+        </button>)}
+      </div>
+    </section>}
+  </>)
 }
 
 interface CaptionPresetPickerProps {

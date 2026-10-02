@@ -4,7 +4,11 @@ import { create } from 'zustand'
 export const useCaptionPreviewStore = create<{
   audioEnabled: boolean
   setAudioEnabled: (enabled: boolean) => void
+  sample: 'short' | 'long'
+  setSample: (sample: 'short' | 'long') => void
 }>((set) => ({
   audioEnabled: false,
-  setAudioEnabled: (audioEnabled) => set({ audioEnabled })
+  setAudioEnabled: (audioEnabled) => set({ audioEnabled }),
+  sample: 'short',
+  setSample: sample => set({ sample })
 }))

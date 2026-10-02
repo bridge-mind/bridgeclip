@@ -1,4 +1,5 @@
 import { Pagination } from '../components/ui/Pagination'
+import { useTablePreferencesStore } from '../store/use-table-preferences-store'
 import './jobs-pagination.css'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Ban, FileText, FolderOpen, ListVideo, Pencil, Plus, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
@@ -215,16 +216,16 @@ function JobsList({ active, entries, filter, query, error, refreshing, onFilter,
       (filter === 'all' || entry.status === filter) &&
       (!q || entry.videoTitle.toLowerCase().includes(q) || entry.jobId.toLowerCase().includes(q)))
   }, [previous, filter, query])
-  const pageSize = 10
-  const [pagination, setPagination] = useState({ page: 1, filter, query, direction: 'forward' })
+  const { pageSize, setPageSize } = useTablePreferencesStore()
+  const [pagination, setPagination] = useState({ page: 1, filter, query, pageSize, direction: 'forward' })
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
-  const page = filter !== pagination.filter || query !== pagination.query ? 1 : Math.min(pagination.page, pageCount)
+  const page = filter !== pagination.filter || query !== pagination.query || pageSize !== pagination.pageSize ? 1 : Math.min(pagination.page, pageCount)
   // Commit the clamped page, so a later refresh cannot jump back to a vanished page.
   useEffect(() => {
-    if (page !== pagination.page || filter !== pagination.filter || query !== pagination.query) {
-      setPagination({ page, filter, query, direction: 'forward' })
+    if (page !== pagination.page || filter !== pagination.filter || query !== pagination.query || pageSize !== pagination.pageSize) {
+      setPagination({ page, filter, query, pageSize, direction: 'forward' })
     }
-  }, [page, filter, query, pagination])
+  }, [page, filter, query, pageSize, pagination])
   const historyWindow = useRef<HTMLDivElement>(null)
   const previousHeight = useRef(0)
   useLayoutEffect(() => {
@@ -236,10 +237,10 @@ function JobsList({ active, entries, filter, query, error, refreshing, onFilter,
     if (!before || before === height || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const animation = element.animate([{ height: `${before}px` }, { height: `${height}px` }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' })
     return () => animation.cancel()
-  }, [page, filter, query, visible.length])
+  }, [page, filter, query, pageSize, visible.length])
   const changePage = (next: number): void => {
     if (next === page) return
-    setPagination({ page: Math.max(1, Math.min(next, pageCount)), filter, query, direction: next < page ? 'back' : 'forward' })
+    setPagination({ page: Math.max(1, Math.min(next, pageCount)), filter, query, pageSize, direction: next < page ? 'back' : 'forward' })
   }
   const counts = previous.reduce<Partial<Record<Filter, number>>>((acc, entry) => {
     acc[entry.status] = (acc[entry.status] ?? 0) + 1
@@ -358,14 +359,14 @@ function JobsList({ active, entries, filter, query, error, refreshing, onFilter,
                 <p className="px-4 py-3 text-xs text-ink-subtle">No jobs match this filter.</p>
               ) : (
                 <div ref={historyWindow} className="history-window">
-                  <ul key={`${filter}:${query}:${page}`} className="history-page divide-y divide-white/[0.05]" data-direction={pagination.direction} aria-label={`Previous jobs, page ${page}`}>
+                  <ul key={`${filter}:${query}:${page}:${pageSize}`} className="history-page divide-y divide-white/[0.05]" data-direction={pagination.direction} aria-label={`Previous jobs, page ${page}`}>
                     {visible.slice((page - 1) * pageSize, page * pageSize).map((entry) => (
                       <PreviousJobRow key={entry.jobId} entry={entry} hasDetails={Boolean(sessionJobs[entry.jobId])} onOpen={() => onOpenEntry(entry)} onOpenFolder={() => onOpenFolder(entry.outputDir)} />
                     ))}
                   </ul>
                 </div>
               )}
-              {visible.length > pageSize && <Pagination page={page} pages={pageCount} total={visible.length} pageSize={pageSize} onChange={changePage} />}
+              {entries !== null && previous.length > 0 && <Pagination page={page} pages={pageCount} total={visible.length} pageSize={pageSize} onChange={changePage} onPageSizeChange={setPageSize} />}
             </section>
           </Panel>
         )}

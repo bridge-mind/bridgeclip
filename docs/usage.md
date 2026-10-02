@@ -56,7 +56,7 @@ See [video speed](video-speed.md) for timing and export details.
 
 ### Make a caption style
 
-Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. The sample follows a bundled voice recording; pause or scrub it to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound choice carries across styles while the app is open.
+Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. Under **Preview text**, switch between **Short** and **Long** voice samples. Select a line to jump to that part of the recording; the line list updates with your caption settings. Pause or scrub the preview to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound and sample choices carry across styles while the app is open.
 
 Give it a name and choose **Save preset**. Once you have a saved preset, Captions opens your preset table with edit, duplicate and delete actions. **New preset** starts the base-selection wizard again. When opened from Create, **Save & use** returns to the same draft with the preset selected, or you can use one directly from the table. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
 
@@ -78,7 +78,7 @@ Live channels, Twitch clips, collections, subscriber-only videos and deleted or 
 
 Every run gets its own folder. The **Library** shows completed clips with virality scores, timecodes and tags. **Jobs** shows what is running or queued right now (up to two clipping runs go at once; more wait in a queue) and every earlier run, including completed, failed, cancelled and interrupted jobs; completed runs open directly in Library, and failed runs from this session can run again.
 
-**Previous** shows ten runs per page. Search and filters apply across the full history and return to the first page; **Active** always shows every running and queued job. Page transitions respect reduced-motion preferences.
+**Previous** starts at ten runs per page. Use the page-size selector to choose 10, 25, 50 or 100; the app remembers your choice across navigation and restarts. Changing the count, search or filters returns to the first page. Search and filters apply across the full history; **Active** always shows every running and queued job. Page transitions respect reduced-motion preferences.
 
 Each previous job has a three-dot menu for **Open in Library** (or **Open job** for session jobs), **Open folder** and **Details**. Details opens the saved transcript and edit trace, including for failed runs. Older runs without a saved status appear as unfinished. You can optionally connect social accounts through Zernio to publish or schedule a selected clip.
 

@@ -31,9 +31,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 - Library deletion shows estimated space freed and a visual summary of what is deleted and kept.
 - Library cards show each run's local file size, loaded in the background and updated on refresh.
-- **Jobs → Previous** shows ten runs per page with animated navigation. Active jobs stay visible, and search and filters cover the full history.
+- **Jobs → Previous** offers 10, 25, 50 or 100 runs per page with animated navigation and remembers your choice across app launches. Active jobs stay visible, and search and filters cover the full history.
 - **Create → Review** shows the source thumbnail and metadata alongside editable cards for format, moments, captions and models.
-- Caption previews follow a recorded voice sample with synchronized word timing and an optional sound toggle.
+- Caption previews follow recorded voice samples with synchronized word timing and an optional sound toggle. In the Captions lab, switch between short and long text and select a line to jump to it.
 
 - Smart framing ignores weak background faces, stays on a speaker who briefly looks away, follows talking heads inside 4:3 video, and analyzes footage faster.
 - Screen + webcam clips fill the top panel again.

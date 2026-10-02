@@ -5,7 +5,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { buildApp, launchApp } = require('../zernio/support/electron-app.cjs')
 const { loadMain } = require('../zernio/support/load-main.cjs')
-const { CAPTION_DEMO_WORDS } = loadMain("export { CAPTION_DEMO_WORDS } from './src/renderer/lib/caption-demo'")
+const { CAPTION_DEMO_WORDS, CAPTION_LONG_DEMO_WORDS } = loadMain("export { CAPTION_DEMO_WORDS, CAPTION_LONG_DEMO_WORDS } from './src/renderer/lib/caption-demo'")
 
 test('caption presets start with a base wizard, open a saved library table, and retain faithful snapshots', { timeout: 150000 }, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridgeclip-captions-lab-'))
@@ -229,6 +229,56 @@ test('caption presets start with a base wizard, open a saved library table, and 
       if (index === 0) await screenshot(`captions-lines-realistic-${lines}.png`)
     }
   }
+  // Both recordings share the media clock; line shortcuts and live reflow
+  // must continue working after switching to the longer conversation.
+  const samples = page.getByRole('radiogroup', { name: 'Preview sample', exact: true })
+  const transcript = page.getByRole('group', { name: 'Caption lines', exact: true })
+  await samples.getByRole('radio', { name: 'Short', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  assert.equal(await samples.getByRole('radio', { name: 'Long', exact: true }).getAttribute('aria-checked'), 'true')
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('[aria-label="Caption preview"] audio')
+    return audio.duration > 8 && audio.currentTime === 0 && audio.paused
+  })
+  assert.equal(await preview.locator('audio').count(), 1)
+  assert.equal(await demoAudio.evaluate(audio => audio.muted), muted)
+  assert.equal((await transcript.locator('button > span:last-child').allTextContents()).join(' '), 'This is an example of longer text. With this example, you should be able to see how captions behave in a longer conversation.')
+  await setInput('Words at once', '5')
+  await choose('Lines', '2 lines')
+  assert.equal(await transcript.getByRole('button').count(), 6, 'the transcript respects grouping and sentence breaks')
+  await transcript.getByRole('button').last().click()
+  await page.waitForFunction(ms => {
+    const audio = document.querySelector('[aria-label="Caption preview"] audio')
+    return audio.paused && Math.abs(audio.currentTime * 1000 - ms) < 25
+  }, CAPTION_LONG_DEMO_WORDS[20].start)
+  assert.equal(await transcript.getByRole('button').last().getAttribute('aria-current'), 'true')
+  for (const word of CAPTION_LONG_DEMO_WORDS) {
+    const ms = Math.round((word.start + word.end) / 20) * 10
+    await setInput('Caption preview position', String(ms))
+    await page.waitForFunction(text => document.querySelector('[data-caption-state="active"]')?.firstChild.textContent === text, word.text)
+    const geometry = await lineGeometry()
+    assert.equal(geometry.rows.length, 2)
+    assert.equal(geometry.fits, true)
+  }
+  await screenshot('captions-long-wide.png')
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(720, 800))
+  await page.waitForFunction(() => window.innerWidth === 720 && document.documentElement.scrollWidth <= window.innerWidth)
+  assert.equal((await lineGeometry()).fits, true)
+  await screenshot('captions-long-compact.png')
+  await preview.getByRole('button', { name: 'Enable preview audio', exact: true }).click()
+  await preview.getByRole('button', { name: 'Play caption preview', exact: true }).click()
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('[aria-label="Caption preview"] audio')
+    return !audio.paused && !audio.muted
+  })
+  await samples.getByRole('radio', { name: 'Short', exact: true }).click()
+  await page.waitForFunction(() => {
+    const audio = document.querySelector('[aria-label="Caption preview"] audio')
+    return audio.duration < 3 && audio.currentTime < 3 && !audio.paused && !audio.muted
+  })
+  await preview.getByRole('button', { name: 'Pause caption preview', exact: true }).click()
+  await preview.getByRole('button', { name: 'Mute preview audio', exact: true }).click()
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1560, 1000))
   await demoAudio.dispose()
   await setInput('Font size', '100')
   await setInput('Words at once', '4')

@@ -13,6 +13,7 @@
 .caption-lab-preview [aria-label="Caption preview"] { margin-bottom: 0; }
 .caption-lab-preview .caption-preview-stage { height: 210px; }
 .caption-lab-controls { min-width: 0; }
+.caption-demo-lines { max-height: 164px; scrollbar-gutter: stable; }
 .caption-lab-effects { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
 .caption-preset-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .caption-preset-table th { padding: 12px 16px; text-align: left; color: rgb(var(--ink-subtle)); font-weight: 500; }
@@ -56,10 +57,12 @@
   .caption-lab .caption-editor-preview { position: sticky; top: 0; z-index: 20; padding: 8px; background: rgb(var(--surface)); }
   .caption-editor-preview .caption-editor-preview-heading { display: none; }
   .caption-editor-preview .caption-preview-stage { height: var(--caption-compact-stage); }
+  .caption-editor-preview .caption-demo-lines { max-height: 68px; }
+  .caption-editor-preview .caption-demo-text { margin-top: 8px; }
   .caption-editor-preview [aria-label="Caption preview"] > div:first-child { padding-top: 8px; }
   .caption-editor-preview [aria-label="Caption preview"] > div:first-child > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .caption-editor-preview [aria-label="Caption preview"] > div:first-child > span:last-child { display: none; }
-  .caption-lab-controls :is(input, button, [tabindex], label) { scroll-margin-top: calc(var(--caption-compact-stage) + 102px); scroll-margin-bottom: 16px; }
+  .caption-lab-controls :is(input, button, [tabindex], label) { scroll-margin-top: calc(var(--caption-compact-stage) + 214px); scroll-margin-bottom: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .caption-creation-steps button, .caption-preset-table tbody tr { transition: none; }

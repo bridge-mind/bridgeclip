@@ -160,14 +160,14 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
         </Panel>
         <Panel className="caption-lab-preview caption-base-preview">
           <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="eyebrow">Your starting point</p><h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div><span className="glass-chip shrink-0 rounded-full px-2.5 py-1 text-2xs text-ink-muted">Live preview</span></div>
-          <CaptionMotionPreview key={baseId} preset={preview} />
+          <CaptionMotionPreview key={baseId} preset={preview} labControls />
           <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-ink-muted">{preview.description}</p><Button variant="primary" icon={<ArrowRight size={14} />} disabled={busy} onClick={customize}>Customize</Button></div>
         </Panel>
       </div>}
       {stage === 'edit' && editing && <div className="caption-editor-layout mt-3 animate-fade-in">
         <Panel className="caption-lab-preview caption-editor-preview">
           <div className="caption-editor-preview-heading mb-3 flex items-center justify-between gap-3"><h3 className="min-w-0 truncate text-lg font-semibold">{preview.name || 'Untitled preset'}</h3><span className="glass-chip shrink-0 rounded-full px-2.5 py-1 text-2xs text-ink-muted">Live preview</span></div>
-          <CaptionMotionPreview key={editing.id} preset={preview} />
+          <CaptionMotionPreview key={editing.id} preset={preview} labControls />
         </Panel>
         <Panel className="caption-lab-controls">
           <fieldset disabled={busy} className="space-y-4">
