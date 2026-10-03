@@ -1,5 +1,6 @@
 import { commitBeforeNavigation } from './lib/navigation'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { PageRootContext } from './hooks/use-page-root'
 import { Layout } from './components/Layout'
 import { NAV_ITEMS, SIDEBAR_SHORTCUT_KEY, type Page } from './components/Sidebar'
 import { CaptionsPage } from './pages/CaptionsPage'
@@ -36,6 +37,9 @@ export default function App(): React.JSX.Element {
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
   const [page, setPage] = useState<Page>('clip')
+  const currentPage = useRef(page)
+  currentPage.current = page
+  const atPageRoot = useRef(true)
   const [pageVisit, setPageVisit] = useState(0)
   const [libraryRun, setLibraryRun] = useState<{ outputDir: string; clipIndex?: number } | null>(null)
   /** Set when Help → Check for Updates… asks for Settings → About. */
@@ -47,9 +51,11 @@ export default function App(): React.JSX.Element {
   const changelogOpen = useChangelogStore((s) => s.open)
   const closeChangelog = useCallback(() => useChangelogStore.getState().setOpen(false), [])
 
-  // Sidebar destinations always open the page root, even when already active.
+  // Re-selecting a page root keeps its content, scroll and entrance animation intact.
+  // Nested views still return to the root through the usual save guard.
   // In-page navigation keeps setPage so links to a specific job retain focus.
   const navigateRoot = useCallback((destination: Page): void => {
+    if (destination === currentPage.current && atPageRoot.current) return
     // Keep a modal's progress and cancel controls mounted during an upload.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
     const go = (): void => {
@@ -161,17 +167,19 @@ export default function App(): React.JSX.Element {
     <>
       {settingsLoaded ? (
         <Layout currentPage={page} onNavigate={navigateRoot}>
-          <Fragment key={pageVisit}>
-            {page === 'clip' && <ClipPage onNavigate={setPage} />}
-            {page === 'library' && <LibraryPage onNavigate={setPage} initialRun={libraryRun?.outputDir} initialClipIndex={libraryRun?.clipIndex} />}
-            {page === 'captions' && <CaptionsPage onNavigate={setPage} />}
-            {page === 'jobs' && <JobsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
-            {page === 'assistant' && <AssistantPage onOpenSettings={openAssistantSettings} />}
-            {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
-            {page === 'posts' && <PostsPage onNavigate={setPage} />}
-            {page === 'automations' && <AutomationsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
-            {page === 'settings' && <SettingsPage showUpdates={showUpdates} />}
-          </Fragment>
+          <PageRootContext.Provider value={atPageRoot}>
+            <Fragment key={pageVisit}>
+              {page === 'clip' && <ClipPage onNavigate={setPage} />}
+              {page === 'library' && <LibraryPage onNavigate={setPage} initialRun={libraryRun?.outputDir} initialClipIndex={libraryRun?.clipIndex} />}
+              {page === 'captions' && <CaptionsPage onNavigate={setPage} />}
+              {page === 'jobs' && <JobsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
+              {page === 'assistant' && <AssistantPage onOpenSettings={openAssistantSettings} />}
+              {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
+              {page === 'posts' && <PostsPage onNavigate={setPage} />}
+              {page === 'automations' && <AutomationsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
+              {page === 'settings' && <SettingsPage showUpdates={showUpdates} />}
+            </Fragment>
+          </PageRootContext.Provider>
         </Layout>
       ) : (
         <div className="app-backdrop drag flex h-screen items-center justify-center">

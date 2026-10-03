@@ -107,7 +107,7 @@ test('Jobs actions inspect runs and open completed jobs in the shared Library vi
   await errorDetails.getByText('"Provider temporarily unavailable"', { exact: true }).waitFor()
   await errorDetails.getByRole('radio', { name: 'Original', exact: true }).click()
   assert.equal(await errorDetails.getByRole('textbox', { name: 'Original JSON' }).inputValue(), structuredError)
-  await page.getByRole('button', { name: 'All jobs', exact: true }).click()
+  await jobs()
 
   const liveDir = writeRun(liveId, 'Watched test run', 'running')
   const live = { ...snapshot(liveId, 'downloading', liveDir), startedAt: new Date(Date.now() - 7000).toISOString(), progressAt: Date.now(), stages: [

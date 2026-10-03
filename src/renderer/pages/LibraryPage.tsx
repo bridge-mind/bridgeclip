@@ -22,6 +22,7 @@ import { LibraryDeleteSummary } from '../components/LibraryDeleteSummary'
 import { HoverCard } from '../components/ui/HoverCard'
 import { useLibraryMotion } from '../hooks/use-library-motion'
 import { useLibraryStorage } from '../hooks/use-library-storage'
+import { usePageRoot } from '../hooks/use-page-root'
 import type { OutputStorageUsage } from '../../shared/output-storage'
 import './library.css'
 import type { Page as AppPage } from '../components/Sidebar'
@@ -32,6 +33,7 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<{ entry: HistoryEntry; output: JobOutput; clipIndex?: number } | null>(null)
+  usePageRoot(open === null)
   const requestId = useRef(0)
   const openRequestId = useRef(0)
   const [error, setError] = useState<string | null>(null)

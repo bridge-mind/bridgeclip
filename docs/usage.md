@@ -4,6 +4,8 @@
 
 Install BridgeClip, create clips, follow jobs, and manage your Library and publishing queues. These instructions describe the current source; check the [release notes](https://github.com/bridge-mind/bridgeclip/releases) for the features in your installed version.
 
+Selecting the current page in the sidebar (or using its keyboard shortcut) keeps your view, scroll position and filters intact. From a Library item, job detail or caption editor, the sidebar still returns to the page root and prompts for unsaved caption changes.
+
 ## Install and update
 
 Choose your platform on [bridgeclip.ai](https://www.bridgeclip.ai) or [GitHub Releases](https://github.com/bridge-mind/bridgeclip/releases). Packages include Python, FFmpeg and yt-dlp.

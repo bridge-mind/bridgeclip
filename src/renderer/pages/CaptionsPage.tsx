@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { usePageRoot } from '../hooks/use-page-root'
 import { ArrowLeft, ArrowRight, Check, Copy, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { CAPTION_FONTS, defaultCaptionStyle, parseCustomCaption, type CaptionStyleSettings, type CustomCaptionPreset } from '../../shared/custom-captions'
 import { DEFAULT_CAPTION_PRESET, isCaptionPresetId, type CaptionPresetId } from '../../shared/caption-presets'
@@ -38,6 +39,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
   const previousStage = useRef<string | null>(null)
   const existing = styles.find(style => style.id === editing?.id)
   const dirty = editing !== null && JSON.stringify(existing) !== JSON.stringify(editing)
+  usePageRoot(editing === null)
   const stage = view === 'home' ? styles.length ? 'home' : 'base' : view === 'edit' && editing ? 'edit' : 'base'
   const creating = stage === 'base' || stage === 'edit' && !existing
   const selectedStyle = stage === 'home' ? styles.find(style => style.id === selectedCustomId) : undefined

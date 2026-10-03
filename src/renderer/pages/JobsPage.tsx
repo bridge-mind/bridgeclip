@@ -1,5 +1,6 @@
 import { Pagination } from '../components/ui/Pagination'
 import { useTablePreferencesStore } from '../store/use-table-preferences-store'
+import { usePageRoot } from '../hooks/use-page-root'
 import './jobs-pagination.css'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Ban, FileText, FolderOpen, ListVideo, Pencil, Plus, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
@@ -55,6 +56,7 @@ export function JobsPage({ onNavigate, onViewLibrary }: {
 }): React.JSX.Element {
   const focusedJobId = useJobStore((s) => s.focusedJobId)
   const focused = useJobStore((s) => (s.focusedJobId ? s.jobs[s.focusedJobId] ?? null : null))
+  usePageRoot(focused === null)
   const focusJob = useJobStore((s) => s.focusJob)
   const active = useActiveJobs()
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
