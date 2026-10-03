@@ -306,7 +306,7 @@ export function createBridgeClipTools(host: ToolHost): AssistantToolSpec[] {
           defaultCaptionStyle: defaultId,
           defaultCaptionStyleName: CAPTION_PRESETS.find(style => style.id === defaultId)?.name ?? styles.find(style => style.id === defaultId)?.name,
           captionDefaultMode: preferences.defaultId ? 'selected-preset' : 'first-bookmark',
-          captionDefaultSetting: 'Captions → Default caption. First bookmark uses the first available bookmarked style, or Pop when none are available.',
+          captionDefaultSetting: 'Captions → Default caption. First bookmark prefers bookmarked custom presets, then bookmarked built-in styles, then Pop when none are available.',
           durations: DURATION_OPTIONS,
           speeds: VIDEO_SPEED_OPTIONS,
           aspectRatios: ['9:16 (vertical, for TikTok/Reels/Shorts)', '16:9 (horizontal)'],

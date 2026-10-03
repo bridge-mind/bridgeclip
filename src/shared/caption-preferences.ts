@@ -2,7 +2,7 @@ import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET, isCaptionPresetId } from './ca
 import type { CustomCaptionPreset } from './custom-captions'
 
 export interface CaptionPreferences {
-  /** Null follows the first available bookmark, then Pop. */
+  /** Null prefers bookmarked custom presets, then built-ins, then Pop. */
   defaultId: string | null
   favorites: string[]
 }
@@ -13,7 +13,7 @@ export function isCaptionStyleId(id: unknown): id is string {
 
 export function defaultCaptionId(preferences: CaptionPreferences, styles: CustomCaptionPreset[]): string {
   if (isCaptionPresetId(preferences.defaultId) || styles.some(style => style.id === preferences.defaultId)) return preferences.defaultId!
-  return CAPTION_PRESETS.find(style => preferences.favorites.includes(style.id))?.id
-    ?? styles.find(style => preferences.favorites.includes(style.id))?.id
+  return styles.find(style => preferences.favorites.includes(style.id))?.id
+    ?? CAPTION_PRESETS.find(style => preferences.favorites.includes(style.id))?.id
     ?? DEFAULT_CAPTION_PRESET
 }

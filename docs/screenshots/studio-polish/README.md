@@ -32,7 +32,7 @@ Review & edit users also see retained source videos and editor previews. Select 
 
 ## Captions lab
 
-**Default caption** chooses the preset used for new clips in Create and Chat. Choose a built-in or saved custom preset, or **First bookmark** to keep automatic selection (Pop when there are no available bookmarks). The setting survives restarts and leaves existing drafts unchanged.
+**Default caption** chooses the preset used for new clips in Create and Chat. Choose a built-in or saved custom preset, or **First bookmark** to prefer bookmarked custom presets, then built-in styles (Pop when there are no available bookmarks). The setting survives restarts and leaves existing drafts unchanged.
 
 ![Shared caption default in a compact window](captions-default-compact.png)
 
@@ -54,7 +54,7 @@ Previews on the Captions page open paused with sample text visible, even with so
 
 ![Captions visible at the paused opening frame](captions-paused.png)
 
-In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches. With **First bookmark** selected, new clip setups select the first available bookmark in picker order, or Pop when there are none; explicit choices stay selected.
+In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches. With **First bookmark** selected, new clip setups select bookmarked custom presets before bookmarked built-in styles, or Pop when there are none; explicit choices stay selected.
 
 ![Favorite caption styles in Create](captions-favorites.png)
 

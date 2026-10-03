@@ -36,6 +36,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- **First bookmark** now prefers bookmarked custom caption presets, then bookmarked built-ins, with Pop as the fallback in both Create and Chat.
 - Library item details pairs the source video with a compact 2×2 grid of run statistics, combines search and sorting in one toolbar, and moves transcript, stage timings, folder access and post-status refresh into the **…** menu.
 - **Your presets** on the Captions page uses the same cards as Default presets, with three cards per row, preview selection, bookmarks and a compact menu for edit, duplicate and delete.
 

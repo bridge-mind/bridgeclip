@@ -93,10 +93,10 @@ test('an explicit default overrides bookmarks for new videos without changing a 
   const custom = { id: 'custom-studio', name: 'Studio', baseId: 'sweep', style: defaultCaptionStyle('sweep') }
   draft.getState().initializeCaption(['paper'], [custom], custom.id)
   assert.deepEqual(draft.getState().customCaption, custom)
-  draft.getState().initializeCaption(['paper'], [custom], 'neon')
+  draft.getState().initializeCaption(['paper', custom.id], [custom], 'neon')
   assert.equal(draft.getState().customCaption.id, custom.id)
   draft.getState().startAnother()
-  draft.getState().initializeCaption(['paper'], [custom], 'neon')
+  draft.getState().initializeCaption(['paper', custom.id], [custom], 'neon')
   assert.equal(draft.getState().captionPreset, 'neon')
   assert.equal(draft.getState().customCaption, undefined)
   draft.getState().startAnother()
@@ -119,13 +119,14 @@ test('failed preference saves restore the last saved choice and report the failu
   assert.match(store.getState().error, /Disk is read only/)
 })
 
-test('new clip drafts default to the first available bookmark in picker order, falling back to Pop', t => {
+test('new clip drafts prefer bookmarked custom presets, then built-ins, then Pop', t => {
   storageFor(t)
   const { useDraftStore: draft, defaultCaptionStyle } = load()
   const custom = { id: 'custom-studio', name: 'Studio', baseId: 'sweep', style: defaultCaptionStyle('sweep') }
   for (const [favorites, expected] of [
     [[], 'pop'], [['custom-deleted'], 'pop'], [['paper'], 'paper'],
-    [['paper', 'custom-studio', 'glow'], 'glow'], [['custom-deleted', 'custom-studio'], 'custom-studio']
+    [['paper', 'custom-studio', 'glow'], 'custom-studio'], [['custom-deleted', 'custom-studio'], 'custom-studio'],
+    [['custom-deleted', 'paper'], 'paper'], [['paper', 'glow'], 'glow']
   ]) {
     draft.getState().startAnother()
     draft.getState().initializeCaption(favorites, [custom])
