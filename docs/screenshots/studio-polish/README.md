@@ -2,7 +2,7 @@
 
 These examples use synthetic videos, local test folders and mock provider metadata. No private media, provider keys or paid clipping runs are included.
 
-The **before** images were captured from upstream `main` at `b996820`. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
+The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison, which shows the earlier draft PR at `e09c091`. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
 
 ## Before and after
 
@@ -14,6 +14,8 @@ The **before** images were captured from upstream `main` at `b996820`. The **aft
 | Library | ![Original Library cards](library-before.png) | ![Storage size on Library cards](library-after.png) |
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
+| Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and background padding](captions-lab.png) |
+| Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
 ## Storage cleanup
 
@@ -27,13 +29,23 @@ Review & edit users also see retained source videos and editor previews. Select 
 
 ## Captions lab
 
-Choose a default as a starting point, then adjust your own preset with a live preview. Switch between short and long voice samples, or select a caption line to jump to it. This example shows two balanced lines from the longer sample.
+Choose a default as a starting point, then adjust your own preset with a live preview. Switch between short and long voice samples, or select a caption line to jump to it. This example shows two balanced lines and adjustable background padding.
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 
 Once presets are saved, the page opens with a table and a New preset action.
 
 ![Saved custom caption presets](captions-table.png)
+
+Saving keeps the editor open. Leaving unsaved changes offers save, discard and cancel; reload and app close also ask whether to save.
+
+![Save caption changes before navigating away](caption-save-prompt.png)
+
+## Crash reports
+
+Settings → About lets users review and copy the latest local report, then add reproduction steps to a GitHub issue. The report contains safe diagnostics and recent event names; it excludes keys, paths, URLs and raw error messages. This example uses a simulated interface error.
+
+![Review and copy a crash issue report](crash-report.png)
 
 ## Pagination in motion
 

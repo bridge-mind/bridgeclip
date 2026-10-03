@@ -79,6 +79,8 @@ Returning to the same key restores its saved post history; a newly rotated key h
 
 Remove provider keys in Settings to clear their encrypted saved copies, and review logs before sharing them in an issue.
 
+The app also keeps its latest crash report (`crash-report.json`) and a session marker (`app-session.json`) in the per-user application data folder. The report contains app/system versions, allowlisted error types and codes, a normalized application line number when available, process exit details and up to 30 event names with timestamps. Raw error messages, API keys, media paths, URLs and log context are excluded. **Settings → About → Crash reports** lets you review and copy the report for an issue; nothing is uploaded automatically. A session marker left after an abnormal exit allows the next launch to report an unexpected shutdown, including when the cause was a forced quit or power loss.
+
 Keys are encrypted with your operating system's secure storage. If secure storage is unavailable, BridgeClip asks you to configure or unlock it before saving keys.
 
 ## Inspect saved reviews

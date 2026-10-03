@@ -16,6 +16,8 @@ import { Switch } from '../components/ui/Switch'
 import { useCaptionStore } from '../store/use-caption-store'
 import { useDraftStore } from '../store/use-draft-store'
 import { errorMessage } from '../lib/utils'
+import { getApi } from '../lib/ipc'
+import { registerNavigationCommit } from '../lib/navigation'
 import './captions.css'
 
 export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => void }): React.JSX.Element {
@@ -24,7 +26,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CustomCaptionPreset | null>(null)
-  const [pendingSwitch, setPendingSwitch] = useState<(() => void) | null>(null)
+  const [pendingSwitch, setPendingSwitch] = useState<{ proceed: () => void; cancel?: () => void } | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousStage = useRef<string | null>(null)
   const existing = styles.find(style => style.id === editing?.id)
@@ -51,7 +53,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     useCaptionStore.setState({ editing: value }); setSaved(false); setError(null); setDeleteTarget(null)
   }
   const switchStyle = (next: () => void): void => {
-    if (dirty) setPendingSwitch(() => next)
+    if (dirty) { setError(null); setPendingSwitch({ proceed: next }) }
     else next()
   }
   const showHome = (): void => {
@@ -88,15 +90,16 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     useCaptionStore.setState({ fromWizard: false, view: 'home', editing: null })
     onNavigate('clip')
   }
-  const persist = async (useInWizard: boolean): Promise<void> => {
-    if (!editing || busy) return
+  const persist = async (useInWizard: boolean): Promise<boolean> => {
+    if (!editing || busy) return false
     setBusy(true); setError(null)
     try {
       const style = parseCustomCaption(editing)
       await save(style)
       if (useInWizard) apply(style)
-      else { showHome(); setSaved(true) }
-    } catch (err) { setError(errorMessage(err, 'Could not save this preset.')) }
+      else { setEditing(style); setSaved(true) }
+      return true
+    } catch (err) { setError(errorMessage(err, 'Could not save this preset.')); return false }
     finally { setBusy(false) }
   }
   const deleteStyle = async (): Promise<void> => {
@@ -110,13 +113,40 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     } catch (err) { setError(errorMessage(err, 'Could not delete this preset.')) }
     finally { setBusy(false) }
   }
+  useEffect(() => registerNavigationCommit(() => {
+    const lab = useCaptionStore.getState()
+    if (!lab.editing || JSON.stringify(lab.editing) === JSON.stringify(lab.styles.find(style => style.id === lab.editing?.id))) return Promise.resolve(true)
+    return new Promise<boolean>(resolve => {
+      setError(null)
+      setPendingSwitch({ proceed: () => { showHome(); resolve(true) }, cancel: () => resolve(false) })
+    })
+  }), [])
+  const persistRef = useRef(persist)
+  persistRef.current = persist
+  useEffect(() => {
+    const prevent = (event: BeforeUnloadEvent): void => {
+      const lab = useCaptionStore.getState()
+      if (lab.editing && JSON.stringify(lab.editing) !== JSON.stringify(lab.styles.find(style => style.id === lab.editing?.id))) event.preventDefault()
+    }
+    window.addEventListener('beforeunload', prevent)
+    const saveBeforeClose = getApi().editor.onSaveBeforeClose(() => {
+      void persistRef.current(false).then(saved => getApi().editor.closeReady(saved)).catch(() => {})
+    })
+    const discardBeforeClose = getApi().editor.onDiscardBeforeClose(() => {
+      useCaptionStore.setState({ editing: null, view: 'home' })
+      void getApi().editor.closeReady(true)
+    })
+    return () => { window.removeEventListener('beforeunload', prevent); saveBeforeClose(); discardBeforeClose() }
+  }, [])
+  const finishSwitch = (): void => { pendingSwitch?.proceed(); setPendingSwitch(null) }
+  const cancelSwitch = (): void => { if (!busy) { pendingSwitch?.cancel?.(); setPendingSwitch(null); setError(null) } }
   const backToBase = (): void => useCaptionStore.setState({ view: 'base' })
   const backToPresets = (): void => switchStyle(showHome)
 
   return <Page width="default" className="caption-lab">
     <PageHeader eyebrow="Studio" title="Captions" description="Create a signature look."
       actions={<>
-        {fromWizard && <Button icon={<ArrowLeft size={14} />} onClick={() => { useCaptionStore.setState({ fromWizard: false }); onNavigate('clip') }}>Back to Create</Button>}
+        {fromWizard && <Button icon={<ArrowLeft size={14} />} onClick={() => switchStyle(() => { showHome(); useCaptionStore.setState({ fromWizard: false }); onNavigate('clip') })}>Back to Create</Button>}
         {loaded && stage === 'home' && <Button variant="primary" icon={<Plus size={14} />} disabled={busy} onClick={() => switchStyle(() => { setEditing(null); useCaptionStore.setState({ view: 'base' }) })}>New preset</Button>}
       </>} />
     {(error || loadError) && <Callout tone="danger" className="mt-3" action={loadError ? <Button size="sm" onClick={() => void load()}>Retry</Button> : undefined}>{error ?? loadError}</Callout>}
@@ -159,14 +189,14 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
           <div className="caption-base-grid" role="radiogroup" aria-label="Default styles">{PRESETS.map(preset => <CaptionStyleTile key={preset.id} preset={preset} selected={baseId === preset.id} disabled={busy} tabIndex={baseId === preset.id ? 0 : -1} onClick={() => chooseBase(preset.id as CaptionPresetId)} />)}</div>
         </Panel>
         <Panel className="caption-lab-preview caption-base-preview">
-          <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="eyebrow">Your starting point</p><h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div><span className="glass-chip shrink-0 rounded-full px-2.5 py-1 text-2xs text-ink-muted">Live preview</span></div>
+          <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="eyebrow">Your starting point</p><h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div></div>
           <CaptionMotionPreview key={baseId} preset={preview} labControls />
           <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-ink-muted">{preview.description}</p><Button variant="primary" icon={<ArrowRight size={14} />} disabled={busy} onClick={customize}>Customize</Button></div>
         </Panel>
       </div>}
       {stage === 'edit' && editing && <div className="caption-editor-layout mt-3 animate-fade-in">
         <Panel className="caption-lab-preview caption-editor-preview">
-          <div className="caption-editor-preview-heading mb-3 flex items-center justify-between gap-3"><h3 className="min-w-0 truncate text-lg font-semibold">{preview.name || 'Untitled preset'}</h3><span className="glass-chip shrink-0 rounded-full px-2.5 py-1 text-2xs text-ink-muted">Live preview</span></div>
+          <div className="caption-editor-preview-heading mb-3 flex items-center justify-between gap-3"><h3 className="min-w-0 truncate text-lg font-semibold">{preview.name || 'Untitled preset'}</h3></div>
           <CaptionMotionPreview key={editing.id} preset={preview} labControls />
         </Panel>
         <Panel className="caption-lab-controls">
@@ -183,7 +213,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
             {editing.style.future_words === 'dim' && <LabRange label="Upcoming opacity" min={0} max={100} value={Math.round(editing.style.dim_opacity * 100)} suffix="%" onChange={value => update({ dim_opacity: value / 100 })} />}
             <div className="border-t border-white/[0.06] pt-4"><p className="eyebrow mb-3">Finish</p><div className="grid grid-cols-2 gap-3"><ColorField label="Outline color" value={editing.style.outline_color} onChange={outline_color => update({ outline_color })} /><LabRange label="Outline width" min={0} max={12} value={editing.style.outline_width} onChange={outline_width => update({ outline_width })} /></div>
               <div className="caption-lab-effects mt-3"><EffectColor label="Word pill" value={editing.style.highlight_box_color} disabled={editing.style.karaoke_fill} fallback="#7C5CFF" onChange={highlight_box_color => update({ highlight_box_color })} /><EffectColor label="Glow" value={editing.style.glow_color} fallback="#38CCFF" onChange={glow_color => update({ glow_color })} /><EffectColor label="Background" value={editing.style.line_box_color} fallback="#000000" onChange={line_box_color => update({ line_box_color })} /></div>
-              {editing.style.line_box_color && <div className="mt-3"><LabRange label="Background opacity" min={0} max={100} value={Math.round(editing.style.line_box_opacity * 100)} suffix="%" onChange={value => update({ line_box_opacity: value / 100 })} /></div>}
+              {editing.style.line_box_color && <div className="mt-3 grid grid-cols-2 gap-3"><LabRange label="Background padding" min={0} max={40} value={editing.style.line_box_padding} onChange={line_box_padding => update({ line_box_padding })} /><LabRange label="Background opacity" min={0} max={100} value={Math.round(editing.style.line_box_opacity * 100)} suffix="%" onChange={value => update({ line_box_opacity: value / 100 })} /></div>}
             </div>
           </fieldset>
           <div className="caption-lab-save mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
@@ -194,7 +224,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
         </Panel>
       </div>}
     </>}
-    {pendingSwitch && <DiscardChangesDialog onCancel={() => setPendingSwitch(null)} onDiscard={() => { pendingSwitch(); setPendingSwitch(null) }} />}
+    {pendingSwitch && <DiscardChangesDialog busy={busy} error={error} canSave={Boolean(editing?.name.trim())} onCancel={cancelSwitch} onDiscard={finishSwitch} onSave={() => { void persist(false).then(ok => { if (ok) finishSwitch() }) }} />}
     {deleteTarget && <DeletePresetDialog preset={deleteTarget} busy={busy} error={error} onCancel={() => { if (!busy) { setDeleteTarget(null); setError(null) } }} onDelete={() => void deleteStyle()} />}
   </Page>
 }
@@ -219,7 +249,7 @@ function DeletePresetDialog({ preset, busy, error, onCancel, onDelete }: { prese
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return () => previous?.focus({ preventScroll: true })
   }, [])
-  return <Dialog ref={panel} aria-labelledby="caption-delete-title" aria-describedby="caption-delete-description" panelClassName="max-w-sm" onBackdropMouseDown={onCancel}
+  return <Dialog ref={panel} aria-labelledby="caption-delete-title" aria-describedby="caption-delete-description" panelClassName="max-w-md" onBackdropMouseDown={onCancel}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
       if (event.key !== 'Tab') return
@@ -233,23 +263,23 @@ function DeletePresetDialog({ preset, busy, error, onCancel, onDelete }: { prese
   </Dialog>
 }
 
-function DiscardChangesDialog({ onCancel, onDiscard }: { onCancel: () => void; onDiscard: () => void }): React.JSX.Element {
+function DiscardChangesDialog({ onCancel, onDiscard, onSave, busy, canSave, error }: { onCancel: () => void; onDiscard: () => void; onSave: () => void; busy: boolean; canSave: boolean; error: string | null }): React.JSX.Element {
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     panel.current?.querySelector<HTMLButtonElement>('button')?.focus()
     return () => previous?.focus({ preventScroll: true })
   }, [])
-  return <Dialog ref={panel} aria-labelledby="caption-discard-title" aria-describedby="caption-discard-description" panelClassName="max-w-sm" onBackdropMouseDown={onCancel}
+  return <Dialog ref={panel} aria-labelledby="caption-discard-title" aria-describedby="caption-discard-description" panelClassName="max-w-md" onBackdropMouseDown={onCancel}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
       if (event.key !== 'Tab') return
-      const buttons = panel.current?.querySelectorAll<HTMLButtonElement>('button')
+      const buttons = panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
       const first = buttons?.[0], last = buttons?.[buttons.length - 1]
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }}>
-    <div className="p-4"><h2 id="caption-discard-title" className="text-base font-semibold">Discard changes?</h2><p id="caption-discard-description" className="mt-1 text-xs text-ink-muted">This style has changes you haven’t saved.</p></div>
-    <DialogFooter><Button onClick={onCancel}>Keep editing</Button><Button variant="danger" onClick={onDiscard}>Discard changes</Button></DialogFooter>
+    <div className="p-4"><h2 id="caption-discard-title" className="text-base font-semibold">Save changes before leaving?</h2><p id="caption-discard-description" className="mt-1 text-xs text-ink-muted">Your preset has unsaved changes.</p>{error && <p role="alert" className="mt-3 text-xs text-danger">{error}</p>}</div>
+    <DialogFooter className="flex-wrap"><Button disabled={busy} onClick={onCancel}>Keep editing</Button><Button disabled={busy} variant="ghost" onClick={onDiscard}>Discard</Button><Button disabled={busy || !canSave} loading={busy} variant="primary" onClick={onSave}>Save & leave</Button></DialogFooter>
   </Dialog>
 }

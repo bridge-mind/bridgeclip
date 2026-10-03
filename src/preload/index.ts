@@ -1,3 +1,4 @@
+import type { CrashReport } from '../shared/crash-report'
 import type { CustomCaptionPreset } from '../shared/custom-captions'
 import type { JevThresholdSettings } from '../shared/jev-settings'
 import type { LibraryClipTarget } from '../shared/library-posting'
@@ -127,6 +128,7 @@ export interface BridgeClipAPI {
     progress: (path: string) => Promise<EditorProgressSummary>
     freeMedia: (path: string, revision: number) => Promise<EditorSession>
     /** Main asks the open editor to save before a close or quit continues. */
+    onDiscardBeforeClose: (callback: () => void) => () => void
     onSaveBeforeClose: (callback: () => void) => () => void
     closeReady: (saved: boolean) => Promise<void>
   }
@@ -253,6 +255,9 @@ export interface BridgeClipAPI {
     checkTools: () => Promise<ToolStatus>
   }
   diagnostics: {
+    crashReport: () => Promise<CrashReport | null>
+    copyCrashReport: (recordedAt: string) => Promise<boolean>
+    rendererError: (error: { name?: string; code?: string; stack?: string }) => Promise<void>
     getLogPath: () => Promise<string>
     openLogFolder: () => Promise<boolean>
   }
@@ -320,6 +325,7 @@ const api: BridgeClipAPI = {
     replaceSource: (path, revision, replacement) => ipcRenderer.invoke('editor:replaceSource', path, revision, replacement),
     progress: (path) => ipcRenderer.invoke('editor:progress', path),
     freeMedia: (path, revision) => ipcRenderer.invoke('editor:freeMedia', path, revision),
+    onDiscardBeforeClose: (callback) => subscribe<void>('editor:discardBeforeClose', () => callback()),
     onSaveBeforeClose: (callback) => subscribe<void>('editor:saveBeforeClose', () => callback()),
     closeReady: (saved) => ipcRenderer.invoke('editor:closeReady', saved)
   },
@@ -428,6 +434,9 @@ const api: BridgeClipAPI = {
     checkTools: () => ipcRenderer.invoke('system:checkTools')
   },
   diagnostics: {
+    crashReport: () => ipcRenderer.invoke('diagnostics:crashReport'),
+    copyCrashReport: (recordedAt) => ipcRenderer.invoke('diagnostics:copyCrashReport', recordedAt),
+    rendererError: (error) => ipcRenderer.invoke('diagnostics:rendererError', error),
     getLogPath: () => ipcRenderer.invoke('diagnostics:getLogPath'),
     openLogFolder: () => ipcRenderer.invoke('diagnostics:openLogFolder')
   },

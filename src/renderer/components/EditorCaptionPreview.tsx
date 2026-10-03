@@ -59,7 +59,7 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
         const center = anchor.y - (anchor.bottom ? e.currentTarget.getBoundingClientRect().height / bounds.height / 2 : 0)
         onMove(Math.max(.1, Math.min(.9, center + direction * (e.shiftKey ? .05 : .01))), true)
       }}>
-      <span className="editor-caption-words" style={{ background: preset.plate }}>
+      <span className="editor-caption-words" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * size / (preset.exportSize ?? 84)}px ${preset.plate}` : undefined }}>
         {['Captions', 'go', 'here'].map((word, i) => <span key={i} style={{ color: i === 1 ? preset.highlight : preset.primary,
           background: i === 1 ? preset.pill : undefined,
           padding: preset.pill ? '0 .15em' : undefined, borderRadius: '.15em',

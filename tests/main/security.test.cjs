@@ -201,7 +201,8 @@ test('the native picker authorizes media and shell opening rejects aliased appli
       './automations': {},
       './library-posting': {},
       './library-management': {},
-      './storage-cleanup': {}
+      './storage-cleanup': {},
+      './crash-reports': {}
     })
     ipc.registerIpcHandlers(() => window)
     assert.equal(handlers.has('framing:inspect'), false)

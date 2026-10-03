@@ -5,6 +5,7 @@ import type { CaptionPresetId } from '../../shared/caption-presets'
 import { useCaptionStore } from '../store/use-caption-store'
 import { useCaptionPreviewStore } from '../store/use-caption-preview-store'
 import { CAPTION_DEMO_DURATION_MS, CAPTION_DEMO_WORDS, CAPTION_LONG_DEMO_DURATION_MS, CAPTION_LONG_DEMO_WORDS } from '../lib/caption-demo'
+import { captionColorProgress } from '../lib/caption-preview'
 import { captionPreviewGroups } from '../lib/caption-layout'
 import captionDemoAudio from '../assets/audio/captions-demo.mp3'
 import captionLongDemoAudio from '../assets/audio/captions-demo-longer.mp3'
@@ -40,6 +41,7 @@ export interface CaptionPreset {
   glow?: string
   /** Translucent plate behind the whole line. */
   plate?: string
+  platePadding?: number
   karaoke?: boolean
   /** How unspoken words look. */
   future?: 'show' | 'dim' | 'hide'
@@ -289,7 +291,7 @@ export function captionPreviewPreset(id: string, custom?: CustomCaptionPreset): 
     stroke: s.outline_width, uppercase: s.uppercase, maxWords: s.max_words_per_line, maxLines: s.max_lines,
     entrancePop: s.entrance_pop, karaoke: s.karaoke_fill, colorTransition: s.color_transition,
     future: s.future_words, dimOpacity: s.dim_opacity, pill: s.highlight_box_color ?? undefined,
-    glow: s.glow_color ?? undefined,
+    glow: s.glow_color ?? undefined, platePadding: s.line_box_padding,
     words: s.max_words_per_line === 1 ? ['', 'yours', ''] : s.max_words_per_line === 2 ? ['make', 'yours', ''] : ['make', 'it', 'yours'],
     plate: s.line_box_color ? `rgb(${parseInt(s.line_box_color.slice(1, 3), 16)} ${parseInt(s.line_box_color.slice(3, 5), 16)} ${parseInt(s.line_box_color.slice(5, 7), 16)} / ${s.line_box_opacity})` : undefined }
 }
@@ -364,7 +366,7 @@ export function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.
   return (
     <span className="relative block text-center leading-[1.1]" style={base}>
       {preset.plate ? (
-        <span className="inline-block rounded px-1 py-px" style={{ background: preset.plate }}>
+        <span className="inline-block rounded" style={{ background: preset.plate, boxShadow: `0 0 0 ${(preset.platePadding ?? 22) * preset.size / (preset.exportSize ?? 84)}px ${preset.plate}` }}>
           {line}
         </span>
       ) : (
@@ -543,6 +545,8 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
   const groupTime = time - words[0].start
   const groupEnd = Math.min(words[words.length - 1].end + 700, demoWords[group.end]?.start ?? duration, duration)
   const activeWord = demoWords[active]
+  const activeDuration = (active + 1 < group.end ? demoWords[active + 1].start : groupEnd) - activeWord.start
+  const fadeProgress = captionColorProgress(time - activeWord.start, activeDuration, Boolean(preset.colorTransition))
   const wordProgress = Math.max(0, Math.min(1, (time - activeWord.start) / Math.max(1, activeWord.end - activeWord.start)))
   const scale = playing && !reducedMotion && preset.entrancePop !== false && groupTime >= 0 && groupTime < 170
     ? groupTime < 90 ? 0.82 + 0.24 * groupTime / 90 : 1.06 - 0.06 * (groupTime - 90) / 80
@@ -565,6 +569,7 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
     const word = demoWords[index].text
     const state = index === active ? 'active' : index < active ? 'past' : 'future'
     const style: CSSProperties = {
+      transition: 'none',
       visibility: state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
       opacity: state === 'future' && preset.future === 'dim' ? preset.dimOpacity ?? 0.6 : 1,
       // Reserve pill padding on every word so the line stays put as it advances.
@@ -575,8 +580,8 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
     if (preset.karaoke) {
       if (state === 'past') style.color = preset.highlight
     } else if (state === 'active') {
-      style.color = preset.colorTransition
-        ? `color-mix(in srgb, ${preset.highlight} ${Math.min(1, wordProgress / 0.3) * 100}%, ${preset.primary})`
+      style.color = preset.colorTransition && activeDuration >= 150
+        ? `color-mix(in srgb, ${preset.highlight} ${fadeProgress * 100}%, ${preset.primary})`
         : preset.highlight
       if (preset.pill) { style.background = preset.pill; style.textShadow = 'none' }
     }
@@ -608,15 +613,16 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
 
   return (<>
     <section aria-label="Caption preview" className="mb-3 overflow-hidden rounded-xl border border-white/[0.08]" style={{ background: SCENE }}>
-      <div className="flex items-center justify-between gap-2 px-3 pt-3 text-xs">
+      {!labControls && <div className="flex items-center justify-between gap-2 px-3 pt-3 text-xs">
         <span className="font-semibold text-ink">{preset.name} preview</span>
         <span className="text-2xs text-ink-subtle" role={playbackError ? 'status' : undefined}>{playbackError ? 'Couldn’t play preview' : audioEnabled ? 'Sound on' : 'Sound off'}</span>
-      </div>
+      </div>}
+      {labControls && playbackError && <p role="status" className="px-3 pt-3 text-xs text-danger">Couldn’t play audio. Try replaying.</p>}
       <div ref={stageRef} aria-hidden="true" className="caption-preview-stage flex h-32 items-center justify-center overflow-hidden px-4">
         <div className="text-center leading-snug" style={base}>
-          {preset.maxLines == null ? <span className="inline-flex max-w-full flex-wrap justify-center gap-x-[0.3em] rounded-md" style={{ background: preset.plate }}>
+          {preset.maxLines == null ? <span className="inline-flex max-w-full flex-wrap justify-center gap-x-[0.3em] rounded-md" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * frameScale}px ${preset.plate}` : undefined }}>
             {words.map((_, offset) => renderWord(groupStart + offset))}
-          </span> : <span className="inline-flex max-w-full flex-col items-center rounded-md" style={{ background: preset.plate }}>
+          </span> : <span className="inline-flex max-w-full flex-col items-center rounded-md" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * frameScale}px ${preset.plate}` : undefined }}>
             {group.lines.map(line => <span key={line.start} data-caption-line className="inline-flex flex-nowrap justify-center whitespace-nowrap" style={{ gap: layout.gap * frameScale, fontSize: line.scale < 1 ? fontSize * frameScale * line.scale : undefined, letterSpacing: line.scale < 1 ? (preset.letterSpacing ?? 0) * frameScale * line.scale : undefined }}>
               {demoWords.slice(line.start, line.end).map((_, offset) => renderWord(line.start + offset))}
             </span>)}
@@ -653,7 +659,7 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
     </section>
     {labControls && <section aria-label="Preview text" className="caption-demo-text mt-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h4 className="eyebrow">Preview text</h4>
+        <h4 className="eyebrow">Sample text</h4>
         <Segmented label="Preview sample" size="sm" value={sample} options={[{ value: 'short', label: 'Short' }, { value: 'long', label: 'Long' }]} onChange={setSample} />
       </div>
       <div ref={transcriptRef} className="caption-demo-lines relative space-y-1 overflow-y-auto overscroll-contain" role="group" aria-label="Caption lines">

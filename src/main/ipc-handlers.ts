@@ -6,6 +6,7 @@ import { existsSync, realpathSync } from 'fs'
 import { loadSettings, publicSettings, replaceApiKey, savePublicSettings, type ApiKeyName, type PublicSettings } from './settings-store'
 import { getJobHistory, getJobOutput, generateThumbnail } from './file-manager'
 import { measureOutputStorage } from './output-storage'
+import { copyCrashReport, getCrashReport, recordCrash } from './crash-reports'
 import { cleanStoredContent, previewStorageCleanup, sourceStorageSummary } from './storage-cleanup'
 import { inspectEdits } from './edit-inspector'
 import { getEnginePath, getBridgeRunnerPath, resolvePythonPath, validatePython } from './pipeline-runner'
@@ -172,6 +173,13 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('jobs:list', () => listJobs())
   handle('jobs:dismiss', (_event, jobId: unknown) => typeof jobId === 'string' && dismissJob(jobId))
 
+  handle('diagnostics:crashReport', () => getCrashReport())
+  handle('diagnostics:copyCrashReport', (_event, recordedAt: unknown) => copyCrashReport(recordedAt))
+  handle('diagnostics:rendererError', (_event, error: unknown) => {
+    if (!error || typeof error !== 'object') return
+    const value = error as { name?: unknown; stack?: unknown; code?: unknown }
+    recordCrash('renderer-error', { name: typeof value.name === 'string' ? value.name.slice(0, 32) : '', code: typeof value.code === 'string' ? value.code.slice(0, 32) : '', stack: typeof value.stack === 'string' ? value.stack.slice(0, 8192) : '' })
+  })
   handle('diagnostics:getLogPath', () => {
     return getLogFilePath()
   })

@@ -14,12 +14,14 @@ import { Button } from '../components/ui/Button'
 import { Callout } from '../components/ui/Callout'
 import { EmptyState } from '../components/ui/EmptyState'
 import { WELL } from '../components/ui/Field'
+import { Pagination } from '../components/ui/Pagination'
+import { useTablePreferencesStore } from '../store/use-table-preferences-store'
+import './jobs-pagination.css'
 import type { Page } from '../components/Sidebar'
 
 const TITLE = 'Posts'
 /** Statuses only change on Zernio's side; the main process decides which posts are worth a request. */
 const POLL_MS = 30_000
-const RECENT_LIMIT = 10
 
 function toLocalInput(ms: number): string {
   const d = new Date(ms)
@@ -73,7 +75,8 @@ export function PostsPage({ onNavigate }: { onNavigate: (page: Page) => void }):
 /** Posts made from BridgeClip: scheduled, failed and recent, with cancel, retry and links. */
 function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.JSX.Element {
   const { posts, loaded, refreshing, error, clearError, refresh } = usePostsStore()
-  const [showAll, setShowAll] = useState(false)
+  const [page, setPage] = useState(1)
+  const { pageSize, setPageSize } = useTablePreferencesStore()
 
   useEffect(() => {
     void usePostsStore.getState().load().then(() => usePostsStore.getState().refresh(false))
@@ -94,7 +97,10 @@ function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.
     const recent = posts.filter((p) => !scheduled.includes(p) && !attention.includes(p))
     return { scheduled, attention, recent }
   }, [posts])
-  const recent = showAll ? groups.recent : groups.recent.slice(0, RECENT_LIMIT)
+  const pages = Math.max(1, Math.ceil(groups.recent.length / pageSize))
+  const currentPage = Math.min(page, pages)
+  useEffect(() => { setPage(current => Math.min(current, pages)) }, [pages])
+  const recent = groups.recent.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <>
@@ -145,14 +151,8 @@ function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.
           <Panel padded={false} className="overflow-hidden">
             <PostGroup title="Scheduled" posts={groups.scheduled} />
             <PostGroup title="Needs attention" posts={groups.attention} />
-            <PostGroup title="Recent" posts={recent} />
-            {groups.recent.length > RECENT_LIMIT && (
-              <div className="border-t border-white/[0.06] px-2.5 py-1.5">
-                <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
-                  {showAll ? 'Show fewer' : `Show all ${groups.recent.length}`}
-                </Button>
-              </div>
-            )}
+            <PostGroup title="Recent" posts={recent} total={groups.recent.length} pageKey={`${currentPage}-${pageSize}`} />
+            {groups.recent.length > 0 && <Pagination label="Recent posts pages" page={currentPage} pages={pages} total={groups.recent.length} pageSize={pageSize} onChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1) }} />}
           </Panel>
         )}
 
@@ -162,15 +162,15 @@ function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.
   )
 }
 
-function PostGroup({ title, posts }: { title: string; posts: PostRecord[] }): React.JSX.Element | null {
+function PostGroup({ title, posts, total = posts.length, pageKey }: { title: string; posts: PostRecord[]; total?: number; pageKey?: string }): React.JSX.Element | null {
   if (posts.length === 0) return null
   return (
     <section className="border-t border-white/[0.06] first:border-t-0" aria-label={title}>
       <h2 className="eyebrow flex items-center gap-2 px-4 pb-0.5 pt-2">
         {title}
-        <span className="rounded-full bg-white/[0.07] px-1.5 py-px font-mono text-[10px] tabular tracking-normal text-ink-muted">{posts.length}</span>
+        <span className="rounded-full bg-white/[0.07] px-1.5 py-px font-mono text-[10px] tabular tracking-normal text-ink-muted">{total}</span>
       </h2>
-      <ul className="divide-y divide-white/[0.05]">
+      <ul key={pageKey} className={cn("divide-y divide-white/[0.05]", pageKey && "history-page")}>
         {posts.map((post) => <PostRow key={post.id} post={post} />)}
       </ul>
     </section>

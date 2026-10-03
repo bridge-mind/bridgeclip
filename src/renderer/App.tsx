@@ -25,6 +25,13 @@ import { ChangelogDialog } from './components/Changelog'
 import { Button } from './components/ui/Button'
 import { getApi } from './lib/ipc'
 
+function navigateAfterSave(go: () => void): void {
+  if (document.querySelector('[aria-modal="true"]')) return
+  void commitBeforeNavigation().then(allowed => { if (allowed !== false) go() }, () => {
+    if (window.confirm('Your latest clip edits could not be saved. Leave the editor and discard them?')) go()
+  })
+}
+
 export default function App(): React.JSX.Element {
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
@@ -51,17 +58,16 @@ export default function App(): React.JSX.Element {
       setPage(destination)
       setPageVisit((visit) => visit + 1)
     }
-    // A failed save (e.g. the project changed elsewhere) must not trap the user in the editor.
-    void commitBeforeNavigation().then(go, () => {
-      if (window.confirm('Your latest clip edits could not be saved. Leave the editor and discard them?')) go()
-    })
+    navigateAfterSave(go)
   }, [])
 
   useEffect(() => { if (page !== 'library') setLibraryRun(null) }, [page])
   const viewLibraryRun = useCallback((outputDir: string, clipIndex?: number): void => {
-    setLibraryRun({ outputDir, clipIndex })
-    setPage('library')
-    setPageVisit((visit) => visit + 1)
+    navigateAfterSave(() => {
+      setLibraryRun({ outputDir, clipIndex })
+      setPage('library')
+      setPageVisit((visit) => visit + 1)
+    })
   }, [])
 
   useEffect(() => {
@@ -113,8 +119,7 @@ export default function App(): React.JSX.Element {
     const unsubscribes = [
       api.update.onState((state) => useUpdateStore.getState().set(state)),
       api.update.onShow(() => {
-        setPage('settings')
-        setShowUpdates((count) => count + 1)
+        navigateAfterSave(() => { setPage('settings'); setShowUpdates((count) => count + 1) })
       })
     ]
     void api.update.getState().then((state) => useUpdateStore.getState().set(state)).catch(() => {})

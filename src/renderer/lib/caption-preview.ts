@@ -14,3 +14,9 @@ export function captionAnchor(project: EditorProject, candidate: CandidateEdit, 
   return { y: 1340 / 1920, bottom: false }
 }
 
+
+/** Match caption_generator._face_tags: short highlight events switch immediately. */
+export function captionColorProgress(elapsed: number, activeDuration: number, fade: boolean): number {
+  if (!fade || activeDuration < 150) return 1
+  return Math.max(0, Math.min(1, elapsed / Math.max(1, Math.floor(activeDuration * .3))))
+}

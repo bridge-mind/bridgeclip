@@ -163,6 +163,11 @@ export function ClipEditor({ outputDir, leading, onExports }: { outputDir: strin
     }).catch(() => {})
   }), [save])
 
+  useEffect(() => getApi().editor.onDiscardBeforeClose?.(() => {
+    savedKey.current = keyRef.current
+    void getApi().editor.closeReady(true)
+  }), [])
+
   const change = (patch: Partial<CandidateEdit>, remember = true): void => {
     if (busy || !candidate || (candidate.status === 'discarded' && patch.status === undefined)) return
     if (patch.scenes) patch = { ...patch, scenes: normalizeSceneTransitions(patch.scenes) }

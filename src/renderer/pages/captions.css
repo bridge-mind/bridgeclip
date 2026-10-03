@@ -59,9 +59,6 @@
   .caption-editor-preview .caption-preview-stage { height: var(--caption-compact-stage); }
   .caption-editor-preview .caption-demo-lines { max-height: 68px; }
   .caption-editor-preview .caption-demo-text { margin-top: 8px; }
-  .caption-editor-preview [aria-label="Caption preview"] > div:first-child { padding-top: 8px; }
-  .caption-editor-preview [aria-label="Caption preview"] > div:first-child > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .caption-editor-preview [aria-label="Caption preview"] > div:first-child > span:last-child { display: none; }
   .caption-lab-controls :is(input, button, [tabindex], label) { scroll-margin-top: calc(var(--caption-compact-stage) + 214px); scroll-margin-bottom: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- **Crash reports** in Settings → About lets you review and copy a local issue report after an app or interface error. Reports omit keys, media paths and raw error messages; Help also offers **Copy Latest Crash Report**.
+- Caption presets expose **Background padding**, with the same value used for previews and exports.
+
 - **Clean published content** in Settings → About → Content storage previews reclaimable space and removes selected local posted clips or fully published projects. Online posts, queued deliveries and unfinished edits are kept.
 - Content storage tracks retained source videos and editor previews for **Review & edit**, and lets you free media from finished projects while keeping their exports.
 - **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets open in a table with edit, duplicate and delete actions, ready for Create and the editor.
@@ -31,6 +34,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- Captions keeps the editor open after saving, simplifies the preview header, and offers **Save & leave**, **Discard**, or **Keep editing** before leaving unsaved changes.
+- Posts replaces **Show all** with numbered pages for Recent posts and remembers the page-size setting shared with Jobs. Scheduled posts and items needing attention stay visible.
+
 - Library deletion shows estimated space freed and a visual summary of what is deleted and kept.
 - Library cards show each run's local file size, loaded in the background and updated on refresh.
 - **Jobs → Previous** offers 10, 25, 50 or 100 runs per page with animated navigation and remembers your choice across app launches. Active jobs stay visible, and search and filters cover the full history.
@@ -42,6 +48,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 - Editor previews use much less disk space, and downloaded sources are moved into the project instead of copied.
 
 ### Fixed
+
+- Caption previews match export color-fade timing, including an instant switch for short words and styles without a fade.
 
 - Caption drafts survive restarts, and development runs rebuild background code when shared settings change.
 - Custom presets keep their complete appearance when a starting default is changed or retired; the preset table no longer shows Base.

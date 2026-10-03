@@ -59,7 +59,8 @@ function ipcWithLibrary(library) {
     './youtube-preview': {},
     './library-posting': {},
     './library-management': {},
-    './storage-cleanup': {}
+    './storage-cleanup': {},
+      './crash-reports': {}
   })
   ipc.registerIpcHandlers(() => window)
   const event = { sender: contents, senderFrame: frame }

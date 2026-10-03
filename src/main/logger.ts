@@ -72,10 +72,11 @@ export function errorSummary(error: unknown): { name: string; code: string; fram
   // Report a line only for a known, bundled application entry point.
   const frameLine = typeof err?.stack === 'string' ? err.stack.split('\n').find((line) => /^\s+at\s/.test(line)) ?? '' : ''
   const match = /(?:^|[\\/])out[\\/](main|preload)[\\/]index\.js:(\d+)(?::\d+)?\)?$/.exec(frameLine)
+  const renderer = /(?:out[\\/]renderer[\\/]|https?:\/\/localhost:\d+\/)(?:assets\/[^/]+\.js|src\/[^:]+):(\d+):(\d+)\)?$/.exec(frameLine)
   return {
     name: typeof err?.name === 'string' && safeNames.has(err.name) ? err.name : 'Error',
     code: typeof err?.code === 'string' && safeCodes.has(err.code) ? err.code : '',
-    frame: match ? `${match[1]}.index.js:${match[2]}` : ''
+    frame: match ? `${match[1]}.index.js:${match[2]}` : renderer ? `renderer.js:${renderer[1]}:${renderer[2]}` : ''
   }
 }
 

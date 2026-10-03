@@ -56,9 +56,11 @@ See [video speed](video-speed.md) for timing and export details.
 
 ### Make a caption style
 
-Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. Under **Preview text**, switch between **Short** and **Long** voice samples. Select a line to jump to that part of the recording; the line list updates with your caption settings. Pause or scrub the preview to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound and sample choices carry across styles while the app is open.
+Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. Enabling **Background** reveals padding and opacity controls, which also apply to exports. Under **Sample text**, switch between **Short** and **Long** voice samples. Select a line to jump to that part of the recording; the line list updates with your caption settings. Pause or scrub the preview to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound and sample choices carry across styles while the app is open.
 
-Give it a name and choose **Save preset**. Once you have a saved preset, Captions opens your preset table with edit, duplicate and delete actions. **New preset** starts the base-selection wizard again. When opened from Create, **Save & use** returns to the same draft with the preset selected, or you can use one directly from the table. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
+Give it a name and choose **Save preset** to save without leaving the editor. **Back to presets** opens your table with edit, duplicate and delete actions; future visits start there. **New preset** starts the base-selection wizard again. Leaving unsaved caption edits offers **Save & leave**, **Discard**, or **Keep editing**. Reloading or closing the app also asks whether to save. When opened from Create, **Save & use** returns to the same draft with the preset selected, or you can use one directly from the table. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
+
+**Clean switch** changes the active word’s color instantly. **Color fade** and **Pop & fade** deliberately blend colors in both the preview and exported captions; short word events switch instantly to match the export.
 
 Saved presets are independent copies of their starting default. Changing or retiring a default does not change your preset’s appearance or prevent you from editing, duplicating or exporting it.
 
@@ -120,6 +122,10 @@ Both actions permanently delete only the local content selected in the confirmat
 
 Connect social accounts with your own Zernio account and API key to post or schedule clips. Metadata enhancement uses your OpenRouter key. For platform-specific drafts, scheduling consent and required TikTok reviews, see [publishing and metadata](automation-metadata.md). **BridgeClip must be open for daily automations to run.**
 
+### Browse posts
+
+**Posts → Recent** uses numbered pages. Choose 10, 25, 50 or 100 rows per page; the choice is shared with Jobs and remembered after restarting. **Scheduled** and **Needs attention** remain visible above Recent on every page.
+
 ### Organize the content bank
 
 In **Automations**, drag a queued clip’s handle to change its order with animated movement and automatic scrolling. For keyboard sorting, focus the handle, press Space to pick up the clip, use the Up/Down arrow keys, then press Space to drop or Escape to cancel. Submitted or uncertain items stay in place. The bank separates **Queued**, **Needs attention** (when needed), and **Submitted** clips. The Queued heading shows the next posting slot and its timezone, or indicates that scheduling is paused or unconfigured. Hover or focus each row’s info icon for its added/submitted timestamps, source, caption and metadata status.
@@ -150,5 +156,11 @@ Recovery also works when local post history was removed or aged out, provided Ze
 - If a link fails, check it in a signed-out browser or download the video yourself and select the local file.
 - Open a job’s **Details** to inspect its saved transcript and edit trace, including failed runs. Inspecting saved results makes no provider calls. See [saved reviews and diagnostics](ai-and-privacy.md#inspect-saved-reviews).
 - Logs omit raw provider responses and private source details, but review logs and run files before sharing them. See [local storage and cleanup](ai-and-privacy.md#local-storage-and-cleanup).
+
+### Report an app crash
+
+After an app or interface error, open **Settings → About → Crash reports → View report**. Choose **Copy issue report**, open GitHub, and paste it into a new issue with your steps to reproduce. **Help → Copy Latest Crash Report** also works when the interface is unavailable. Nothing is sent automatically.
+
+The latest report includes app and system versions, safe error details and recent event names. If the app stopped without a clean shutdown, the next launch can record an **Unexpected shutdown**; forced quits and power loss can also cause this, and no crash stack is available for that event. Reports are local diagnostics, not full native crash dumps.
 
 For help, use [GitHub Issues](https://github.com/bridge-mind/bridgeclip/issues) or [Discord](https://www.bridgemind.ai/discord). Report security issues using [SECURITY.md](../SECURITY.md).
