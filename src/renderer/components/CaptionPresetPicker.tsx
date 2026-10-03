@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Bookmark, Check, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
 import { defaultCaptionStyle, type CustomCaptionPreset } from '../../shared/custom-captions'
 import type { CaptionPresetId } from '../../shared/caption-presets'
@@ -747,7 +747,7 @@ export function CaptionPresetPicker({ value, customCaption, onChange, disabled, 
   )
 }
 
-export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex, onBookmark, beforeBookmark }: { preset: CaptionPreset; selected: boolean; disabled?: boolean; onClick: () => void; tabIndex?: number; onBookmark?: () => void; beforeBookmark?: () => void }): React.JSX.Element {
+export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex, onBookmark, beforeBookmark, actions }: { preset: CaptionPreset; selected: boolean; disabled?: boolean; onClick: () => void; tabIndex?: number; onBookmark?: () => void; beforeBookmark?: () => void; actions?: ReactNode }): React.JSX.Element {
   return <div className="caption-style-slot relative min-w-0" data-reorder-key={preset.id}><div className={cn('caption-style-card relative', disabled && 'is-disabled')}>
     <button type="button" role="radio" aria-checked={selected} aria-label={preset.name} aria-description={preset.description}
     title={`${preset.name} · ${preset.description}`} disabled={disabled} tabIndex={tabIndex ?? (selected ? 0 : -1)} onClick={onClick} onKeyDown={onRadioKeyDown}
@@ -758,6 +758,7 @@ export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex
     </span>
     <span className="block truncate pb-0.5 pl-1.5 pr-7 pt-1.5 text-xs font-semibold text-ink">{preset.name}</span>
     </button>
+    {actions && <div className="absolute left-1.5 top-1.5">{actions}</div>}
     <CaptionFavoriteButton id={preset.id} name={preset.name} disabled={disabled} beforeToggle={beforeBookmark} onToggle={onBookmark} className="absolute bottom-0.5 right-0.5 h-6 w-6" />
   </div></div>
 }

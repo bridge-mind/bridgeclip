@@ -15,7 +15,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
 | Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
-| Caption browser | ![Table above defaults and a separate preview on the right](captions-browse-before.png) | ![Custom and default presets share a preview on the left](captions-table.png) |
+| Caption browser | ![Table above defaults and a separate preview on the right](captions-browse-before.png) | ![Custom and default presets share a preview on the left](captions-cards.png) |
 | Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
 ## Storage cleanup
@@ -34,9 +34,9 @@ Choose a default as a starting point, then adjust your own preset with a live pr
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 
-Once presets are saved, the page opens with a table and a New preset action. Select a custom preset's name or sample to preview it without opening an edit. Default styles remain below the table, and both use the same preview on the left. Edit swaps the list for controls without moving or resizing that preview.
+Once presets are saved, the page opens with matching card grids and a New preset action. Select a custom preset card to preview it without opening an edit; its **…** menu offers edit, duplicate and delete. Default styles remain below Your presets, and both use the same preview on the left. Edit swaps the list for controls without moving or resizing that preview.
 
-![Custom presets and default styles with bookmarks](captions-table.png)
+![Custom presets and default styles with bookmarks](captions-cards.png)
 
 ![The same preset preview stays in position while editing](captions-edit-position.png)
 

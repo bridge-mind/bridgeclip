@@ -14,7 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 - **Clean published content** in Settings → About → Content storage previews reclaimable space and removes selected local posted clips or fully published projects. Online posts, queued deliveries and unfinished edits are kept.
 - Content storage tracks retained source videos and editor previews for **Review & edit**, and lets you free media from finished projects while keeping their exports.
-- **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets open in a table with edit, duplicate and delete actions, ready for Create and the editor.
+- **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets appear as cards with edit, duplicate and delete actions, ready for Create and the editor.
 - Caption presets can arrange captions across 1, 2 or 3 balanced lines, or keep Auto wrapping, in both previews and exports.
 
 - **What to clip** in Create → Clips: describe the moments you want, such as "every time they talk about pricing". Leave it blank to get the strongest moments as before.
@@ -35,7 +35,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
-- Captions previews saved presets directly from the table and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.
+- **Your presets** on the Captions page uses the same cards as Default presets, with preview selection, bookmarks and a compact menu for edit, duplicate and delete.
+
+- Captions previews saved presets directly from their cards and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.
 - Captions opens previews paused with sample text visible; press Play to hear or watch them. New clip setups select your first bookmarked caption style, falling back to Pop when there are no available bookmarks.
 - Captions shows default styles below your saved presets, with previews and actions to customize or use them in Create.
 - Posts explains its activity feed below the heading and makes clear that dismissing updates keeps published posts and Library status intact.
@@ -58,7 +60,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 - Caption previews match export color-fade timing, including an instant switch for short words and styles without a fade.
 
 - Caption drafts survive restarts, and development runs rebuild background code when shared settings change.
-- Custom presets keep their complete appearance when a starting default is changed or retired; the preset table no longer shows Base.
+- Custom presets keep their complete appearance when a starting default is changed or retired; presets no longer show Base.
 - Captions lab previews wrap larger text and word groups within the portrait video's width.
 - Quality mode now correctly identifies **Claude Opus 5.5** as the model that finds moments. Review reflects the selected settings and the effective behavior of each workflow.
 

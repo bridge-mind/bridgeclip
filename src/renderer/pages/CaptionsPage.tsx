@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, Copy, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { CAPTION_FONTS, defaultCaptionStyle, parseCustomCaption, type CaptionStyleSettings, type CustomCaptionPreset } from '../../shared/custom-captions'
 import { DEFAULT_CAPTION_PRESET, isCaptionPresetId, type CaptionPresetId } from '../../shared/caption-presets'
-import { PRESETS, CaptionMotionPreview, CaptionSample, CaptionStyleTile, captionPreviewPreset } from '../components/CaptionPresetPicker'
-import { CaptionFavoriteButton } from '../components/CaptionFavoriteButton'
+import { PRESETS, CaptionMotionPreview, CaptionStyleTile, captionPreviewPreset } from '../components/CaptionPresetPicker'
+import { ActionMenu } from '../components/ui/ActionMenu'
 import type { Page as PageId } from '../components/Sidebar'
 import { Button } from '../components/ui/Button'
 import { Callout } from '../components/ui/Callout'
@@ -188,22 +188,19 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
           </div>}
         </Panel>
         {stage !== 'edit' && <div ref={catalogRef} className="caption-catalog space-y-3">
-          {stage === 'home' && <Panel padded={false} className="caption-preset-library">
-            <div className="flex items-center justify-between px-4 pt-4 pb-2"><h3 className="eyebrow">Your presets</h3><span className="text-2xs text-ink-subtle">{styles.length}</span></div>
-            <table aria-label="Your caption presets" className="caption-preset-table">
-              <thead className="sr-only"><tr><th scope="col">Preset</th><th scope="col">Actions</th></tr></thead>
-              <tbody>{orderedStyles.map(style => <tr key={style.id} data-reorder-key={style.id} aria-label={style.name} data-selected={selectedStyle?.id === style.id}>
-                <td><div className="flex min-w-0 items-center gap-1.5"><CaptionFavoriteButton id={style.id} name={style.name} disabled={busy} beforeToggle={() => capture(style.id)} /><button type="button" className="caption-preset-name" disabled={busy} aria-label={`Preview ${style.name}`} aria-pressed={selectedStyle?.id === style.id} onClick={() => useCaptionStore.setState({ selectedCustomId: style.id, selectedBaseId: isCaptionPresetId(style.baseId) ? style.baseId : DEFAULT_CAPTION_PRESET })}>
-                  <span className="caption-preset-sample" aria-hidden="true"><CaptionSample preset={captionPreviewPreset(style.baseId, style)} /></span>
-                  <span className="min-w-0 truncate font-medium text-ink" title={style.name}>{style.name}</span>
-                </button></div></td>
-                <td><div className="caption-preset-actions">
-                  <Button size="sm" variant="ghost" iconOnly aria-label={`Edit ${style.name}`} tooltip="Edit preset" icon={<Pencil size={14} />} disabled={busy} onClick={() => beginEdit(style)} />
-                  <Button size="sm" variant="ghost" iconOnly aria-label={`Duplicate ${style.name}`} tooltip="Duplicate preset" icon={<Copy size={14} />} disabled={busy} onClick={() => beginEdit(makeDraft(style.baseId, style))} />
-                  <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${style.name}`} tooltip="Delete preset" icon={<Trash2 size={14} />} disabled={busy} onClick={() => { setError(null); setDeleteTarget(style) }} />
-                </div></td>
-              </tr>)}</tbody>
-            </table>
+          {stage === 'home' && <Panel>
+            <div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Your presets</h3><span className="text-2xs text-ink-subtle">{styles.length}</span></div>
+            <div className="caption-base-grid" role="radiogroup" aria-label="Your caption presets">
+              {orderedStyles.map((style, index) => <CaptionStyleTile key={style.id} preset={captionPreviewPreset(style.baseId, style)} selected={selectedStyle?.id === style.id} disabled={busy}
+                tabIndex={selectedStyle ? selectedStyle.id === style.id ? 0 : -1 : index === 0 ? 0 : -1}
+                beforeBookmark={() => capture(style.id)}
+                onClick={() => useCaptionStore.setState({ selectedCustomId: style.id, selectedBaseId: isCaptionPresetId(style.baseId) ? style.baseId : DEFAULT_CAPTION_PRESET })}
+                actions={<ActionMenu label={`Actions for ${style.name}`} disabled={busy} triggerClassName="h-6 w-6 rounded-full bg-black/50" actions={[
+                  { label: 'Edit preset', icon: <Pencil size={14} />, onSelect: () => beginEdit(style) },
+                  { label: 'Duplicate', icon: <Copy size={14} />, onSelect: () => beginEdit(makeDraft(style.baseId, style)) },
+                  { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onSelect: () => { setError(null); setDeleteTarget(style) } }
+                ]} />} />)}
+            </div>
           </Panel>}
           <Panel>
             <div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Default presets</h3><span className="text-2xs text-ink-subtle">{PRESETS.length} looks</span></div>
