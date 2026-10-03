@@ -34,6 +34,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- Posts explains its activity feed below the heading and makes clear that dismissing updates keeps published posts and Library status intact.
 - Captions keeps the editor open after saving, simplifies the preview header, and offers **Save & leave**, **Discard**, or **Keep editing** before leaving unsaved changes.
 - Posts replaces **Show all** with numbered pages for Recent posts and remembers the page-size setting shared with Jobs. Scheduled posts and items needing attention stay visible.
 

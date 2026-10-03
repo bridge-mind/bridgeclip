@@ -20,6 +20,7 @@ import './jobs-pagination.css'
 import type { Page } from '../components/Sidebar'
 
 const TITLE = 'Posts'
+const DESCRIPTION = 'Track scheduled and recent posts. Dismissing updates keeps published posts and Library status intact.'
 /** Statuses only change on Zernio's side; the main process decides which posts are worth a request. */
 const POLL_MS = 30_000
 
@@ -58,7 +59,7 @@ export function PostsPage({ onNavigate }: { onNavigate: (page: Page) => void }):
         <PostsList onNavigate={onNavigate} />
       ) : (
         <>
-          <PageHeader title={TITLE} />
+          <PageHeader title={TITLE} description={DESCRIPTION} />
           <EmptyState
             className="mt-4"
             icon={<Send />}
@@ -106,6 +107,7 @@ function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.
     <>
       <PageHeader
         title={TITLE}
+        description={DESCRIPTION}
         className="items-center"
         actions={
           <Button
