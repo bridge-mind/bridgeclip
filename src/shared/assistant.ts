@@ -225,5 +225,5 @@ export interface AssistantSignInState {
 }
 
 /** Pages the assistant can show; mirrors the renderer's sidebar pages. */
-export type AssistantNavigationPage = 'clip' | 'library' | 'jobs' | 'accounts' | 'posts' | 'automations' | 'settings'
+export type AssistantNavigationPage = 'clip' | 'library' | 'jobs' | 'captions' | 'accounts' | 'posts' | 'automations' | 'settings'
 export type AppDataScope = 'library' | 'automations' | 'posts' | 'settings' | 'accounts'

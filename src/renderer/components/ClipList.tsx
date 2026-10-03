@@ -1,9 +1,8 @@
-import { SavedStageTimings } from './StageBreakdown'
 import { parseJobOutput } from '../../shared/job-output'
 import { editorProgress } from '../../shared/clip-editor'
 import { ClipEditor } from './ClipEditor'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowLeft, Check, ChevronDown, Clapperboard, Download, FolderOpen, ListPlus, Plus, Scissors, Search, Send, Trash2, Youtube } from 'lucide-react'
+import { ArrowLeft, Check, ChevronDown, Clapperboard, Download, FileText, FolderOpen, ListPlus, Plus, RefreshCw, Scissors, Search, Send, Timer, Trash2 } from 'lucide-react'
 import { basename, cn, errorMessage } from '../lib/utils'
 import { getApi } from '../lib/ipc'
 import { clipFilePath } from '../lib/thumbnails'
@@ -12,8 +11,10 @@ import { ClipCard } from './ClipCard'
 import { EditInspector } from './EditInspector'
 import { EditorialWeights } from './EditorialWeights'
 import { defaultWeights, editorialScore } from '../../shared/editorial'
-import { youtubeSourceUrl } from '../../shared/video-source'
+import { SourcePreview } from './SourcePicker'
+import { RunDetailsDialog } from './RunDetailsDialog'
 import { RunStats } from './RunStats'
+import { ActionMenu } from './ui/ActionMenu'
 import { AddToAutomationDialog } from './AddToAutomationDialog'
 import { PostDialog, type PostableClip } from './PostDialog'
 import { Page } from './ui/Page'
@@ -101,7 +102,6 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
   const [focusedClip, setFocusedClip] = useState(initialClipIndex)
   const search = query.trim().toLowerCase()
   const filtering = focusedClip !== undefined || search.length > 0
-  const sourceUrl = youtubeSourceUrl(output.source_video_url)
   const postRecords = usePostsStore((state) => state.posts)
   const refreshError = usePostsStore((state) => state.error)
   const configured = useSettingsStore((state) => state.zernioConfigured)
@@ -153,6 +153,9 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
   }, [output])
 
   const [inspectEdits, setInspectEdits] = useState(false)
+  const [runDetails, setRunDetails] = useState(false)
+  const closeRunDetails = useCallback(() => setRunDetails(false), [])
+  const closeInspector = useCallback(() => setInspectEdits(false), [])
   const firstClip = output.clips[0]
   const outputDir = runDirectory ?? (firstClip ? clipFilePath(firstClip.s3_url).replace(/[\\/][^\\/]+$/, '') : '')
 
@@ -314,36 +317,35 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
     <Page width="wide">
       <PageHeader
         leading={leading}
-        eyebrow={leading ? undefined : 'Your clips'}
-        title={output.source_video_title || 'Untitled video'}
+        title="Clips"
         description={editor?.remaining ? `${editor.remaining} clip${editor.remaining === 1 ? '' : 's'} left to finish` : undefined}
         actions={
           <>
             {editor && <Button disabled={deleting} variant={editor.remaining ? 'primary' : 'ghost'} icon={<Scissors className="h-4 w-4" />} onClick={editor.onOpen}>
               {editor.remaining ? 'Continue editing' : 'Open editor'}
             </Button>}
-            {outputDir && <Button onClick={() => setInspectEdits(true)}>Inspect transcript & edits</Button>}
-            {sourceUrl && <Button iconOnly icon={<Youtube className="h-4 w-4" />} aria-label="Open original video on YouTube" title="Open original video on YouTube"
-              onClick={() => { setExportError(null); void getApi().shell.openPath(sourceUrl).catch(() => setExportError('Could not open the original video in your browser.')) }} />}
-            {outputDir && (
-              <Button icon={<FolderOpen className="h-3.5 w-3.5" />} onClick={() => getApi().shell.openPath(outputDir)}>
-                Open folder
-              </Button>
-            )}
             {onNewClip && (
               <Button variant="primary" icon={<Plus className="h-3.5 w-3.5" />} onClick={onNewClip}>
                 New clip
               </Button>
             )}
+            <ActionMenu label="Library item actions" triggerClassName="glass h-9 w-9 rounded-full" disabled={deleting} actions={[
+              ...(outputDir ? [{ label: 'Transcript & edits', icon: <FileText className="h-3.5 w-3.5" />, onSelect: () => setInspectEdits(true) }] : []),
+              { label: 'Processing details', icon: <Timer className="h-3.5 w-3.5" />, onSelect: () => setRunDetails(true) },
+              ...(outputDir ? [{ label: 'Open folder', icon: <FolderOpen className="h-3.5 w-3.5" />, onSelect: () => {
+                void getApi().shell.openPath(outputDir).then(opened => { if (!opened) setExportError('Could not open the run folder.') })
+                  .catch(() => setExportError('Could not open the run folder.'))
+              } }] : []),
+              { label: 'Refresh post status', icon: <RefreshCw className="h-3.5 w-3.5" />, onSelect: () => {
+                if (configured) void usePostsStore.getState().refresh(true)
+                setStatusRetry(value => value + 1)
+              } }
+            ]} />
           </>
         }
       />
 
       {editor?.error && <Callout tone="warning" className="mt-3">{editor.error}</Callout>}
-
-      {typeof videoSpeed === 'number' && videoSpeed > 1 && (
-        <p className="mt-3 text-xs text-ink-muted">All clips exported at {videoSpeed}× speed · Original voice pitch</p>
-      )}
 
       {(deleteError || exportError) && (
         <Callout tone="danger" className="mt-3" onDismiss={() => { setExportError(null); setDeleteError(null) }}>
@@ -351,11 +353,15 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
         </Callout>
       )}
 
-      <div className="mt-4">
-        <RunStats key={output.job_id} output={output} costs={costs} videoSpeed={typeof videoSpeed === 'number' && videoSpeed > 1 ? videoSpeed : null} />
+      <div className="mt-4 grid gap-4 min-[1100px]:grid-cols-2">
+        <SourcePreview key={output.source_video_url} className="min-w-0" source={output.source_video_url} readOnly saved={{
+          title: output.source_video_title || 'Untitled video',
+          channel: output.source_video_channel ?? null,
+          durationSeconds: output.source_video_duration_seconds
+        }} />
+        <RunStats output={output} costs={costs} videoSpeed={typeof videoSpeed === 'number' && videoSpeed > 1 ? videoSpeed : null} />
       </div>
 
-      <SavedStageTimings stages={output.metrics?.pipeline_stages} diagnostics={output.metrics?.diagnostics} />
       {framingNotice && (
         <Callout tone="warning" className="mt-3">
           <span className="text-ink-muted">{framingNotice}</span>
@@ -368,16 +374,13 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
         </Callout>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <TextInput className="w-full max-w-sm" aria-label="Search clips" placeholder="Search clips by title, tag or number"
-          value={query} onChange={(event) => { setQuery(event.target.value); setFocusedClip(undefined) }}
-          leading={<Search className="h-3.5 w-3.5" />} />
+      {filtering && <div className="mt-4 flex flex-wrap items-center gap-3">
         {focusedClip !== undefined && <span className="text-sm text-ink-muted">From content bank · Clip {focusedClip + 1}</span>}
         {filtering && <Button size="sm" variant="ghost" onClick={() => { setQuery(''); setFocusedClip(undefined) }}>Show all clips</Button>}
-      </div>
+      </div>}
 
       {/* Floating glass toolbar; sticks just below the 40px title-bar strip. */}
-      <div className="glass-thick sticky top-0 z-20 mt-4 flex items-center justify-between gap-3 rounded-2xl py-1.5 pl-3 pr-1.5">
+      <div role="region" aria-label="Clip controls" className="glass-thick sticky top-0 z-20 mt-5 flex flex-wrap items-center gap-3 rounded-2xl p-2.5">
         <div className="flex min-w-0 items-center gap-3">
           <Checkbox
             disabled={deleting}
@@ -403,60 +406,60 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {selected.size > 0 && (
-            <div className="flex items-center gap-1.5 animate-fade-in">
-              <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-              <Button
-                size="sm"
-                icon={<Send className="h-3.5 w-3.5" />}
-                disabled={deleting || selected.size > MAX_POST_BATCH}
-                title={selected.size > MAX_POST_BATCH ? `Post up to ${MAX_POST_BATCH} clips at a time` : undefined}
-                onClick={() => setPosting(clips.filter((c) => selected.has(c.clip_index)).map(asPostable))}
-              >
-                Post {selected.size}
-              </Button>
-              {outputDir && <Button
-                size="sm"
-                icon={<ListPlus className="h-3.5 w-3.5" />}
-                disabled={deleting || selected.size > MAX_BANK_BATCH}
-                title={selected.size > MAX_BANK_BATCH ? `Add up to ${MAX_BANK_BATCH} clips at a time` : 'Copy selected clips to an automation content bank'}
-                onClick={() => setBankClips(clips.filter((clip) => selected.has(clip.clip_index)).map((clip) => clip.clip_index))}
-              >
-                Add {selected.size} to automation
-              </Button>}
-              <Button
-                size="sm"
-                variant="primary"
-                loading={exporting}
-                disabled={deleting}
-                icon={<Download className="h-3.5 w-3.5" />}
-                onClick={exportSelected}
-              >
-                Export {selected.size}
-              </Button>
-              {outputDir && <Button variant="danger" size="sm" iconOnly aria-label="Delete selected clips" title="Delete selected clips"
-                icon={<Trash2 className="h-3.5 w-3.5" />} loading={deleting} disabled={exporting} onClick={() => confirmDelete(clips.filter((clip) => selected.has(clip.clip_index)).map((clip) => clip.clip_index))} />}
-              <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
-            </div>
-          )}
-          <Segmented<Sort>
-            label="Sort clips"
-            size="sm"
-            value={sort}
-            onChange={setSort}
-            options={[
-              { value: 'score', label: 'Best first' },
-              ...(hasEditorial ? [{ value: 'editorial' as const, label: 'Editorial' }] : []),
-              { value: 'timeline', label: 'Timeline' }
-            ]}
-          />
-        </div>
+        <TextInput className="min-w-[180px] flex-1" aria-label="Search clips" placeholder="Search clips"
+          value={query} onChange={(event) => { setQuery(event.target.value); setFocusedClip(undefined) }}
+          leading={<Search className="h-3.5 w-3.5" />} />
+        <Segmented<Sort>
+          label="Sort clips"
+          size="sm"
+          value={sort}
+          onChange={setSort}
+          options={[
+            { value: 'score', label: 'Best first' },
+            ...(hasEditorial ? [{ value: 'editorial' as const, label: 'Editorial' }] : []),
+            { value: 'timeline', label: 'Timeline' }
+          ]}
+        />
+        {selected.size > 0 && (
+          <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-white/[0.07] pt-2.5 animate-fade-in">
+            <Button variant="ghost" size="sm" disabled={deleting} onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              icon={<Send className="h-3.5 w-3.5" />}
+              disabled={deleting || selected.size > MAX_POST_BATCH}
+              title={selected.size > MAX_POST_BATCH ? `Post up to ${MAX_POST_BATCH} clips at a time` : undefined}
+              onClick={() => setPosting(clips.filter((c) => selected.has(c.clip_index)).map(asPostable))}
+            >
+              Post {selected.size}
+            </Button>
+            {outputDir && <Button
+              size="sm"
+              icon={<ListPlus className="h-3.5 w-3.5" />}
+              disabled={deleting || selected.size > MAX_BANK_BATCH}
+              title={selected.size > MAX_BANK_BATCH ? `Add up to ${MAX_BANK_BATCH} clips at a time` : 'Copy selected clips to an automation content bank'}
+              onClick={() => setBankClips(clips.filter((clip) => selected.has(clip.clip_index)).map((clip) => clip.clip_index))}
+            >
+              Add {selected.size} to automation
+            </Button>}
+            <Button
+              size="sm"
+              variant="primary"
+              loading={exporting}
+              disabled={deleting}
+              icon={<Download className="h-3.5 w-3.5" />}
+              onClick={exportSelected}
+            >
+              Export {selected.size}
+            </Button>
+            {outputDir && <Button variant="danger" size="sm" iconOnly aria-label="Delete selected clips" title="Delete selected clips"
+              icon={<Trash2 className="h-3.5 w-3.5" />} loading={deleting} disabled={exporting} onClick={() => confirmDelete(clips.filter((clip) => selected.has(clip.clip_index)).map((clip) => clip.clip_index))} />}
+          </div>
+        )}
       </div>
 
-      {hasEditorial && <EditorialWeights value={weights} onChange={setWeights} />}
+      {hasEditorial && sort === 'editorial' && <div className="mt-3"><EditorialWeights value={weights} onChange={setWeights} /></div>}
       {filtering ? (
         clips.length ? renderGrid(clips) : <EmptyState className="mt-4" icon={<Search />}
           title={focusedClip !== undefined ? 'This clip is no longer in this run' : 'No clips match your search'}
@@ -470,9 +473,6 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
         />
       ) : (
         <>
-          <div className="mt-4 flex justify-end">
-            <Button size="sm" variant="ghost" onClick={() => { void usePostsStore.getState().refresh(true); setStatusRetry((value) => value + 1) }}>Refresh post status</Button>
-          </div>
           {postingError && <Callout tone="warning" className="mt-3">{postingError} Clips are listed together below.</Callout>}
           {configured && refreshError && !postingError && <Callout tone="warning" className="mt-3">{refreshError} Showing saved posting status.</Callout>}
           {!postingStatus && !postingError && <p role="status" className="mt-2 text-xs text-ink-muted">Checking posting history…</p>}
@@ -487,7 +487,8 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
 
       {confirm && <ConfirmDialog request={confirm} onClose={closeConfirm} />}
       {posting && <PostDialog clips={posting} onClose={() => setPosting(null)} onNavigate={onNavigate} />}
-      {inspectEdits && <EditInspector outputDir={outputDir} onClose={() => setInspectEdits(false)} />}
+      {inspectEdits && <EditInspector outputDir={outputDir} onClose={closeInspector} />}
+      {runDetails && <RunDetailsDialog output={output} onClose={closeRunDetails} />}
       {bankClips && outputDir && <AddToAutomationDialog
         outputDir={outputDir}
         clipIndices={bankClips}

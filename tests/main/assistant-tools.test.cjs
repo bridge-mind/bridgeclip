@@ -7,12 +7,20 @@ const { loadMain, tempDir, fakeElectron } = require('../zernio/support/load-main
 
 const ROOT = path.join(__dirname, '../..')
 
-function loadTools(t) {
+function loadTools(t, mocks = {}) {
   const { dir, cleanup } = tempDir('bridgeclip-assistant-tools-')
   t.after(cleanup)
   const { electron } = fakeElectron(dir)
   const host = { changed: [], shown: [] }
-  const mod = loadMain("export * from './src/main/assistant/bridgeclip-tools'; export { validateJobConfig } from './src/main/validation'", { electron: { ...electron, dialog: {} } })
+  const mod = loadMain(`
+    export * from './src/main/assistant/bridgeclip-tools'
+    export * from './src/main/caption-library'
+    export * from './src/main/caption-preferences'
+    export { defaultCaptionStyle } from './src/shared/custom-captions'
+    export { parseCandidateEdit } from './src/shared/clip-editor'
+    export { validateJobConfig } from './src/main/validation'
+    export { validateToolInput } from './src/main/assistant/tool-input'
+  `, { electron: { ...electron, dialog: {} }, ...mocks })
   const tools = mod.createBridgeClipTools({
     getMainWindow: () => null,
     dataChanged: (scope) => host.changed.push(scope),
@@ -108,8 +116,151 @@ test('get_clip_options lists exactly the caption styles the engine and the picke
   })
 })
 
+function customPreset(mod) {
+  return { id: 'custom-chat-test', name: 'Preset 1', baseId: 'sweep', style: { ...mod.defaultCaptionStyle('sweep'), highlight_color: '#FF0000', max_lines: 2, line_box_padding_x: 24, line_box_padding_y: 8 } }
+}
+
+test('Chat discovers newly saved, renamed and deleted caption presets without recreating its tools', async (t) => {
+  const { mod, tools, dir } = loadTools(t)
+  const options = tools.find((tool) => tool.name === 'get_clip_options')
+  assert.deepEqual((await options.run({}, {})).customCaptionStyles, [])
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  assert.deepEqual((await options.run({}, {})).customCaptionStyles, [{ id: preset.id, name: 'Preset 1' }])
+  mod.saveCaptionStyle({ ...preset, name: 'My captions' })
+  assert.deepEqual((await options.run({}, {})).customCaptionStyles, [{ id: preset.id, name: 'My captions' }])
+  mod.deleteCaptionStyle(preset.id)
+  assert.deepEqual((await options.run({}, {})).customCaptionStyles, [])
+  fs.writeFileSync(path.join(dir, 'userData', 'caption-styles.json'), '{broken')
+  await assert.rejects(options.run({}, {}), /Could not read your caption styles/, 'a damaged library must not be reported as empty')
+})
+
+test('Chat reports and applies the shared default, including bookmarks, custom presets and deletion fallback', async (t) => {
+  const { mod, tools } = loadTools(t)
+  const options = tools.find((tool) => tool.name === 'get_clip_options')
+  const source = '/picked.mp4'
+  mod.loadCaptionPreferences(['paper', 'glow'])
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'glow')
+  assert.equal(mod.clipJobRequestFromInput({ source }).captionPreset, 'glow')
+  mod.saveCaptionPreferences({ defaultId: 'neon' })
+  assert.equal((await options.run({}, {})).defaultCaptionStyleName, 'Neon')
+  assert.equal(mod.clipJobRequestFromInput({ source }).captionPreset, 'neon')
+  assert.equal(mod.clipJobRequestFromInput({ source, captionStyle: 'pop' }).captionPreset, 'pop', 'an explicit request overrides the preference')
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  mod.saveCaptionPreferences({ defaultId: null, favorites: ['paper', 'glow', preset.id] })
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, preset.id, 'custom bookmarks take priority over built-ins')
+  assert.deepEqual(mod.clipJobRequestFromInput({ source }).customCaption, preset)
+  mod.saveCaptionPreferences({ defaultId: 'neon' })
+  assert.equal(mod.clipJobRequestFromInput({ source }).captionPreset, 'neon', 'an explicit default still overrides every bookmark')
+  mod.saveCaptionPreferences({ defaultId: preset.id })
+  assert.deepEqual(mod.clipJobRequestFromInput({ source }).customCaption, preset)
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, preset.id)
+  const start = tools.find((tool) => tool.name === 'start_clip_job')
+  assert.ok((await start.confirm({ source })).includes('Captions: Preset 1'))
+  mod.saveCaptionStyle({ ...preset, name: 'New name' })
+  assert.equal((await options.run({}, {})).defaultCaptionStyleName, 'New name')
+  mod.deleteCaptionStyle(preset.id)
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'glow')
+  assert.equal(mod.clipJobRequestFromInput({ source }).customCaption, undefined)
+  mod.saveCaptionPreferences({ defaultId: null, favorites: [] })
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'pop')
+})
+
+test('Chat uses validated custom style snapshots in either workflow and refuses missing presets', async (t) => {
+  const { mod, tools } = loadTools(t)
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  const start = tools.find((tool) => tool.name === 'start_clip_job')
+  for (const workflow of ['automatic', 'review']) {
+    const input = mod.validateToolInput({ source: 'https://example.com/video.mp4', workflow, captionStyle: preset.id }, start.inputSchema)
+    const request = mod.validateJobConfig(mod.clipJobRequestFromInput(input))
+    assert.equal(request.captionPreset, 'sweep')
+    assert.deepEqual(request.customCaption, preset)
+    mod.saveCaptionStyle({ ...preset, style: { ...preset.style, font_size: 116 } })
+    assert.equal(request.customCaption.style.font_size, preset.style.font_size, 'existing jobs keep their style snapshot')
+    mod.saveCaptionStyle(preset)
+  }
+  for (const captionStyle of ['Preset 1', 'custom-missing', 'unknown-default']) {
+    assert.throws(() => mod.clipJobRequestFromInput({ source: '/picked.mp4', captionStyle }), /Caption style not found/)
+    await assert.rejects(start.confirm({ source: '/picked.mp4', captionStyle }), /get_clip_options/)
+  }
+  const builtin = mod.clipJobRequestFromInput({ source: '/picked.mp4', captionStyle: 'neon' })
+  assert.equal(builtin.captionPreset, 'neon')
+  assert.equal(builtin.customCaption, undefined)
+})
+
+test('job approval names the custom preset and starts with that snapshot even if the preset is changed or deleted', async (t) => {
+  const requests = []
+  const { mod, tools } = loadTools(t, {
+    '../job-start': { startClipJobRequest: async (request) => {
+      requests.push(request)
+      return { jobId: 'test-job', queued: true, job: { id: 'test-job', status: 'queued', percent: 0, request } }
+    } }
+  })
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  const start = tools.find((tool) => tool.name === 'start_clip_job')
+  const first = { source: '/picked.mp4', captionStyle: preset.id }
+  assert.ok((await start.confirm(first)).includes('Captions: Preset 1'))
+  const changed = { ...preset, name: 'Renamed', style: { ...preset.style, highlight_color: '#00FF00' } }
+  mod.saveCaptionStyle(changed)
+  const second = { source: '/another.mp4', captionStyle: preset.id }
+  assert.ok((await start.confirm(second)).includes('Captions: Renamed'))
+  mod.deleteCaptionStyle(preset.id)
+  await start.run(first, {})
+  await start.run(second, {})
+  assert.deepEqual(requests.map((request) => mod.validateJobConfig(request).customCaption), [preset, changed])
+  await assert.rejects(start.confirm({ source: '/picked.mp4', captionStyle: preset.id }), /Caption style not found/)
+})
+
+test('review tools report and apply custom presets, preserve snapshots and clear them when choosing a default', async (t) => {
+  let saves = 0
+  let project = { title: 'Review project', revision: 0, candidates: [{
+    id: 'candidate-1', title: 'A clip', status: 'baked', ranges: [[0, 2000]],
+    scenes: [{ at_ms: 0, layout: 'fill', crops: [[0, 0, 1, 1]] }],
+    captions: true, caption_preset: 'pop', video_speed: 1, exports: [1]
+  }] }
+  const { mod, tools, host } = loadTools(t, {
+    '../clip-editor': {
+      openEditor: async () => ({ project: structuredClone(project) }),
+      saveEditor: async (_path, revision, edits) => {
+        assert.equal(revision, project.revision)
+        // Exercise the actual save boundary, including clearing custom_caption.
+        const clean = edits.map((edit) => mod.parseCandidateEdit(edit, 2000))
+        project = { ...project, revision: revision + 1, candidates: project.candidates.map((candidate, index) => ({ ...candidate, ...clean[index] })) }
+        saves++
+        return { project }
+      }
+    }
+  })
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  const update = tools.find((tool) => tool.name === 'update_review_candidates')
+  const get = tools.find((tool) => tool.name === 'get_review_project')
+  const runId = '11111111-1111-4111-8111-111111111111'
+  const change = (fields) => update.run(mod.validateToolInput({ runId, changes: [{ candidateId: 'candidate-1', ...fields }] }, update.inputSchema), {})
+  await change({ captionStyle: preset.id })
+  assert.equal(project.candidates[0].status, 'ready')
+  assert.deepEqual(project.candidates[0].custom_caption, preset)
+  assert.equal(project.candidates[0].caption_preset, 'sweep')
+  mod.deleteCaptionStyle(preset.id)
+  const view = (await get.run({ runId }, {})).candidates[0]
+  assert.equal(view.captionStyle, preset.id)
+  assert.equal(view.captionStyleName, 'Preset 1')
+  await change({ title: 'Renamed clip', captions: false })
+  assert.deepEqual(project.candidates[0].custom_caption, preset, 'unrelated edits preserve deleted preset snapshots')
+  await assert.rejects(change({ captionStyle: preset.id }), /Caption style not found/)
+  assert.equal(saves, 2, 'missing presets never save changes')
+  await change({ captionStyle: 'neon', captions: true })
+  assert.equal(project.candidates[0].caption_preset, 'neon')
+  assert.equal(project.candidates[0].custom_caption, undefined, 'default styles must clear the custom override')
+  assert.equal((await get.run({ runId }, {})).candidates[0].captionStyleName, 'Neon')
+  assert.deepEqual(host.changed, ['library', 'library', 'library'])
+})
+
 test('show_in_bridgeclip asks the window to open a page or a Library run', async (t) => {
-  const { tools, host, dir } = loadTools(t)
+  const { mod, tools, host, dir } = loadTools(t)
   const show = tools.find((tool) => tool.name === 'show_in_bridgeclip')
   await show.run({ page: 'automations' }, {})
   await show.run({ page: 'library', runId: '11111111-1111-4111-8111-111111111111' }, {})
@@ -117,4 +268,6 @@ test('show_in_bridgeclip asks the window to open a page or a Library run', async
   assert.equal(host.shown[1][0], 'library')
   assert.equal(path.basename(host.shown[1][1]), '11111111-1111-4111-8111-111111111111')
   assert.ok(host.shown[1][1].startsWith(dir), 'inside the Library folder')
+  await show.run(mod.validateToolInput({ page: 'captions' }, show.inputSchema), {})
+  assert.deepEqual(host.shown[2], ['captions', undefined])
 })

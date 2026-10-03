@@ -230,6 +230,9 @@ async def prepare_project(request, segments, transcript, download, renderer, rev
             'reason': utf16_prefix(getattr(segment, 'reasoning', '') or '', 4000), 'captions': request.include_captions,
             'caption_preset': request.caption_preset, 'video_speed': request.video_speed, 'exports': [], 'review': None,
             'status': 'refining', 'caption_edits': [], 'caption_suppression_ranges': []}
+        if getattr(request, 'custom_caption', None) is not None:
+            from clip_engine.custom_captions import validate_custom_caption
+            c['custom_caption'] = validate_custom_caption(request.custom_caption, request.caption_preset)
         if plan is not None and getattr(plan, 'camera_scan', None):
             c['camera_scan'] = plan.camera_scan
             c['dismissed_camera_markers'] = []
@@ -339,6 +342,9 @@ def validate_candidate(c, duration, transcript_count=100000):
                 raise ValueError('Invalid crop')
     if not number(c['video_speed'], 1, 2) or type(c['captions']) is not bool:
         raise ValueError('Invalid export settings')
+    if c.get('custom_caption') is not None:
+        from clip_engine.custom_captions import validate_custom_caption
+        validate_custom_caption(c['custom_caption'], c['caption_preset'])
     if c.get('caption_y') is not None and not number(c['caption_y'], .1, .9):
         raise ValueError('Invalid caption position')
     if c.get('status', 'refining') not in ('refining', 'ready', 'baked', 'discarded'):
@@ -534,7 +540,7 @@ async def run_editor(config, progress=None):
 
 async def export_clip(run, project, c, output, source, transcript):
     """Render one ready candidate and append it to the library's job output."""
-    from clip_engine.config import get_caption_preset
+    from clip_engine.custom_captions import resolve_caption_style
     render_transcript = caption_transcript(transcript, c.get('caption_edits', []))
     next_index = output.get('next_clip_index', 0)
     if type(next_index) is not int or not 0 <= next_index <= 1000:
@@ -554,7 +560,7 @@ async def export_clip(run, project, c, output, source, transcript):
     with tempfile.TemporaryDirectory(prefix='.editor-export-', dir=run) as work, failure_code('render_failed'):
         result = await renderer.render_clip(RenderRequest(video_path=source, output_path=str(Path(work) / 'clip.mp4'),
             start_time_ms=a, end_time_ms=b, source_width=project['width'], source_height=project['height'],
-            transcript_segments=render_transcript, include_captions=c['captions'], caption_style=get_caption_preset(c['caption_preset']),
+            transcript_segments=render_transcript, include_captions=c['captions'], caption_style=resolve_caption_style(c['caption_preset'], c.get('custom_caption')),
             caption_suppression_ranges_ms=[tuple(interval) for interval in c.get('caption_suppression_ranges', [])],
             caption_y=c.get('caption_y'),
             apply_padding=False, aspect_ratio=project['aspect_ratio'], pacing='natural', video_speed=c['video_speed'],

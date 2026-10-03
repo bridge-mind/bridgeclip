@@ -205,6 +205,8 @@ function saveAttempts(): void {
   }
 }
 const running = new Map<string, AbortController>()
+/** Cleanup waits for uploads, including those not yet in saved post history. */
+export function hasActiveUploads(): boolean { return running.size > 0 }
 let workspaceGeneration = 0
 
 onZernioReset(() => {
@@ -537,6 +539,11 @@ export function listPosts(): PostRecord[] {
   return posts().list()
 }
 
+/** Main-only status evidence; dismissing activity never removes these records. */
+export function listPostingHistory(): PostRecord[] {
+  return posts().history()
+}
+
 // Serialize post changes, including retries and automation recovery. A retry
 // must not publish the old post while recovery authorizes a new attempt.
 const changingPosts = new Set<string>()
@@ -755,14 +762,13 @@ export async function inspectAutomationPost(id: string, clip: { clipPath: string
 export function relinkAutomationPost(id: string, bankPath: string, originalPath: string | undefined): void {
   if (!originalPath || !isZernioId(id) || changingPosts.has(id)) return
   try {
-    const record = posts().get(id)
-    if (record && record.clipPath === bankPath) posts().save({ ...record, clipPath: originalPath })
+    posts().relink(id, bankPath, originalPath)
   } catch {
     logger.warn('posts.relink_failed', { postId: id })
   }
 }
 
-/** Removes a finished post from the local list; Zernio keeps its own record. */
+/** Dismisses finished activity while preserving Library posting evidence. */
 export function dismissPost(id: unknown): PostRecord[] {
   const post = requirePost(id)
   if (changingPosts.has(post.id)) throw new Error('A change to this post is already in progress. Try again.')

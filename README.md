@@ -74,7 +74,7 @@ Use footage you have permission to use. See the [user guide](docs/usage.md) for 
 ### Shape the final video
 
 - Export vertical **9:16** or horizontal **16:9** clips with framing that follows faces and accommodates screen shares.
-- Preview **nine caption styles** with animated samples.
+- Preview **13 caption styles** with animated samples, or create your own in the **Captions lab**.
 - Cut dead air and export at **1×–2× speed**, preserving voice pitch and caption timing.
 
 ### Organize and publish

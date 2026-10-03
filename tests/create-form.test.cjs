@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const path = require('node:path')
+const fs = require('node:fs')
 const { buildSync } = require('esbuild')
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
@@ -8,6 +9,10 @@ const { renderToStaticMarkup } = require('react-dom/server')
 const bundled = buildSync({
   stdin: {
     contents: `export { FormatStep, ClipsStep, CaptionsStep, JobForm, buildJobRequest, parseTrimRange } from './src/renderer/components/JobForm';
+      export { ReviewStep } from './src/renderer/components/ReviewStep';
+      export { CLIPPING_MODELS } from './src/shared/clipping-modes';
+      export { defaultCaptionStyle } from './src/shared/custom-captions';
+      export { PRESETS, captionPreviewPreset } from './src/renderer/components/CaptionPresetPicker';
       export { JobProgress } from './src/renderer/components/JobProgress';
       export { SetupCard } from './src/renderer/components/SetupCard';
       export { useSettingsStore } from './src/renderer/store/use-settings-store';
@@ -23,7 +28,7 @@ const bundled = buildSync({
   platform: 'node',
   format: 'cjs',
   packages: 'external',
-  loader: { '.css': 'empty' },
+  loader: { '.css': 'empty', '.mp3': 'dataurl' },
   define: { __APP_VERSION__: JSON.stringify(require('../package.json').version) },
   jsx: 'automatic',
   write: false
@@ -32,6 +37,20 @@ const bundled = buildSync({
 const form = { exports: {} }
 new Function('module', 'exports', 'require', bundled)(form, form.exports, require)
 const { FormatStep, JobForm, isValidSourceLink, parseTrimRange, framingProblem, sourceAnalysisNotice, parseJobOutput } = form.exports
+
+test('custom previews keep their appearance when their starting default changes or disappears', () => {
+  const { PRESETS, captionPreviewPreset, defaultCaptionStyle } = form.exports
+  const custom = { id: 'custom-independent', name: 'Mine', baseId: 'impact', style: defaultCaptionStyle('impact') }
+  const original = captionPreviewPreset('impact', custom)
+  const index = PRESETS.findIndex(preset => preset.id === 'impact')
+  const removed = PRESETS.splice(index, 1)[0]
+  try {
+    assert.deepEqual(captionPreviewPreset('impact', custom), original)
+    assert.deepEqual(captionPreviewPreset('retired-default', { ...custom, baseId: 'retired-default' }), original)
+    assert.equal(original.shadow, 'hard')
+    assert.equal(original.letterSpacing, 1)
+  } finally { PRESETS.splice(index, 0, removed) }
+})
 
 test('setup needs only OpenRouter for clipping', () => {
   const { SetupCard, useSettingsStore } = form.exports
@@ -286,4 +305,68 @@ test('Review & edit shows required Jev review even when automatic review is off'
     assert.match(automatic, /Jev review &amp; repairs off/)
     assert.equal(useSettingsStore.getState().jevEnabled, 'off')
   } finally { initialState.jevEnabled = initialJev; useSettingsStore.setState(original) }
+})
+
+test('wizard preset models stay in sync with the actual bridge and engine configuration', () => {
+  const { CLIPPING_MODELS, ClipsStep, useDraftStore } = form.exports
+  const config = fs.readFileSync(path.resolve(__dirname, '../engine/clip_engine/config.py'), 'utf8')
+  const bridge = fs.readFileSync(path.resolve(__dirname, '../bridge/bridge_runner.py'), 'utf8')
+  assert.equal(config.match(/planner_model: str = "([^"]+)"/)[1], CLIPPING_MODELS.quality.planner)
+  assert.equal(bridge.match(/os.environ\["PLANNER_MODEL"\] = "([^"]+)"/)[1], CLIPPING_MODELS.economy.planner)
+  assert.ok(config.includes(`return "${CLIPPING_MODELS.economy.transcription}" if self.clipping_mode == "economy" else "${CLIPPING_MODELS.quality.transcription}"`))
+  for (const clippingMode of ['quality', 'economy']) {
+    const html = renderToStaticMarkup(React.createElement(ClipsStep, { draft: { ...useDraftStore.getState(), clippingMode }, update() {} }))
+    assert.ok(html.includes(CLIPPING_MODELS[clippingMode].plannerName))
+    assert.ok(html.includes(CLIPPING_MODELS[clippingMode].transcriptionName))
+  }
+})
+
+test('Review presents the effective request across workflows, modes, framing and caption choices', () => {
+  const { ReviewStep, buildJobRequest, useDraftStore } = form.exports
+  for (const workflow of ['automatic', 'review']) {
+    for (const clippingMode of ['quality', 'economy', 'advanced']) {
+      for (const aspectRatio of ['9:16', '16:9']) {
+        const request = buildJobRequest({ ...useDraftStore.getState(), workflow, clippingMode, aspectRatio,
+          source: 'https://youtu.be/aqz-KE-bpKQ?t=20', layoutStyle: 'auto', layoutVision: true,
+          pacing: 'tight', includeTitle: true, videoSpeed: 1.5, durations: ['short', 'medium'],
+          autoClipCount: false, maxClips: 7, includeCaptions: false, clipRequest: '  Interview highlights  ',
+          plannerModel: 'provider/moments', transcriptionModel: 'provider/speech'
+        }, { start: 90, end: 240 })
+        const html = renderToStaticMarkup(React.createElement(ReviewStep, { request, onEdit() {} }))
+        assert.match(html, /aria-label="YouTube video preview"/)
+        assert.match(html, /alt="Video thumbnail"/)
+        assert.doesNotMatch(html, /Remove video|>https:\/\/youtu/)
+        assert.match(html, /1:30 — 4:00/)
+        assert.match(html, /1.5× speed/)
+        assert.match(html, /30–60s/)
+        assert.match(html, /1–2m/)
+        assert.match(html, /Interview highlights/)
+        assert.match(html, /Up to <span[^>]*>7<\/span> clips/)
+        assert.match(html, /Captions off/)
+        assert.equal(html.includes('AI vision'), request.layoutVision)
+        assert.equal(html.includes('Cut dead air'), request.pacing === 'tight')
+        assert.equal(html.includes('Title shown at the top'), request.includeTitle)
+        assert.equal(html.includes('Whole frame'), aspectRatio === '16:9')
+        assert.equal(html.includes('Jev review required'), workflow === 'review')
+        if (clippingMode === 'advanced') assert.match(html, /provider\/moments/)
+        else assert.ok(html.includes(form.exports.CLIPPING_MODELS[clippingMode].plannerName))
+      }
+    }
+  }
+})
+
+test('Review names an embedded custom caption style and automatic clip choices', () => {
+  const { ReviewStep, buildJobRequest, useDraftStore, defaultCaptionStyle } = form.exports
+  const customCaption = { id: 'custom-review', name: 'My studio style', baseId: 'pop', style: defaultCaptionStyle('pop') }
+  const request = buildJobRequest({ ...useDraftStore.getState(), workflow: 'automatic', source: '/tmp/source.mp4',
+    customCaption, includeCaptions: true, autoClipCount: true, durations: [], includeTitle: false
+  }, { start: null, end: null })
+  const html = renderToStaticMarkup(React.createElement(ReviewStep, { request, onEdit() {} }))
+  assert.match(html, /My studio style/)
+  assert.match(html, /Your style/)
+  assert.match(html, /Let AI decide/)
+  assert.match(html, /15–90s · Auto length/)
+  assert.match(html, /Title overlay off/)
+  assert.doesNotMatch(html, /Preferred range/)
+  for (const label of ['video', 'format', 'clips', 'captions', 'mode']) assert.ok(html.includes(`aria-label="Edit ${label}"`))
 })

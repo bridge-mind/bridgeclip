@@ -1,12 +1,15 @@
+import { CLIPPING_MODELS } from '../../shared/clipping-modes'
+import { ReviewStep } from './ReviewStep'
 import { normalizeVideoSource, twitchSourceError } from '../../shared/video-source'
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Clock3, ListVideo, Minus, Plus, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, ListVideo, FlaskConical, Minus, Plus, Sparkles } from 'lucide-react'
 import { cn, MOD_KEY, parseTimecode, sourceLabel } from '../lib/utils'
 import { useDraftStore, type ClipDraft, type WizardStep } from '../store/use-draft-store'
-import { useActiveJobs } from '../store/use-job-store'
+import { useCaptionStore } from '../store/use-caption-store'
+import { useCaptionFavoritesStore } from '../store/use-caption-favorites-store'
 import type { ClipJobRequest } from '../../shared/jobs'
 import { MAX_PARALLEL_JOBS } from '../../shared/jobs'
-import { CaptionPresetPicker, CAPTION_PRESET_NAMES } from './CaptionPresetPicker'
+import { CaptionPresetPicker } from './CaptionPresetPicker'
 import { SourcePicker } from './SourcePicker'
 import { Panel } from './ui/Panel'
 import { Switch } from './ui/Switch'
@@ -40,7 +43,7 @@ const MAX_CLIPS = 100
 export const WIZARD_STEPS: { id: WizardStep; label: string; title: string; description: string }[] = [
   { id: 'video', label: 'Video', title: 'Choose a video', description: 'A local file, YouTube link or Twitch VOD link. Optionally suggest where to find clips.' },
   { id: 'format', label: 'Format', title: 'Format, framing and speed', description: 'Choose the look and pace of every clip in this job.' },
-  { id: 'clips', label: 'Clips', title: 'What to clip, length and count', description: 'Optionally describe the moments you want. Pick one or more lengths, or none for any length.' },
+  { id: 'clips', label: 'Clips', title: 'What to clip, length and count', description: 'Optionally describe the moments you want. Pick one or more lengths, or none for an automatic 15–90s range.' },
   { id: 'captions', label: 'Captions', title: 'Captions', description: 'Word-by-word captions burned into each clip. Silent videos are clipped without them.' },
   { id: 'review', label: 'Review', title: 'Review and generate', description: 'Check the run, then generate. You can queue another video right after.' }
 ]
@@ -73,11 +76,12 @@ export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; 
     aspectRatio: draft.aspectRatio,
     layoutStyle: draft.layoutStyle,
     layoutVision: draft.clippingMode !== 'economy' && draft.aspectRatio === '9:16' && draft.layoutStyle === 'auto' && draft.layoutVision,
-    pacing: draft.pacing,
+    pacing: draft.workflow === 'review' ? 'natural' : draft.pacing,
     videoSpeed: draft.videoSpeed ?? 1,
     includeCaptions: draft.includeCaptions,
     captionPreset: draft.captionPreset,
-    includeTitle: draft.includeTitle,
+    ...(draft.customCaption ? { customCaption: draft.customCaption } : {}),
+    includeTitle: draft.workflow === 'review' ? false : draft.includeTitle,
     startTimeSeconds: trim.start,
     endTimeSeconds: trim.end,
     bannerPlatform: null,
@@ -86,6 +90,7 @@ export function buildJobRequest(draft: ClipDraft, trim: { start: number | null; 
 }
 
 interface JobFormProps {
+  onOpenCaptionsLab?: () => void
   onSubmit: (config: ClipJobRequest) => void
   /** Opens a queued job on the Jobs page. */
   onViewJob?: (jobId: string) => void
@@ -102,9 +107,15 @@ type Update = (patch: Partial<ClipDraft>) => void
  * one compact panel with Back/Next pinned below it. After Generate the job is
  * queued and the wizard offers the next video, so several runs can go at once.
  */
-export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, className }: JobFormProps): React.JSX.Element {
+export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason, submitting, className }: JobFormProps): React.JSX.Element {
   const draft = useDraftStore()
   const { update, step, setStep } = draft
+  const { styles, loaded: captionsLoaded, load: loadCaptions } = useCaptionStore()
+  const { favorites, defaultId, loaded: preferencesLoaded, saving: preferencesSaving, error: preferencesError, load: loadPreferences } = useCaptionFavoritesStore()
+  useEffect(() => { void loadCaptions() }, [loadCaptions])
+  useEffect(() => {
+    if (captionsLoaded && preferencesLoaded && !preferencesSaving && (step === 'captions' || step === 'review')) draft.initializeCaption(favorites, styles, defaultId)
+  }, [captionsLoaded, preferencesLoaded, preferencesSaving, step, draft.initializeCaption, favorites, styles, defaultId])
 
   const trim = useMemo(
     () => parseTrimRange(draft.trimOpen, draft.trimStart, draft.trimEnd),
@@ -118,10 +129,15 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
   const videoValid = hasSource && draft.workflow !== null && !trim.error
   const modelsValid = draft.clippingMode !== 'advanced' || (isModelId(draft.plannerModel) && isModelId(draft.transcriptionModel))
   const stepValid = videoValid && (step !== 'clips' || modelsValid)
-  const canSubmit = videoValid && modelsValid && !blockedReason && !submitting && !draft.started
+  const captionReady = !draft.captionDefaultPending || captionsLoaded && preferencesLoaded && !preferencesSaving
+  const canSubmit = videoValid && modelsValid && captionReady && !blockedReason && !submitting && !draft.started
 
   const submit = (): void => {
-    if (canSubmit) onSubmit(buildJobRequest(draft, trim))
+    if (canSubmit) {
+      // Generate is available from every step, including before visiting Captions.
+      draft.initializeCaption(favorites, styles, defaultId)
+      onSubmit(buildJobRequest(useDraftStore.getState(), trim))
+    }
   }
 
   // ⌘↵ / Ctrl+↵ generates only once a video and workflow are chosen.
@@ -162,16 +178,17 @@ export function JobForm({ onSubmit, onViewJob, blockedReason, submitting, classN
       )}
 
       <Panel className="p-4 xl:p-5">
-        {step !== 'video' && <div className="mb-3">
-          <h2 className="text-sm font-semibold text-ink">{step === 'review' && draft.workflow === 'review' ? 'Ready to find candidates' : meta.title}</h2>
-          <p className="mt-0.5 text-xs text-ink-muted">{step === 'review' && draft.workflow === 'review' ? 'Jev reviews each candidate before the editor opens for your final cut.' : meta.description}</p>
+        {step !== 'video' && step !== 'review' && <div className="mb-3">
+          <h2 className="text-sm font-semibold text-ink">{meta.title}</h2>
+          <p className="mt-0.5 text-xs text-ink-muted">{meta.description}</p>
         </div>}
         {sourceError && <p role="alert" className="text-sm text-danger">{sourceError}</p>}
+        {preferencesError && <p role="alert" className="mb-3 text-xs text-danger">{preferencesError}{!preferencesLoaded && <button type="button" className="ml-2 underline" onClick={() => void loadPreferences()}>Retry</button>}</p>}
         {step === 'video' && <VideoStep draft={draft} update={update} trimError={trim.error} disabled={submitting} />}
         {step === 'format' && <FormatStep draft={draft} update={update} />}
         {step === 'clips' && <ClipsStep draft={draft} update={update} />}
-        {step === 'captions' && <CaptionsStep draft={draft} update={update} />}
-        {step === 'review' && <ReviewStep draft={draft} trim={trim} onEdit={goTo} />}
+        {step === 'captions' && <CaptionsStep draft={draft} update={update} onOpenLab={onOpenCaptionsLab} />}
+        {step === 'review' && draft.workflow && <ReviewStep request={buildJobRequest(draft, trim)} onEdit={goTo} />}
       </Panel>
 
       {/* Actions stay pinned to the bottom edge on a solid strip. */}
@@ -219,6 +236,7 @@ function Stepper({ current, reachable, onSelect }: { current: WizardStep; reacha
               <button
                 type="button"
                 onClick={() => onSelect(s.id)}
+                aria-label={s.label}
                 disabled={!enabled}
                 aria-current={active ? 'step' : undefined}
                 className={cn(
@@ -376,7 +394,7 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
         </Group>
       )}
 
-      <Group label="Pacing">
+      {draft.workflow !== 'review' && <Group label="Pacing">
         <SettingRow
           title="Cut dead air"
           description="Proposes pause and filler cuts. When enabled, Jev checks each removal."
@@ -384,7 +402,7 @@ export function FormatStep({ draft, update }: { draft: ClipDraft; update: Update
             <Switch label="Cut dead air and filler words" checked={draft.pacing === 'tight'} onChange={(on) => update({ pacing: on ? 'tight' : 'natural' })} />
           }
         />
-      </Group>
+      </Group>}
 
       <Group label="Video speed" aside="All clips in this job">
         <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6" role="radiogroup" aria-label="Video speed" aria-describedby="video-speed-help">
@@ -430,8 +448,8 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
       <Group label="Clipping mode">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Clipping mode">
           {([
-            { id: 'quality', label: 'Quality', hint: `GPT-6 Sol planning · ${draft.workflow === 'review' ? 'Jev review required' : `Jev review & repairs ${jevEnabled ? 'enabled' : 'off'}`} · MAI Transcribe 2` },
-            { id: 'economy', label: 'Economy', hint: 'GLM 5.3 Flash planning · Whisper Turbo' },
+            { id: 'quality', label: 'Quality', hint: `${CLIPPING_MODELS.quality.plannerName} planning · ${CLIPPING_MODELS.quality.transcriptionName}` },
+            { id: 'economy', label: 'Economy', hint: `${CLIPPING_MODELS.economy.plannerName} planning · ${CLIPPING_MODELS.economy.transcriptionName}` },
             { id: 'advanced', label: 'Advanced', hint: 'Choose your OpenRouter models' }
           ] as const).map((mode) => {
             const selected = draft.clippingMode === mode.id
@@ -444,9 +462,12 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
           })}
         </div>
         {draft.clippingMode === 'advanced' ? <AdvancedModels draft={draft} update={update} /> :
-          <p className="mt-2 text-2xs text-ink-subtle">Economy uses lower-cost models and skips paid vision checks. Transcription retries temporary errors and can fall back to Whisper Large V3, then MAI Transcribe 2. Clip choices and captions may be less accurate.</p>}
+          <p className="mt-2 text-2xs text-ink-subtle">{draft.clippingMode === 'quality'
+            ? `Planner fallback: ${CLIPPING_MODELS.quality.fallbacks}.`
+            : 'Lower-cost models · AI vision off. Transcription can fall back to Whisper Large V3, then MAI Transcribe 2.'}</p>}
+        <p className="mt-2 text-2xs text-ink-subtle">{draft.workflow === 'review' ? 'Jev review required' : `Jev review & repairs ${jevEnabled ? 'enabled' : 'off'}`}</p>
       </Group>
-      <Group label="Clip length" aside={draft.durations.length === 0 ? 'Any length' : `${draft.durations.length} selected`}>
+      <Group label="Clip length" aside={draft.durations.length === 0 ? 'Auto · 15–90s' : `${draft.durations.length} selected`}>
         <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-7" role="group" aria-label="Clip length options">
           {DURATIONS.map((d) => {
             const selected = draft.durations.includes(d.id)
@@ -510,7 +531,7 @@ export function ClipsStep({ draft, update }: { draft: ClipDraft; update: Update 
   )
 }
 
-export function CaptionsStep({ draft, update }: { draft: ClipDraft; update: Update }): React.JSX.Element {
+export function CaptionsStep({ draft, update, onOpenLab }: { draft: ClipDraft; update: Update; onOpenLab?: () => void }): React.JSX.Element {
   return (
     <div className="space-y-3">
       {draft.workflow !== 'review' && (
@@ -525,6 +546,7 @@ export function CaptionsStep({ draft, update }: { draft: ClipDraft; update: Upda
         description="Turn off for clips without word-by-word captions."
         control={<Switch label="Captions" checked={draft.includeCaptions} onChange={(includeCaptions) => update({ includeCaptions })} />}
       />
+      {onOpenLab && <div className="glass-tile flex items-center justify-between gap-3 rounded-xl px-3 py-2.5"><div className="flex items-center gap-2.5"><FlaskConical className="h-4 w-4 text-ink-muted" /><span className="text-xs font-medium">Make it your own</span></div><Button size="sm" onClick={onOpenLab}>Open captions lab</Button></div>}
       <div
         className={cn('transition-[opacity,filter] duration-300 ease-out', !draft.includeCaptions && 'pointer-events-none opacity-35 saturate-50')}
         aria-disabled={!draft.includeCaptions}
@@ -532,68 +554,11 @@ export function CaptionsStep({ draft, update }: { draft: ClipDraft; update: Upda
         <CaptionPresetPicker
           showPreview
           value={draft.captionPreset}
-          onChange={(captionPreset) => update({ captionPreset })}
+          customCaption={draft.customCaption}
+          onChange={(captionPreset, customCaption) => update({ captionPreset, customCaption })}
           disabled={!draft.includeCaptions}
         />
       </div>
-    </div>
-  )
-}
-
-function ReviewStep({ draft, trim, onEdit }: {
-  draft: ClipDraft
-  trim: { start: number | null; end: number | null }
-  onEdit: (step: WizardStep) => void
-}): React.JSX.Element {
-  const active = useActiveJobs()
-  const runningCount = active.filter((job) => job.status !== 'queued').length
-  const lengths = draft.durations.length === 0
-    ? 'Any length'
-    : DURATIONS.filter((d) => draft.durations.includes(d.id)).map((d) => d.range).join(', ')
-  const framing = draft.aspectRatio === '9:16'
-    ? `${LAYOUT_STYLES.find((s) => s.id === draft.layoutStyle)?.label ?? 'Smart'} framing${draft.clippingMode !== 'economy' && draft.layoutStyle === 'auto' && draft.layoutVision ? ' · AI vision' : ''}`
-    : 'Whole frame'
-  const trimLabel = draft.trimOpen && (trim.start != null || trim.end != null)
-    ? ` · ${trim.start != null ? formatSeconds(trim.start) : 'start'} to ${trim.end != null ? formatSeconds(trim.end) : 'end'}`
-    : ''
-
-  const rows: { step: WizardStep; label: string; value: string }[] = [
-    { step: 'video', label: 'Workflow', value: draft.workflow === 'review' ? 'Review & edit · export when ready' : 'Automatic' },
-    { step: 'video', label: 'Video', value: `${sourceLabel(draft.source)}${trimLabel}` },
-    { step: 'format', label: 'Format', value: `${FORMATS.find((f) => f.id === draft.aspectRatio)?.label ?? draft.aspectRatio} ${draft.aspectRatio} · ${framing}` },
-    { step: 'format', label: 'Pacing', value: draft.workflow === 'review' ? 'Manual · choose your own cuts in the editor' : draft.pacing === 'tight' ? 'Cut dead air' : 'Keep pauses' },
-    { step: 'format', label: 'Speed', value: `${draft.videoSpeed ?? 1}×${(draft.videoSpeed ?? 1) === 1 ? ' · Normal' : ' · All exported clips'}` },
-    { step: 'clips', label: 'Mode', value: draft.clippingMode === 'advanced' ? 'Advanced · custom models' : draft.clippingMode === 'economy' ? 'Economy · lower cost' : 'Quality · higher accuracy' },
-    { step: 'clips', label: 'Clips', value: `${lengths}${(draft.videoSpeed ?? 1) > 1 && draft.durations.length > 0 ? ' of source footage' : ''} · ${draft.autoClipCount ? 'AI decides how many' : `Up to ${draft.maxClips}`}` },
-    { step: 'clips', label: 'What to clip', value: draft.clipRequest?.trim() || 'The best moments' },
-    { step: 'captions', label: 'Captions', value: draft.includeCaptions ? CAPTION_PRESET_NAMES[draft.captionPreset] ?? draft.captionPreset : 'Off' }
-  ]
-  if (draft.workflow !== 'review') rows.push({ step: 'captions', label: 'Title', value: draft.includeTitle ? 'Shown at the top' : 'Off' })
-  if (draft.clippingMode === 'advanced') rows.splice(5, 0,
-    { step: 'clips', label: 'Transcribe', value: draft.transcriptionModel || 'Choose a model' },
-    { step: 'clips', label: 'Plan', value: draft.plannerModel || 'Choose a model' })
-
-  return (
-    <div className="space-y-3">
-      <dl className="glass-well divide-y divide-white/[0.05] overflow-hidden rounded-xl">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center gap-3 px-3 py-2">
-            <dt className="w-20 shrink-0 text-xs text-ink-subtle">{row.label}</dt>
-            <dd className="min-w-0 flex-1 truncate text-sm text-ink" title={row.value}>{row.value}</dd>
-            <Button size="sm" variant="ghost" onClick={() => onEdit(row.step)} aria-label={`Edit ${row.label.toLowerCase()}`}>
-              Edit
-            </Button>
-          </div>
-        ))}
-      </dl>
-      <p className="flex items-start gap-2 text-2xs text-ink-subtle">
-        <Clock3 className="mt-px h-3.5 w-3.5 shrink-0" />
-        {runningCount >= MAX_PARALLEL_JOBS
-          ? `${runningCount} jobs are running. This one waits in the queue and starts automatically.`
-          : active.length > 0
-            ? `Runs alongside ${active.length} other job${active.length === 1 ? '' : 's'}. Up to ${MAX_PARALLEL_JOBS} run at once.`
-            : 'Runs on this computer. Transcription and clip planning bill your OpenRouter account.'}
-      </p>
     </div>
   )
 }
@@ -643,12 +608,6 @@ function AdvancedModels({ draft, update }: { draft: ClipDraft; update: Update })
       onChange={(plannerModel) => update({ plannerModel })} />
     <p className="text-2xs text-ink-subtle">Temporary errors are retried with your selected models. No automatic model switching. Usage bills your OpenRouter account. Optional AI framing checks use Gemini and can be changed in Format.</p>
   </div>
-}
-
-function formatSeconds(total: number): string {
-  const m = Math.floor(total / 60)
-  const s = Math.floor(total % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
 }
 
 /** Tiny 9:16 diagram of a framing style: split panels, full bleed, or letterbox. */

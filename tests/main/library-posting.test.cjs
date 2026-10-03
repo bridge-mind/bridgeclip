@@ -66,7 +66,7 @@ function fixture(mocks = {}) {
   const isBankFile = (file) => typeof file === 'string' && file.startsWith(path.join(temp.dir, 'bank'))
   const main = loadMain("export * from './src/main/library-posting'; export * as settings from './src/main/settings-store'", {
     electron,
-    './zernio/posts': { listPosts: () => posts },
+    './zernio/posts': { listPostingHistory: () => posts },
     './automations': { listAutomations: () => automations, automationMediaMatcher: () => isBankFile },
     ...mocks
   })

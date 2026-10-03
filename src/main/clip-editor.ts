@@ -76,6 +76,26 @@ function sweepEditorFiles(run: string, project?: EditorProject): void {
 function mediaSize(paths: string[]): number {
   return paths.reduce((total, file) => { try { return total + statSync(file).size } catch { return total } }, 0)
 }
+/** Read-only storage inventory. Unlike openEditor, this never sweeps files. */
+export function readEditorStorage(path: unknown): { revision: number; remaining: number; sourceBytes: number; previewBytes: number; reclaimableBytes: number } {
+  const run = runPath(path), project = readProject(run)
+  let sourceBytes = 0, previewBytes = 0, reclaimableBytes = 0
+  const links = new Map<string, { size: number; links: number; seen: number }>()
+  for (const name of readdirSync(run).filter(name => EDITOR_MEDIA.test(name)).sort()) {
+    const file = join(run, name), stat = lstatSync(file)
+    if (!stat.isFile() || stat.isSymbolicLink() || dirname(realpathSync(file)) !== run) throw new Error('Editor media could not be checked safely.')
+    const key = `${stat.dev}:${stat.ino}`
+    const known = links.get(key)
+    if (known) known.seen++
+    else {
+      links.set(key, { size: stat.size, links: stat.nlink, seen: 1 })
+      if (name.startsWith('editor-source')) sourceBytes += stat.size
+      else previewBytes += stat.size
+    }
+  }
+  for (const file of links.values()) if (file.seen >= file.links) reclaimableBytes += file.size
+  return { revision: project.revision, remaining: editorProgress(project.candidates).remaining, sourceBytes, previewBytes, reclaimableBytes }
+}
 export async function openEditor(path: unknown): Promise<EditorSession> {
   const run = runPath(path)
   if (!(await getJobOutput(run, loadSettings().outputDirectory))?.editor_project) throw new Error('This run has no editor project')
@@ -153,14 +173,17 @@ export async function saveEditor(path: unknown, revision: unknown, edits: unknow
   return openEditor(run)
 }
 /** Delete the source and preview once every clip is baked or discarded. The project becomes read-only. */
-export async function freeEditorMedia(path: unknown, revision: unknown): Promise<EditorSession> {
+export async function freeEditorMedia(path: unknown, revision: unknown, beforeFree?: () => void): Promise<EditorSession> {
   const run = runPath(path)
   if (operations.has(run)) throw new Error('Wait for the current editor operation to finish')
   operations.set(run, { action: 'save' })
   try {
-    const { project } = await openEditor(run)
+    // Do not sweep anything until revision and cleanup approval have been checked.
+    if (!(await getJobOutput(run, loadSettings().outputDirectory))?.editor_project) throw new Error('This run has no editor project')
+    const project = readProject(run)
     if (!Number.isSafeInteger(revision) || project.revision !== revision) throw new Error(EDITOR_REVISION_CONFLICT)
     if (editorProgress(project.candidates).remaining) throw new Error('Bake or discard every clip before freeing editor media.')
+    beforeFree?.()
     if (!project.media_freed) {
       project.media_freed = true
       project.revision++

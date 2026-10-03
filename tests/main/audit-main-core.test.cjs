@@ -43,6 +43,8 @@ function ipcWithLibrary(library) {
     './pipeline-runner': {},
     './job-manager': { initJobManager() {} },
     './job-start': {},
+    './caption-library': {},
+    './caption-preferences': {},
     './logger': {},
     './security': security,
     './network-policy': {},
@@ -57,7 +59,9 @@ function ipcWithLibrary(library) {
     './edit-inspector': {},
     './youtube-preview': {},
     './library-posting': {},
-    './library-management': {}
+    './library-management': {},
+    './storage-cleanup': {},
+      './crash-reports': {}
   })
   ipc.registerIpcHandlers(() => window)
   const event = { sender: contents, senderFrame: frame }

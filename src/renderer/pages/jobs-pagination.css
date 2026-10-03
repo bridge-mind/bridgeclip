@@ -1,0 +1,14 @@
+.history-window { overflow: hidden; }
+.history-window button:focus-visible { outline-offset: -3px; }
+.history-page { --page-shift: 14px; animation: history-page-enter 260ms cubic-bezier(.2,.8,.2,1) both; }
+.history-page[data-direction="back"] { --page-shift: -14px; }
+.history-page > li { animation: history-row-enter 300ms cubic-bezier(.2,.8,.2,1) both; }
+.history-page > li:nth-child(2) { animation-delay: 12ms; }
+.history-page > li:nth-child(3) { animation-delay: 24ms; }
+.history-page > li:nth-child(4) { animation-delay: 36ms; }
+.history-page > li:nth-child(n+5) { animation-delay: 48ms; }
+.history-page-number { transition: background 180ms, box-shadow 180ms, color 180ms, transform 180ms; }
+.history-page-number:active { transform: scale(.92); }
+@keyframes history-page-enter { from { opacity: .25; transform: translateX(var(--page-shift)); } to { opacity: 1; transform: translateX(0); } }
+@keyframes history-row-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .history-page, .history-page > li { animation: none; } .history-page-number { transition: none; } }

@@ -1,3 +1,4 @@
+import { copyCrashReport } from './crash-reports'
 import { app, BrowserWindow, Menu, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { APP_NAME, ISSUES_URL, REPO_URL } from '../shared/brand'
@@ -91,6 +92,10 @@ export function createMenu(mainWindow: BrowserWindow): void {
           }
         },
         { type: 'separator' as const },
+        {
+          label: 'Copy Latest Crash Report',
+          click: (): void => { copyCrashReport() }
+        },
         {
           label: 'Show Logs',
           click: (): void => {

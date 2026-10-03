@@ -18,6 +18,7 @@
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
+    "engine/clip_engine/data/*.json",
     "electron.vite.config.ts"
   ]
 }

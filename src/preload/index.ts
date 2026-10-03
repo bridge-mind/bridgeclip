@@ -1,3 +1,6 @@
+import type { CrashReport } from '../shared/crash-report'
+import type { CustomCaptionPreset } from '../shared/custom-captions'
+import type { CaptionPreferences } from '../shared/caption-preferences'
 import type { JevThresholdSettings } from '../shared/jev-settings'
 import type { LibraryClipTarget } from '../shared/library-posting'
 import type { AutomationReviewResult } from '../shared/automations'
@@ -22,7 +25,7 @@ import type { MetadataEnhancement, AutomationSourceGroup, AutomationBatchResult,
 import type { LibraryClipPostingStatus, LibraryEnhancementOptions, LibraryRunPostingCounts } from '../shared/library-posting'
 import type { OpenRouterCatalog } from '../shared/openrouter-models'
 import type { UpdateState } from '../shared/updates'
-import type { OutputStorageUsage } from '../shared/output-storage'
+import type { LibraryDeletionPreview, OutputStorageUsage, SourceStorageSummary, StorageCleanupKind, StorageCleanupPreview, StorageCleanupResult } from '../shared/output-storage'
 import type { YouTubePreview } from '../shared/youtube-preview'
 import type {
   AppDataScope,
@@ -126,10 +129,18 @@ export interface BridgeClipAPI {
     progress: (path: string) => Promise<EditorProgressSummary>
     freeMedia: (path: string, revision: number) => Promise<EditorSession>
     /** Main asks the open editor to save before a close or quit continues. */
+    onDiscardBeforeClose: (callback: () => void) => () => void
     onSaveBeforeClose: (callback: () => void) => () => void
     closeReady: (saved: boolean) => Promise<void>
   }
   edits: { inspect: (outputDir: string) => Promise<EditAudit> }
+  captions: {
+    list: () => Promise<CustomCaptionPreset[]>
+    save: (style: CustomCaptionPreset) => Promise<CustomCaptionPreset[]>
+    delete: (id: string) => Promise<CustomCaptionPreset[]>
+    preferences: (legacyFavorites?: string[]) => Promise<CaptionPreferences>
+    savePreferences: (patch: Partial<CaptionPreferences>) => Promise<CaptionPreferences>
+  }
   models: { list: (refresh?: boolean) => Promise<OpenRouterCatalog> }
   automations: {
     reviewContent: (id: string, contentId: string, returnToQueue: boolean) => Promise<AutomationReviewResult>
@@ -160,6 +171,9 @@ export interface BridgeClipAPI {
     load: () => Promise<ClipSettings>
     /** Pass true to count again instead of reusing a result from the last few seconds. */
     storageUsage: (fresh?: boolean) => Promise<OutputStorageUsage>
+    sourceStorage: () => Promise<SourceStorageSummary>
+    previewCleanup: (kind: StorageCleanupKind) => Promise<StorageCleanupPreview>
+    cleanContent: (token: string, ids: string[]) => Promise<StorageCleanupResult>
     save: (settings: ClipSettings) => Promise<ClipSettings>
     replaceApiKey: (key: 'openrouterApiKey' | 'zernioApiKey', value: string) => Promise<ClipSettings>
     selectOutputDir: () => Promise<string | null>
@@ -217,6 +231,8 @@ export interface BridgeClipAPI {
   history: {
     setFavorite: (outputDir: string, favorite: boolean) => Promise<boolean>
     delete: (outputDir: string) => Promise<void>
+    deletionPreview: (outputDir: string) => Promise<LibraryDeletionPreview>
+    storageUsage: (outputDir: string) => Promise<OutputStorageUsage>
     deleteClips: (outputDir: string, indices: number[]) => Promise<JobOutput>
     postingStatus: (outputDir: string) => Promise<LibraryClipPostingStatus[]>
     /** Posted counts for many runs at once, for the Library list. */
@@ -246,6 +262,9 @@ export interface BridgeClipAPI {
     checkTools: () => Promise<ToolStatus>
   }
   diagnostics: {
+    crashReport: () => Promise<CrashReport | null>
+    copyCrashReport: (recordedAt: string) => Promise<boolean>
+    rendererError: (error: { name?: string; code?: string; stack?: string }) => Promise<void>
     getLogPath: () => Promise<string>
     openLogFolder: () => Promise<boolean>
   }
@@ -313,10 +332,16 @@ const api: BridgeClipAPI = {
     replaceSource: (path, revision, replacement) => ipcRenderer.invoke('editor:replaceSource', path, revision, replacement),
     progress: (path) => ipcRenderer.invoke('editor:progress', path),
     freeMedia: (path, revision) => ipcRenderer.invoke('editor:freeMedia', path, revision),
+    onDiscardBeforeClose: (callback) => subscribe<void>('editor:discardBeforeClose', () => callback()),
     onSaveBeforeClose: (callback) => subscribe<void>('editor:saveBeforeClose', () => callback()),
     closeReady: (saved) => ipcRenderer.invoke('editor:closeReady', saved)
   },
   edits: { inspect: (outputDir) => ipcRenderer.invoke('edits:inspect', outputDir) },
+  captions: {
+    list: () => ipcRenderer.invoke('captions:list'), save: (style) => ipcRenderer.invoke('captions:save', style), delete: (id) => ipcRenderer.invoke('captions:delete', id),
+    preferences: (legacyFavorites) => ipcRenderer.invoke('captions:preferences', legacyFavorites),
+    savePreferences: (patch) => ipcRenderer.invoke('captions:savePreferences', patch)
+  },
   models: { list: (refresh = false) => ipcRenderer.invoke('models:list', refresh) },
   automations: {
     reviewContent: (id, contentId, returnToQueue) => ipcRenderer.invoke('automations:reviewContent', id, contentId, returnToQueue),
@@ -346,6 +371,9 @@ const api: BridgeClipAPI = {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     storageUsage: (fresh) => ipcRenderer.invoke('settings:storageUsage', fresh === true),
+    sourceStorage: () => ipcRenderer.invoke('settings:sourceStorage'),
+    previewCleanup: (kind) => ipcRenderer.invoke('settings:previewCleanup', kind),
+    cleanContent: (token, ids) => ipcRenderer.invoke('settings:cleanContent', token, ids),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
     replaceApiKey: (key, value) => ipcRenderer.invoke('settings:replaceApiKey', key, value),
     selectOutputDir: () => ipcRenderer.invoke('settings:selectOutputDir')
@@ -388,6 +416,8 @@ const api: BridgeClipAPI = {
   history: {
     setFavorite: (outputDir, favorite) => ipcRenderer.invoke('history:setFavorite', outputDir, favorite),
     delete: (outputDir) => ipcRenderer.invoke('history:delete', outputDir),
+    deletionPreview: (outputDir) => ipcRenderer.invoke('history:deletionPreview', outputDir),
+    storageUsage: (outputDir) => ipcRenderer.invoke('history:storageUsage', outputDir),
     deleteClips: (outputDir, indices) => ipcRenderer.invoke('history:deleteClips', outputDir, indices),
     postingStatus: (outputDir) => ipcRenderer.invoke('history:postingStatus', outputDir),
     postingSummary: (outputDirs) => ipcRenderer.invoke('history:postingSummary', outputDirs),
@@ -415,6 +445,9 @@ const api: BridgeClipAPI = {
     checkTools: () => ipcRenderer.invoke('system:checkTools')
   },
   diagnostics: {
+    crashReport: () => ipcRenderer.invoke('diagnostics:crashReport'),
+    copyCrashReport: (recordedAt) => ipcRenderer.invoke('diagnostics:copyCrashReport', recordedAt),
+    rendererError: (error) => ipcRenderer.invoke('diagnostics:rendererError', error),
     getLogPath: () => ipcRenderer.invoke('diagnostics:getLogPath'),
     openLogFolder: () => ipcRenderer.invoke('diagnostics:openLogFolder')
   },

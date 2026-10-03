@@ -1,0 +1,9 @@
+.caption-style-card { transition: transform 200ms cubic-bezier(.22, 1, .36, 1); }
+.caption-style-card:not(.is-disabled):hover { transform: translateY(-2px); }
+.caption-bookmark[aria-pressed="true"] svg { animation: caption-bookmark-set 300ms cubic-bezier(.22, 1, .36, 1); }
+@keyframes caption-bookmark-set { 0% { transform: scale(.7) rotate(-12deg); } 65% { transform: scale(1.15) rotate(3deg); } 100% { transform: scale(1) rotate(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .caption-style-card { transition: none; }
+  .caption-style-card:not(.is-disabled):hover { transform: none; }
+  .caption-bookmark[aria-pressed="true"] svg { animation: none; }
+}

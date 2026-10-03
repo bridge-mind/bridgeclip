@@ -15,6 +15,7 @@ import { cancelQueuedJobsForQuit } from './job-manager'
 import { cancelZernioConnect } from './zernio/service'
 import { isAutomationMedia, startAutomationScheduler } from './automations'
 import { sweepDeletingRuns } from './library-management'
+import { startCrashSession, endCrashSession, recordCrash } from './crash-reports'
 import { registerAssistant, type AssistantRuntime } from './assistant/ipc'
 
 // Catch crashes anywhere in the main process so we get a log line instead
@@ -22,9 +23,11 @@ import { registerAssistant, type AssistantRuntime } from './assistant/ipc'
 // would disappear into the void in a packaged build.
 process.on('uncaughtException', (err) => {
   logger.error('main.uncaughtException', errorSummary(err))
+  recordCrash('main-error', err)
 })
 process.on('unhandledRejection', (reason) => {
   logger.error('main.unhandledRejection', errorSummary(reason))
+  recordCrash('main-error', reason)
 })
 
 let mainWindow: BrowserWindow | null = null
@@ -91,8 +94,8 @@ function unsavedEditsChoice(window: BrowserWindow): 'save' | 'discard' | 'cancel
   }
   const response = dialog.showMessageBoxSync(window, {
     type: 'warning', buttons: ['Save', 'Discard', 'Cancel'], defaultId: 0, cancelId: 2, noLink: true,
-    message: 'Save your clip edits?',
-    detail: 'Your latest changes in the clip editor are not saved yet. If you discard them, the editor reopens at your last save.'
+    message: 'Save your changes?',
+    detail: 'You have unsaved edits. Save them before leaving, or discard them to keep the last saved version.'
   })
   return (['save', 'discard', 'cancel'] as const)[response] ?? 'cancel'
 }
@@ -133,6 +136,10 @@ function createWindow(): void {
     }
   })
 
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    if (!['clean-exit', 'killed'].includes(details.reason)) recordCrash('renderer-crash', undefined, details)
+  })
+
   mainWindow.on('ready-to-show', () => {
     if (!hiddenForTests) {
       mainWindow?.show()
@@ -148,20 +155,19 @@ function createWindow(): void {
   // Electron silently cancels the close (and a quit), so ask what to do.
   const window = mainWindow
   window.on('close', () => { if (closeIntent !== 'quit') closeIntent = 'close' })
-  window.webContents.on('will-prevent-unload', (event) => {
+  window.webContents.on('will-prevent-unload', () => {
     const intent = closeIntent ?? 'reload'
     closeIntent = null
     const choice = unsavedEditsChoice(window)
     logger.info('editor.unsavedClose', { intent, choice })
-    if (choice === 'discard') { event.preventDefault(); return }
-    if (choice === 'save') {
+    if (choice === 'discard' || choice === 'save') {
       awaitEditorSaveBeforeClose(() => {
         if (window.isDestroyed()) return
         if (intent === 'quit') app.quit()
         else if (intent === 'close') window.close()
         else window.webContents.reload()
       })
-      window.webContents.send('editor:saveBeforeClose')
+      window.webContents.send(choice === 'save' ? 'editor:saveBeforeClose' : 'editor:discardBeforeClose')
     }
   })
 
@@ -190,6 +196,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.whenReady().then(() => {
+  if (gotTheLock) startCrashSession()
   cleanStaleWorkspaces()
   electronApp.setAppUserModelId('com.bridgemind.bridgeclip')
   if (hiddenForTests) app.dock?.hide()
@@ -306,3 +313,8 @@ app.on('will-quit', () => {
 })
 // A sign-in still waiting for its browser redirect must not hold the loopback port.
 app.on('before-quit', () => cancelZernioConnect())
+
+app.on('will-quit', () => { if (gotTheLock) endCrashSession() })
+app.on('child-process-gone', (_event, details) => {
+  if (!['clean-exit', 'killed'].includes(details.reason)) recordCrash('child-crash', undefined, details)
+})

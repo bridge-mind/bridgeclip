@@ -1,0 +1,12 @@
+/* Independent padding without changing text layout, timing, or line breaks. */
+.caption-background { position: relative; isolation: isolate; }
+.caption-background::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--caption-padding-y)) calc(-1 * var(--caption-padding-x));
+  z-index: -1;
+  pointer-events: none;
+  /* Match the rectangular libass caption background used when baking. */
+  border-radius: 0;
+  background: var(--caption-background);
+}

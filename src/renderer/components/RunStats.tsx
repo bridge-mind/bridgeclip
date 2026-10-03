@@ -93,7 +93,7 @@ export function RunStats({ output, costs, videoSpeed }: RunStatsProps): React.JS
   )
 
   return (
-    <div role="group" aria-label="Run stats" className="glass grid grid-cols-2 overflow-hidden rounded-3xl min-[960px]:grid-cols-4 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(odd)]:border-r min-[960px]:[&>*:nth-child(-n+2)]:border-b-0 min-[960px]:[&>*:not(:last-child)]:border-r [&>*]:border-white/[0.06]">
+    <div role="group" aria-label="Run stats" className="glass grid min-w-0 grid-cols-1 overflow-hidden rounded-2xl min-[640px]:grid-cols-2 [&>*:not(:last-child)]:border-b min-[640px]:[&>*:nth-last-child(2)]:border-b-0 min-[640px]:[&>*:nth-child(odd)]:border-r [&>*]:border-white/[0.06]">
       <StatCell
         index={0}
         icon={<Clapperboard />}

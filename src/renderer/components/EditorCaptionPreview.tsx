@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { CandidateEdit, EditorProject } from '../../shared/clip-editor'
 import { captionAnchor } from '../lib/caption-preview'
-import { captionPreviewPreset, textShadow } from './CaptionPresetPicker'
+import { captionBackgroundStyle, captionPreviewPreset, textShadow } from './CaptionPresetPicker'
 
 // Preset sizes in the export's 1080×1920 coordinate system. Browser font metrics
 // differ from libass; this is a placement guide, not a pixel-exact render.
@@ -26,10 +26,10 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
     observer.observe(element); observer.observe(parent); measure()
     return () => observer.disconnect()
   }, [canvas, project.aspect_ratio])
-  const preset = captionPreviewPreset(candidate.caption_preset), landscape = project.aspect_ratio === '16:9'
+  const preset = captionPreviewPreset(candidate.caption_preset, candidate.custom_caption), landscape = project.aspect_ratio === '16:9'
   const anchor = captionAnchor(project, candidate, time)
   const scale = bounds.width / (landscape ? 1920 : 1080)
-  const size = (SIZES[preset.id] ?? 84) * (landscape ? .65 : 1) * scale * .8
+  const size = (candidate.custom_caption?.style.font_size ?? SIZES[preset.id] ?? 84) * (landscape ? .65 : 1) * scale * .8
   const shadow = textShadow(preset, scale * 3)
   if (!candidate.captions || !bounds.width) return null
   return <div className="editor-caption-overlay" style={bounds}>
@@ -59,11 +59,11 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
         const center = anchor.y - (anchor.bottom ? e.currentTarget.getBoundingClientRect().height / bounds.height / 2 : 0)
         onMove(Math.max(.1, Math.min(.9, center + direction * (e.shiftKey ? .05 : .01))), true)
       }}>
-      <span className="editor-caption-words" style={{ background: preset.plate }}>
+      <span className="editor-caption-words caption-background" style={captionBackgroundStyle(preset, size / (preset.exportSize ?? 84))}>
         {['Captions', 'go', 'here'].map((word, i) => <span key={i} style={{ color: i === 1 ? preset.highlight : preset.primary,
           background: i === 1 ? preset.pill : undefined,
           padding: preset.pill ? '0 .15em' : undefined, borderRadius: '.15em',
-          textShadow: i === 1 && preset.glow ? `${shadow}, 0 0 ${size / 3}px ${preset.glow}` : undefined }}>{word}</span>)}
+          textShadow: i === 1 && preset.glow ? [shadow === 'none' ? '' : shadow, `0 0 ${size / 3}px ${preset.glow}`].filter(Boolean).join(', ') : undefined }}>{word}</span>)}
       </span>
     </button>
   </div>
