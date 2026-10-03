@@ -81,7 +81,7 @@ test('caption presets start with a base wizard, open a saved library table, and 
   await setInput('Outline color', '#112233')
   await page.getByRole('switch', { name: 'Background', exact: true }).click()
   await setInput('Background opacity', '75')
-  assert.equal(await page.getByLabel('Horizontal padding', { exact: true }).inputValue(), '22')
+  assert.equal(await page.getByLabel('Horizontal padding', { exact: true }).inputValue(), '24')
   assert.equal(await page.getByLabel('Vertical padding', { exact: true }).inputValue(), '22')
   await setInput('Horizontal padding', '35')
   await setInput('Vertical padding', '8')

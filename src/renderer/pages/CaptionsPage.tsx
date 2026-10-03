@@ -64,7 +64,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     const baseName = source ? `${source.name} copy` : `${PRESETS.find(preset => preset.id === id)?.name ?? 'Pop'} remix`
     let name = baseName.slice(0, 44), n = 2
     while (styles.some(style => style.name.toLowerCase() === name.toLowerCase())) name = `${baseName.slice(0, 40)} ${n++}`
-    return { id: `custom-${crypto.randomUUID()}`, name, baseId: id, style: source ? { ...source.style } : defaultCaptionStyle(isCaptionPresetId(id) ? id : DEFAULT_CAPTION_PRESET) }
+    return { id: `custom-${crypto.randomUUID()}`, name, baseId: id, style: source ? { ...source.style } : { ...defaultCaptionStyle(isCaptionPresetId(id) ? id : DEFAULT_CAPTION_PRESET), line_box_padding_x: 24 } }
   }
   const beginEdit = (style: CustomCaptionPreset): void => {
     setEditing(structuredClone(style))

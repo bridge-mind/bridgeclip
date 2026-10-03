@@ -9,7 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 ### Added
 
 - **Crash reports** in Settings → About lets you review and copy a local issue report after an app or interface error. Reports omit keys, media paths and raw error messages; Help also offers **Copy Latest Crash Report**.
-- Caption presets expose separate **Horizontal padding** and **Vertical padding** controls for backgrounds, applied to previews and exports. Existing presets keep their saved padding.
+- Caption presets expose separate **Horizontal padding** and **Vertical padding** controls for backgrounds, applied to previews and exports. New presets start with 24 horizontal padding; existing presets keep their saved padding.
 
 - **Clean published content** in Settings → About → Content storage previews reclaimable space and removes selected local posted clips or fully published projects. Online posts, queued deliveries and unfinished edits are kept.
 - Content storage tracks retained source videos and editor previews for **Review & edit**, and lets you free media from finished projects while keeping their exports.
