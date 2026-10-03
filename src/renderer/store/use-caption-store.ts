@@ -17,6 +17,7 @@ interface CaptionState {
   editing: CustomCaptionPreset | null
   view: 'home' | 'base' | 'edit'
   selectedBaseId: CaptionPresetId
+  selectedCustomId: string | null
   fromWizard: boolean
   load: () => Promise<void>
   save: (style: CustomCaptionPreset) => Promise<void>
@@ -26,7 +27,8 @@ interface CaptionState {
 export const useCaptionStore = create<CaptionState>((set, get) => ({
   styles: [], loaded: false, loading: false, error: null,
   editing: recoveredDraft, view: recoveredDraft ? 'edit' : 'home',
-  selectedBaseId: isCaptionPresetId(recoveredDraft?.baseId) ? recoveredDraft.baseId : DEFAULT_CAPTION_PRESET, fromWizard: false,
+  selectedBaseId: isCaptionPresetId(recoveredDraft?.baseId) ? recoveredDraft.baseId : DEFAULT_CAPTION_PRESET,
+  selectedCustomId: null, fromWizard: false,
   load: async () => {
     if (get().loading || get().loaded) return
     set({ loading: true, error: null })

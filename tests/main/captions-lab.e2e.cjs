@@ -388,7 +388,8 @@ test('caption presets start with a base wizard, open a saved library table, and 
   assert.equal(await defaults.getByRole('radio', { name: 'Paper', exact: true }).getAttribute('aria-checked'), 'true')
   assert.equal(await page.getByRole('textbox', { name: 'Style name', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Back to presets', exact: true }).click()
-  await table.getByRole('button', { name: 'Use Studio Mint', exact: true }).click()
+  await table.getByRole('button', { name: 'Preview Studio Mint', exact: true }).click()
+  await page.getByRole('button', { name: 'Use preset', exact: true }).click()
   assert.equal(await mine.getByRole('radio', { name: 'Studio Mint', exact: true }).getAttribute('aria-checked'), 'true')
 
   // Editing the library after selection keeps the wizard's embedded snapshot.

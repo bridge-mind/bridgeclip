@@ -2,7 +2,7 @@
 
 These examples use synthetic videos, local test folders and mock provider metadata. No private media, provider keys or paid clipping runs are included.
 
-The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison, which shows the earlier draft PR at `e09c091`. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
+The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison at `e09c091` and caption browser at `0a09f2d`, both from earlier versions of this draft PR. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
 
 ## Before and after
 
@@ -15,6 +15,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
 | Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
+| Caption browser | ![Table above defaults and a separate preview on the right](captions-browse-before.png) | ![Custom and default presets share a preview on the left](captions-table.png) |
 | Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
 ## Storage cleanup
@@ -33,9 +34,15 @@ Choose a default as a starting point, then adjust your own preset with a live pr
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 
-Once presets are saved, the page opens with a table and a New preset action. Default styles stay visible below the table, with a preview and controls to customize or use one. Bookmark default and custom presets without changing the current selection.
+Once presets are saved, the page opens with a table and a New preset action. Select a custom preset's name or sample to preview it without opening an edit. Default styles remain below the table, and both use the same preview on the left. Edit swaps the list for controls without moving or resizing that preview.
 
 ![Custom presets and default styles with bookmarks](captions-table.png)
+
+![The same preset preview stays in position while editing](captions-edit-position.png)
+
+Bookmarks move smoothly to the front of their existing list without changing the preview or losing keyboard focus. The bookmark icon also follows its card's hover lift. Reduced motion skips these movements.
+
+![Bookmarking Paper moves its card to the front](captions-bookmark-motion.gif)
 
 Previews on the Captions page open paused with sample text visible, even with sound enabled. Play starts the recording; switching styles or reopening the page returns to a still preview.
 

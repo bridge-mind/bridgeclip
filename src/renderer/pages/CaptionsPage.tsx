@@ -20,12 +20,15 @@ import { useDraftStore } from '../store/use-draft-store'
 import { errorMessage } from '../lib/utils'
 import { getApi } from '../lib/ipc'
 import { registerNavigationCommit } from '../lib/navigation'
+import { useReorderMotion } from '../hooks/use-reorder-motion'
 import './captions.css'
 
 export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => void }): React.JSX.Element {
-  const { styles, editing, selectedBaseId: baseId, view, fromWizard, loaded, loading, error: loadError, load, save, remove } = useCaptionStore()
+  const { styles, editing, selectedBaseId: baseId, selectedCustomId, view, fromWizard, loaded, loading, error: loadError, load, save, remove } = useCaptionStore()
   const favorites = useCaptionFavoritesStore(state => state.favorites)
   const orderedStyles = [...styles].sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)))
+  const orderedDefaults = [...PRESETS].sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)))
+  const { gridRef: catalogRef, capture } = useReorderMotion()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -37,7 +40,8 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
   const dirty = editing !== null && JSON.stringify(existing) !== JSON.stringify(editing)
   const stage = view === 'home' ? styles.length ? 'home' : 'base' : view === 'edit' && editing ? 'edit' : 'base'
   const creating = stage === 'base' || stage === 'edit' && !existing
-  const preview = captionPreviewPreset(baseId, stage === 'edit' ? editing ?? undefined : undefined)
+  const selectedStyle = stage === 'home' ? styles.find(style => style.id === selectedCustomId) : undefined
+  const preview = captionPreviewPreset(baseId, stage === 'edit' ? editing ?? undefined : selectedStyle)
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -72,13 +76,13 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
   }
   const beginEdit = (style: CustomCaptionPreset): void => {
     setEditing(structuredClone(style))
-    useCaptionStore.setState({ selectedBaseId: isCaptionPresetId(style.baseId) ? style.baseId : DEFAULT_CAPTION_PRESET, view: 'edit' })
+    useCaptionStore.setState({ selectedBaseId: isCaptionPresetId(style.baseId) ? style.baseId : DEFAULT_CAPTION_PRESET, selectedCustomId: styles.some(item => item.id === style.id) ? style.id : null, view: 'edit' })
   }
   const chooseBase = (id: CaptionPresetId): void => {
-    if (id === baseId) return
+    if (id === baseId && !selectedCustomId) return
     switchStyle(() => {
       setEditing(null)
-      useCaptionStore.setState({ selectedBaseId: id, view: stage === 'home' ? 'home' : 'base' })
+      useCaptionStore.setState({ selectedBaseId: id, selectedCustomId: null, view: stage === 'home' ? 'home' : 'base' })
     })
   }
   const customize = (): void => {
@@ -107,7 +111,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
       const style = parseCustomCaption(editing)
       await save(style)
       if (useInWizard) apply(style)
-      else { setEditing(style); setSaved(true) }
+      else { setEditing(style); useCaptionStore.setState({ selectedCustomId: style.id }); setSaved(true) }
       return true
     } catch (err) { setError(errorMessage(err, 'Could not save this preset.')); return false }
     finally { setBusy(false) }
@@ -117,7 +121,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     setBusy(true); setError(null)
     try {
       await remove(deleteTarget.id)
-      useCaptionStore.setState({ selectedBaseId: isCaptionPresetId(deleteTarget.baseId) ? deleteTarget.baseId : DEFAULT_CAPTION_PRESET })
+      if (selectedCustomId === deleteTarget.id) useCaptionStore.setState({ selectedCustomId: null, selectedBaseId: isCaptionPresetId(deleteTarget.baseId) ? deleteTarget.baseId : DEFAULT_CAPTION_PRESET })
       showHome()
       requestAnimationFrame(() => heading.current?.focus())
     } catch (err) { setError(errorMessage(err, 'Could not delete this preset.')) }
@@ -157,7 +161,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     <PageHeader eyebrow="Studio" title="Captions" description="Create a signature look."
       actions={<>
         {fromWizard && <Button icon={<ArrowLeft size={14} />} onClick={() => switchStyle(() => { showHome(); useCaptionStore.setState({ fromWizard: false }); onNavigate('clip') })}>Back to Create</Button>}
-        {loaded && stage === 'home' && <Button variant="primary" icon={<Plus size={14} />} disabled={busy} onClick={() => switchStyle(() => { setEditing(null); useCaptionStore.setState({ view: 'base' }) })}>New preset</Button>}
+        {loaded && stage === 'home' && <Button variant="primary" icon={<Plus size={14} />} disabled={busy} onClick={() => switchStyle(() => { setEditing(null); useCaptionStore.setState({ view: 'base', selectedCustomId: null }) })}>New preset</Button>}
       </>} />
     {(error || loadError) && <Callout tone="danger" className="mt-3" action={loadError ? <Button size="sm" onClick={() => void load()}>Retry</Button> : undefined}>{error ?? loadError}</Callout>}
     {!loaded && <Panel className="mt-4"><p role="status" className="text-xs text-ink-muted">{loading ? 'Loading presets…' : 'Your presets are unavailable.'}</p></Panel>}
@@ -165,8 +169,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
       <div className="caption-stage-header mt-4">
         <div className="flex min-w-0 items-center gap-3">
           {stage !== 'home' && (styles.length > 0 || stage === 'edit') && <Button variant="ghost" icon={<ArrowLeft size={14} />} disabled={busy} onClick={stage === 'edit' && !existing ? backToBase : backToPresets}>{stage === 'edit' && !existing ? 'Back to base' : 'Back to presets'}</Button>}
-          <h2 ref={heading} tabIndex={-1} className="caption-stage-heading text-base font-semibold">{stage === 'home' ? 'Your presets' : stage === 'base' ? 'Choose a base' : existing ? 'Edit preset' : 'Customize preset'}</h2>
-          {stage === 'home' && <span className="font-mono text-2xs text-ink-subtle">{styles.length}</span>}
+          <h2 ref={heading} tabIndex={-1} className="caption-stage-heading text-base font-semibold">{stage === 'home' ? 'Presets' : stage === 'base' ? 'Choose a base' : existing ? 'Edit preset' : 'Customize preset'}</h2>
         </div>
         {creating && <nav aria-label="Caption preset steps" className="caption-creation-steps">
           <button type="button" aria-current={stage === 'base' ? 'step' : undefined} disabled={busy} onClick={backToBase} className={stage === 'base' ? 'is-current' : ''}><span>{stage === 'edit' ? <Check size={12} /> : '1'}</span>Choose base</button>
@@ -175,40 +178,39 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
         </nav>}
         {stage === 'home' && saved && <span role="status" className="flex items-center gap-1 text-xs text-success"><Check size={13} />Saved</span>}
       </div>
-      {stage === 'home' && <Panel padded={false} className="caption-preset-library mt-3 overflow-hidden">
-        <table aria-label="Your caption presets" className="caption-preset-table">
-          <thead><tr><th scope="col">Preset</th><th scope="col" className="caption-preset-font">Typeface</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>{orderedStyles.map(style => <tr key={style.id} aria-label={style.name}>
-            <td><div className="flex min-w-0 items-center gap-2"><CaptionFavoriteButton id={style.id} name={style.name} disabled={busy} /><button type="button" className="caption-preset-name" onClick={() => beginEdit(style)} disabled={busy} aria-label={`Open ${style.name}`}>
-              <span className="caption-preset-sample" aria-hidden="true"><CaptionSample preset={captionPreviewPreset(style.baseId, style)} /></span>
-              <span className="min-w-0 truncate font-medium text-ink">{style.name}</span>
-            </button></div></td>
-            <td className="caption-preset-font text-ink-muted">{style.style.font_name}</td>
-            <td><div className="caption-preset-actions">
-              {fromWizard && <Button size="sm" variant="primary" aria-label={`Use ${style.name}`} disabled={busy} onClick={() => apply(style)}>Use preset</Button>}
-              <Button size="sm" variant="ghost" iconOnly aria-label={`Edit ${style.name}`} tooltip="Edit preset" icon={<Pencil size={14} />} disabled={busy} onClick={() => beginEdit(style)} />
-              <Button size="sm" variant="ghost" iconOnly aria-label={`Duplicate ${style.name}`} tooltip="Duplicate preset" icon={<Copy size={14} />} disabled={busy} onClick={() => beginEdit(makeDraft(style.baseId, style))} />
-              <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${style.name}`} tooltip="Delete preset" icon={<Trash2 size={14} />} disabled={busy} onClick={() => { setError(null); setDeleteTarget(style) }} />
-            </div></td>
-          </tr>)}</tbody>
-        </table>
-      </Panel>}
-      {(stage === 'base' || stage === 'home') && <div className={`caption-base-layout ${stage === 'home' ? 'mt-5' : 'mt-3'} animate-fade-in`}>
-        <Panel>
-          <div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Default presets</h3><span className="text-2xs text-ink-subtle">{PRESETS.length} looks</span></div>
-          <div className="caption-base-grid" role="radiogroup" aria-label={stage === 'home' ? 'Default caption presets' : 'Default styles'}>{PRESETS.map(preset => <CaptionStyleTile key={preset.id} preset={preset} selected={baseId === preset.id} disabled={busy} tabIndex={baseId === preset.id ? 0 : -1} onClick={() => chooseBase(preset.id as CaptionPresetId)} />)}</div>
+      <div className="caption-lab-layout mt-3">
+        <Panel className="caption-lab-preview">
+          <div className="caption-preview-heading mb-3 flex items-center justify-between gap-3"><h3 className="min-w-0 truncate text-lg font-semibold">{preview.name || 'Untitled preset'}</h3></div>
+          <CaptionMotionPreview key={`${stage === 'edit' ? 'edit' : 'browse'}:${preview.id}`} preset={preview} labControls />
+          {stage !== 'edit' && <div className="caption-preview-actions mt-3 flex flex-wrap justify-end gap-2">
+            <Button variant={fromWizard ? 'secondary' : 'primary'} icon={selectedStyle ? <Pencil size={14} /> : <ArrowRight size={14} />} disabled={busy} onClick={() => selectedStyle ? beginEdit(selectedStyle) : customize()}>{selectedStyle ? 'Edit preset' : 'Customize'}</Button>
+            {fromWizard && <Button variant="primary" disabled={busy} onClick={() => switchStyle(() => selectedStyle ? apply(selectedStyle) : applyDefault())}>Use preset</Button>}
+          </div>}
         </Panel>
-        <Panel className="caption-lab-preview caption-base-preview">
-          <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0">{stage === 'base' && <p className="eyebrow">Your starting point</p>}<h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div></div>
-          <CaptionMotionPreview key={baseId} preset={preview} labControls />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-ink-muted">{preview.description}</p><div className="flex items-center gap-2"><Button variant={fromWizard ? 'secondary' : 'primary'} icon={<ArrowRight size={14} />} disabled={busy} onClick={customize}>Customize</Button>{fromWizard && <Button variant="primary" disabled={busy} onClick={() => switchStyle(applyDefault)}>Use preset</Button>}</div></div>
-        </Panel>
-      </div>}
-      {stage === 'edit' && editing && <div className="caption-editor-layout mt-3 animate-fade-in">
-        <Panel className="caption-lab-preview caption-editor-preview">
-          <div className="caption-editor-preview-heading mb-3 flex items-center justify-between gap-3"><h3 className="min-w-0 truncate text-lg font-semibold">{preview.name || 'Untitled preset'}</h3></div>
-          <CaptionMotionPreview key={editing.id} preset={preview} labControls />
-        </Panel>
+        {stage !== 'edit' && <div ref={catalogRef} className="caption-catalog space-y-3">
+          {stage === 'home' && <Panel padded={false} className="caption-preset-library">
+            <div className="flex items-center justify-between px-4 pt-4 pb-2"><h3 className="eyebrow">Your presets</h3><span className="text-2xs text-ink-subtle">{styles.length}</span></div>
+            <table aria-label="Your caption presets" className="caption-preset-table">
+              <thead className="sr-only"><tr><th scope="col">Preset</th><th scope="col">Actions</th></tr></thead>
+              <tbody>{orderedStyles.map(style => <tr key={style.id} data-reorder-key={style.id} aria-label={style.name} data-selected={selectedStyle?.id === style.id}>
+                <td><div className="flex min-w-0 items-center gap-1.5"><CaptionFavoriteButton id={style.id} name={style.name} disabled={busy} beforeToggle={() => capture(style.id)} /><button type="button" className="caption-preset-name" disabled={busy} aria-label={`Preview ${style.name}`} aria-pressed={selectedStyle?.id === style.id} onClick={() => useCaptionStore.setState({ selectedCustomId: style.id, selectedBaseId: isCaptionPresetId(style.baseId) ? style.baseId : DEFAULT_CAPTION_PRESET })}>
+                  <span className="caption-preset-sample" aria-hidden="true"><CaptionSample preset={captionPreviewPreset(style.baseId, style)} /></span>
+                  <span className="min-w-0 truncate font-medium text-ink" title={style.name}>{style.name}</span>
+                </button></div></td>
+                <td><div className="caption-preset-actions">
+                  <Button size="sm" variant="ghost" iconOnly aria-label={`Edit ${style.name}`} tooltip="Edit preset" icon={<Pencil size={14} />} disabled={busy} onClick={() => beginEdit(style)} />
+                  <Button size="sm" variant="ghost" iconOnly aria-label={`Duplicate ${style.name}`} tooltip="Duplicate preset" icon={<Copy size={14} />} disabled={busy} onClick={() => beginEdit(makeDraft(style.baseId, style))} />
+                  <Button size="sm" variant="ghost" iconOnly aria-label={`Delete ${style.name}`} tooltip="Delete preset" icon={<Trash2 size={14} />} disabled={busy} onClick={() => { setError(null); setDeleteTarget(style) }} />
+                </div></td>
+              </tr>)}</tbody>
+            </table>
+          </Panel>}
+          <Panel>
+            <div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Default presets</h3><span className="text-2xs text-ink-subtle">{PRESETS.length} looks</span></div>
+            <div className="caption-base-grid" role="radiogroup" aria-label={stage === 'home' ? 'Default caption presets' : 'Default styles'}>{orderedDefaults.map((preset, index) => <CaptionStyleTile key={preset.id} preset={preset} selected={!selectedStyle && baseId === preset.id} disabled={busy} tabIndex={selectedStyle ? index === 0 ? 0 : -1 : baseId === preset.id ? 0 : -1} beforeBookmark={() => capture(preset.id)} onClick={() => chooseBase(preset.id as CaptionPresetId)} />)}</div>
+          </Panel>
+        </div>}
+        {stage === 'edit' && editing &&
         <Panel className="caption-lab-controls">
           <fieldset disabled={busy} className="space-y-4">
             <div className="flex items-end gap-2"><LabField label="Style name" className="min-w-0 flex-1"><TextInput aria-label="Style name" value={editing.name} maxLength={48} onChange={e => setEditing({ ...editing, name: e.target.value })} /></LabField>
@@ -231,8 +233,8 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
             <Button variant={fromWizard ? 'secondary' : 'primary'} icon={<Save size={14} />} disabled={busy || !editing.name.trim() || !dirty} loading={busy} onClick={() => void persist(false)}>Save preset</Button>
             {fromWizard && <Button variant="primary" disabled={busy || !editing.name.trim()} onClick={() => { if (dirty) void persist(true); else apply(editing) }}>{dirty ? 'Save & use' : 'Use preset'}</Button>}
           </div>
-        </Panel>
-      </div>}
+        </Panel>}
+      </div>
     </>}
     {pendingSwitch && <DiscardChangesDialog busy={busy} error={error} canSave={Boolean(editing?.name.trim())} onCancel={cancelSwitch} onDiscard={finishSwitch} onSave={() => { void persist(false).then(ok => { if (ok) finishSwitch() }) }} />}
     {deleteTarget && <DeletePresetDialog preset={deleteTarget} busy={busy} error={error} onCancel={() => { if (!busy) { setDeleteTarget(null); setError(null) } }} onDelete={() => void deleteStyle()} />}

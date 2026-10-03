@@ -63,7 +63,8 @@ export function ClipPage({ onNavigate }: { onNavigate: (page: PageId) => void })
       ...(!hasUnsavedChanges ? {
         view: 'home' as const,
         editing: null,
-        selectedBaseId: isCaptionPresetId(draft.captionPreset) ? draft.captionPreset : 'pop'
+        selectedBaseId: isCaptionPresetId(draft.captionPreset) ? draft.captionPreset : 'pop',
+        selectedCustomId: draft.customCaption?.id ?? null
       } : {})
     })
     onNavigate('captions')

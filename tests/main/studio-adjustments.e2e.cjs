@@ -18,6 +18,8 @@ test('caption navigation offers save, discard and cancel; failed saves stay; rel
   page.setDefaultTimeout(10000)
   const preset = { id: 'custom-test', name: 'Studio', baseId: 'pop', style: defaultCaptionStyle('pop') }
   await page.evaluate(preset => window.bridgeclip.captions.save(preset), preset)
+  // Create preloads the caption list; reload after seeding outside the renderer store.
+  await page.reload()
   const nav = name => page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name, exact: true })
   await nav('Captions').click()
   await page.getByRole('button', { name: 'Edit Studio', exact: true }).click()

@@ -35,6 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- Captions previews saved presets directly from the table and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.
 - Captions opens previews paused with sample text visible; press Play to hear or watch them. New clip setups select your first bookmarked caption style, falling back to Pop when there are no available bookmarks.
 - Captions shows default styles below your saved presets, with previews and actions to customize or use them in Create.
 - Posts explains its activity feed below the heading and makes clear that dismissing updates keeps published posts and Library status intact.
