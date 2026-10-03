@@ -57,6 +57,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Fixed
 
+- Chat finds saved custom caption presets and can use them for new clips or Review & edit candidates, showing the selected preset’s name before starting a job.
 - Clicking the current sidebar page or its keyboard shortcut keeps the view steady, preserving scroll and filters. Detail views still return to the page root, with unsaved edits protected.
 - Dismissing Posts activity or trimming older updates keeps the Library’s **Posted** status and published-content cleanup eligibility, including after restarting.
 - Caption previews match export color-fade timing, including an instant switch for short words and styles without a fade.

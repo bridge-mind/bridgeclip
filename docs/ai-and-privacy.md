@@ -13,6 +13,7 @@ BridgeClip renders on your computer and calls providers directly with your keys.
 | Jev review | Bounded transcript excerpts, titles and diagnostic text | TypeSafe Jev through OpenRouter |
 | Optional source research | Public video title, description and channel | OpenRouter web search and brief generation |
 | Social publishing | Selected clip, caption, accounts and publishing options | Zernio and the selected platforms |
+| Caption preset lookup in Chat | Default styles and saved custom preset names and IDs | The selected Chat provider (Claude, OpenAI or OpenRouter) |
 
 For a link, the app downloads the source using your network connection. Audio for MAI Transcribe 2 (Quality), Whisper Turbo (Economy), or your selected transcription model (Advanced) goes to OpenRouter. Quality and Economy retry temporary transcription failures and use fallback models when needed; Economy tries Whisper Large V3 before MAI. Advanced retries only your chosen model. Transcript text for clip planning also goes to OpenRouter.
 
