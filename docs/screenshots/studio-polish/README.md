@@ -34,7 +34,7 @@ Choose a default as a starting point, then adjust your own preset with a live pr
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 
-Once presets are saved, the page opens with matching card grids and a New preset action. Select a custom preset card to preview it without opening an edit; its **…** menu offers edit, duplicate and delete. Default styles remain below Your presets, and both use the same preview on the left. Edit swaps the list for controls without moving or resizing that preview.
+Once presets are saved, the page opens with matching three-column card grids and a New preset action. Select a custom preset card to preview it without opening an edit; its **…** menu offers edit, duplicate and delete. Default styles remain below Your presets, and both use the same preview on the left. Edit swaps the list for controls without moving or resizing that preview.
 
 ![Custom presets and default styles with bookmarks](captions-cards.png)
 

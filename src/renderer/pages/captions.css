@@ -8,7 +8,7 @@
 .caption-creation-steps button:disabled:not(.is-current) { opacity: .5; }
 .caption-step-line { width: 28px; height: 1px; background: rgb(255 255 255 / .1); }
 .caption-lab-layout { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
-.caption-base-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.caption-base-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .caption-lab-preview { min-width: 0; }
 .caption-lab-preview [aria-label="Caption preview"] { margin-bottom: 0; }
 .caption-lab-preview .caption-preview-stage { height: 300px; }

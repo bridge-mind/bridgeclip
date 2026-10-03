@@ -35,7 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
-- **Your presets** on the Captions page uses the same cards as Default presets, with preview selection, bookmarks and a compact menu for edit, duplicate and delete.
+- **Your presets** on the Captions page uses the same cards as Default presets, with three cards per row, preview selection, bookmarks and a compact menu for edit, duplicate and delete.
 
 - Captions previews saved presets directly from their cards and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.
 - Captions opens previews paused with sample text visible; press Play to hear or watch them. New clip setups select your first bookmarked caption style, falling back to Pop when there are no available bookmarks.
