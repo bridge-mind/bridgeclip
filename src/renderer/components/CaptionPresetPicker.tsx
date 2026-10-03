@@ -583,15 +583,18 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
     const state = index === active ? 'active' : index < active ? 'past' : 'future'
     const style: CSSProperties = {
       transition: 'none',
-      visibility: state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
-      opacity: state === 'future' && preset.future === 'dim' ? preset.dimOpacity ?? 0.6 : 1,
+      visibility: !preset.karaoke && state === 'future' && preset.future === 'hide' ? 'hidden' : undefined,
+      opacity: !preset.karaoke && state === 'future' && preset.future === 'dim' ? preset.dimOpacity ?? 0.6 : 1,
       // Reserve pill padding on every word so the line stays put as it advances.
       padding: preset.pill && !preset.karaoke ? `0 ${10 * frameScale}px` : undefined,
       marginInline: preset.maxLines != null && preset.pill && !preset.karaoke ? -10 * frameScale : undefined,
       borderRadius: 10 * frameScale
     }
     if (preset.karaoke) {
-      if (state === 'past') style.color = preset.highlight
+      // ASS karaoke always dims the unspoken face, including the unswept part
+      // of the active word. Its outline stays opaque, regardless of future mode.
+      const alpha = (255 - Math.round((1 - (preset.dimOpacity ?? 0.6)) * 255)).toString(16).padStart(2, '0')
+      style.color = state === 'past' ? preset.highlight : `${preset.primary}${alpha}`
     } else if (state === 'active') {
       style.color = preset.colorTransition && activeDuration >= 150
         ? `color-mix(in srgb, ${preset.highlight} ${fadeProgress * 100}%, ${preset.primary})`

@@ -2,7 +2,7 @@
 
 These examples use synthetic videos, local test folders and mock provider metadata. No private media, provider keys or paid clipping runs are included.
 
-The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison at `e09c091`, caption browser at `0a09f2d`, Library details at `6dc143a`, and the caption default setting at `5d60f04`, all from earlier versions of this draft PR. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
+The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison at `e09c091`, caption browser at `0a09f2d`, Library details at `6dc143a`, the caption default setting at `5d60f04`, and the karaoke preview at `385cdee`, all from earlier versions of this PR. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
 
 ## Before and after
 
@@ -18,6 +18,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
 | Default caption | ![Caption browser before a shared default setting](captions-cards.png) | ![Choose a default for both Create and Chat](captions-default-setting.png) |
 | Caption browser | ![Table above defaults and a separate preview on the right](captions-browse-before.png) | ![Custom and default presets share a preview on the left](captions-cards.png) |
+| Karaoke preview | ![Upcoming words incorrectly hidden](caption-karaoke-before.png) | ![Upcoming words dimmed to match exports](caption-karaoke-after.png) |
 | Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
 ## Storage cleanup

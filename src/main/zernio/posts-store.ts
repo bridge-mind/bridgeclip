@@ -13,6 +13,7 @@ const VERSION = 1
 const MAX_RECORDS = 300
 const MAX_CACHE_BYTES = 2 * 1024 * 1024
 const MAX_LEGACY_BYTES = 16 * 1024 * 1024
+const HISTORY_UNAVAILABLE = 'Saved publishing history could not be read. Your files have been kept. Restore the saved history before cleaning up content.'
 
 const STATUSES: PostStatus[] = ['draft', 'scheduled', 'publishing', 'published', 'partial', 'failed', 'cancelled', 'missing']
 const TARGET_STATUSES: PostTargetStatus[] = ['pending', 'processing', 'uploading', 'published', 'failed', 'cancelled']
@@ -75,6 +76,49 @@ export class PostsStore {
     this.path = workspace ? join(dirname(filePath), `${basename(filePath, extension)}-${workspace}${extension}`) : filePath
   }
 
+  private readRecords(value: unknown): PostRecord[] {
+    if (!Array.isArray(value)) throw new Error(HISTORY_UNAVAILABLE)
+    const records = value.map(parsePostRecord)
+    if (records.some(post => post === null) || new Set(records.map(post => post?.id)).size !== records.length) throw new Error(HISTORY_UNAVAILABLE)
+    return records as PostRecord[]
+  }
+
+  private markUnreadable(file = this.path): void {
+    // Persist BEFORE quarantining. New activity, restarts and quarantine expiry
+    // must never turn lost pending deliveries into permission to delete media.
+    try { writeFileSync(`${file}.unreadable`, 'Publishing history needs recovery.\n', { mode: 0o600, flag: 'wx' }) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
+  private checkHistoryComplete(): void {
+    try {
+      const names = readdirSync(dirname(this.path))
+      for (const file of new Set([this.path, this.filePath])) {
+        const name = basename(file)
+        if (names.includes(`${name}.unreadable`)) throw new Error(HISTORY_UNAVAILABLE)
+        // Also recognize files quarantined by earlier versions of the app.
+        if (names.some(entry => entry.startsWith(`${name}.damaged-`) || entry.startsWith(`${name}.quarantine-`))) {
+          this.markUnreadable(file)
+          throw new Error(HISTORY_UNAVAILABLE)
+        }
+      }
+    } catch { throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
+  private readActive(): PostRecord[] {
+    try { lstatSync(this.path) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw new Error(HISTORY_UNAVAILABLE)
+    }
+    try {
+      if (!readableCache(this.path, MAX_CACHE_BYTES)) throw new Error(HISTORY_UNAVAILABLE)
+      const raw = JSON.parse(readFileSync(this.path, 'utf-8'))
+      if (raw.version !== (this.workspace ? 2 : VERSION) || this.workspace && raw.workspace !== this.workspace) throw new Error(HISTORY_UNAVAILABLE)
+      return this.readRecords(raw.posts).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    } catch { throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
   private serialize(posts: PostRecord[]): string {
     const active = posts.filter((post) => post.status === 'scheduled' || post.status === 'publishing')
     const finished = posts.filter((post) => post.status !== 'scheduled' && post.status !== 'publishing')
@@ -107,12 +151,17 @@ export class PostsStore {
     if (!readableCache(this.filePath, MAX_LEGACY_BYTES)) throw new Error('Legacy post history could not be migrated. The file was preserved.')
     let raw: { version?: unknown; workspace?: unknown; posts?: unknown }
     try { raw = JSON.parse(readFileSync(this.filePath, 'utf-8')) }
-    catch { quarantineUnbound(this.filePath); return }
-    if (raw.version !== 2 || raw.workspace !== this.workspace) {
-      if (raw.version !== 2 || typeof raw.workspace !== 'string') quarantineUnbound(this.filePath)
+    catch { this.markUnreadable(this.filePath); quarantineUnbound(this.filePath); return }
+    if (!raw || raw.version !== 2 || raw.workspace !== this.workspace) {
+      if (!raw || raw.version !== 2 || typeof raw.workspace !== 'string') {
+        this.markUnreadable(this.filePath)
+        quarantineUnbound(this.filePath)
+      }
       return
     }
-    const records = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((post): post is PostRecord => post !== null) : []
+    let records: PostRecord[]
+    try { records = this.readRecords(raw.posts) }
+    catch { this.markUnreadable(this.filePath); quarantineUnbound(this.filePath); return }
     this.write(records)
     try { renameSync(this.filePath, `${this.filePath}.migrated-${Date.now()}`) }
     catch { /* The scoped copy is already durable; leave the old file for recovery. */ }
@@ -121,17 +170,9 @@ export class PostsStore {
   /** Newest first. A damaged file is set aside so the next write can't erase it. */
   list(): PostRecord[] {
     this.migrateLegacy()
-    if (!existsSync(this.path)) return []
-    try {
-      if (!readableCache(this.path, MAX_CACHE_BYTES)) { quarantineUnbound(this.path); return [] }
-      const raw = JSON.parse(readFileSync(this.path, 'utf-8')) as { version?: unknown; workspace?: unknown; posts?: unknown }
-      if (this.workspace && (raw.version !== 2 || raw.workspace !== this.workspace)) {
-        quarantineUnbound(this.path)
-        return []
-      }
-      const posts = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((p): p is PostRecord => p !== null) : []
-      return posts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    } catch {
+    try { return this.readActive() }
+    catch {
+      this.markUnreadable()
       try { renameSync(this.path, `${this.path}.damaged-${Date.now()}`) } catch { /* Keep going with an empty history. */ }
       return []
     }
@@ -185,7 +226,9 @@ export class PostsStore {
 
   /** Main-only publishing evidence, independent of dismissed or trimmed activity. */
   history(): PostRecord[] {
-    const visible = this.list()
+    this.migrateLegacy()
+    this.checkHistoryComplete()
+    const visible = this.readActive()
     const records = new Map<string, PostRecord>()
     if (this.checkArchiveDirectory()) {
       for (const name of readdirSync(this.archiveDirectory())) {

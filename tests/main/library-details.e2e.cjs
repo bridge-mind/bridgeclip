@@ -73,6 +73,13 @@ test('Library details keeps source and clips prominent with accessible secondary
   assert.equal(await app.evaluate(() => globalThis.libraryDetailsTest.metadataCalls), 0, 'saved source metadata needs no network lookup')
   const stats = page.getByRole('group', { name: 'Run stats', exact: true })
   await stats.getByText('$0.19', { exact: true }).first().waitFor()
+  // Staggered cell entrances still run with reduced motion. Geometry must not
+  // depend on the optional screenshot helper finishing animations for us.
+  await stats.evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true })
+      .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})))
+  })
   const sourceBox = await source.boundingBox(), statsBox = await stats.boundingBox()
   assert.ok(Math.abs(sourceBox.width - statsBox.width) < 1, 'source and stats each occupy half the row')
   assert.ok(Math.abs(sourceBox.y - statsBox.y) < 1 && Math.abs(sourceBox.height - statsBox.height) < 1, 'both panels align at the top and bottom')

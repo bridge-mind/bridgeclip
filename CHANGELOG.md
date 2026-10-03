@@ -59,6 +59,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Fixed
 
+- Content cleanup stops when publishing history is damaged, keeping files that may still be needed by pending deliveries. The protection survives restarting and dismissing activity.
+- Karaoke caption previews keep upcoming words dimmed to match exports, including presets based on Impact. The opacity control also adjusts the unswept part of the current word.
 - Chat finds saved custom caption presets and can use them for new clips or Review & edit candidates, showing the selected preset’s name before starting a job.
 - Clicking the current sidebar page or its keyboard shortcut keeps the view steady, preserving scroll and filters. Detail views still return to the page root, with unsaved edits protected.
 - Dismissing Posts activity or trimming older updates keeps the Library’s **Posted** status and published-content cleanup eligibility, including after restarting.

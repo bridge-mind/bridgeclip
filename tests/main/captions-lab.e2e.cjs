@@ -331,7 +331,7 @@ test('caption presets start with a base wizard, show saved preset cards, and ret
   })
   assert.match(appearance.font, /Poppins/)
   assert.equal(appearance.weight, '800')
-  assert.equal(appearance.color, 'rgb(238, 255, 221)')
+  assert.equal(appearance.color, 'rgba(238, 255, 221, 0.45)', 'karaoke dims the unswept face just like export')
   assert.equal(appearance.highlight, 'rgb(0, 221, 170)')
   assert.match(appearance.shadow, /rgb\(17, 34, 51\)/)
   assert.equal(appearance.plate, 'rgba(0, 0, 0, 0.75)', JSON.stringify(appearance))
