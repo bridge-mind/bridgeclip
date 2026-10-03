@@ -13,6 +13,17 @@ The **before** images were captured from upstream `main` at `b996820`. The **aft
 | Jobs | ![Unpaginated Previous jobs](jobs-before.png) | ![Previous jobs with a page-size selector](jobs-after.png) |
 | Library | ![Original Library cards](library-before.png) | ![Storage size on Library cards](library-after.png) |
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
+| Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
+
+## Storage cleanup
+
+Review published clips and the estimated space they occupy before removing local copies. Fully posted, finished projects can be removed together; mixed projects keep their unposted clips and unfinished edits.
+
+![Select published content to clean](published-cleanup.png)
+
+Review & edit users also see retained source videos and editor previews. Select finished projects to free their media while keeping exports; projects with clips still to finish stay protected. Automatic-only libraries do not show this source section.
+
+![Select finished source media while protecting unfinished projects](source-cleanup.png)
 
 ## Captions lab
 

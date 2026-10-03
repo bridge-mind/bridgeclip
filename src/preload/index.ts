@@ -23,7 +23,7 @@ import type { MetadataEnhancement, AutomationSourceGroup, AutomationBatchResult,
 import type { LibraryClipPostingStatus, LibraryEnhancementOptions, LibraryRunPostingCounts } from '../shared/library-posting'
 import type { OpenRouterCatalog } from '../shared/openrouter-models'
 import type { UpdateState } from '../shared/updates'
-import type { LibraryDeletionPreview, OutputStorageUsage } from '../shared/output-storage'
+import type { LibraryDeletionPreview, OutputStorageUsage, SourceStorageSummary, StorageCleanupKind, StorageCleanupPreview, StorageCleanupResult } from '../shared/output-storage'
 import type { YouTubePreview } from '../shared/youtube-preview'
 import type {
   AppDataScope,
@@ -162,6 +162,9 @@ export interface BridgeClipAPI {
     load: () => Promise<ClipSettings>
     /** Pass true to count again instead of reusing a result from the last few seconds. */
     storageUsage: (fresh?: boolean) => Promise<OutputStorageUsage>
+    sourceStorage: () => Promise<SourceStorageSummary>
+    previewCleanup: (kind: StorageCleanupKind) => Promise<StorageCleanupPreview>
+    cleanContent: (token: string, ids: string[]) => Promise<StorageCleanupResult>
     save: (settings: ClipSettings) => Promise<ClipSettings>
     replaceApiKey: (key: 'openrouterApiKey' | 'zernioApiKey', value: string) => Promise<ClipSettings>
     selectOutputDir: () => Promise<string | null>
@@ -351,6 +354,9 @@ const api: BridgeClipAPI = {
   settings: {
     load: () => ipcRenderer.invoke('settings:load'),
     storageUsage: (fresh) => ipcRenderer.invoke('settings:storageUsage', fresh === true),
+    sourceStorage: () => ipcRenderer.invoke('settings:sourceStorage'),
+    previewCleanup: (kind) => ipcRenderer.invoke('settings:previewCleanup', kind),
+    cleanContent: (token, ids) => ipcRenderer.invoke('settings:cleanContent', token, ids),
     save: (settings) => ipcRenderer.invoke('settings:save', settings),
     replaceApiKey: (key, value) => ipcRenderer.invoke('settings:replaceApiKey', key, value),
     selectOutputDir: () => ipcRenderer.invoke('settings:selectOutputDir')

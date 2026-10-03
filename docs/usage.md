@@ -110,6 +110,12 @@ The trash action shows estimated space freed and a visual summary before permane
 
 **Settings → About → Content storage** shows the total file size and file count in your output folder. Refresh to recalculate; inaccessible files are reported as a partial total.
 
+**Clean published content** opens a space estimate and a selectable list of projects. It uses the Library’s posted status, including clips you manually marked as posted. Fully published, finished projects can have their entire local folder removed, including source copies and edits. Mixed projects lose only the posted exports you reviewed; unposted clips and unfinished edits stay. Clips needed by pending posts or automations are kept, and cleanup waits for uploads to finish. Online posts and automation bank copies are not deleted.
+
+If you have retained **Review & edit** media, a **Source files** section shows source-video size, editor-preview size and how much is ready to free. **Review sources** lists the projects; only those with every candidate baked or discarded can be selected. Freeing this media keeps exported clips but makes the project read-only, so you cannot refine or bake it again. Automatic-only libraries do not show these editor controls.
+
+Both actions permanently delete only the local content selected in the confirmation. Projects changed since the preview are kept for a fresh review, and partial failures are reported. No cleanup runs automatically.
+
 ## Publish and automate
 
 Connect social accounts with your own Zernio account and API key to post or schedule clips. Metadata enhancement uses your OpenRouter key. For platform-specific drafts, scheduling consent and required TikTok reviews, see [publishing and metadata](automation-metadata.md). **BridgeClip must be open for daily automations to run.**

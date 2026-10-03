@@ -77,14 +77,17 @@ async function postingContext(library: string): Promise<PostingContext> {
   return { library, posts, origins, bankPosts, bankFiles }
 }
 
-async function runPostingStatus(outputDir: unknown, library: string, context: PostingContext | null): Promise<LibraryClipPostingStatus[]> {
+async function runPostingStatus(outputDir: unknown, library: string, context: PostingContext | null, cleanup = false): Promise<(LibraryClipPostingStatus & { cleanable?: boolean })[]> {
   const output = await libraryRun(outputDir, library)
   const run = outputDir as string
   const withManualStatus = (status: LibraryClipPostingStatus): LibraryClipPostingStatus =>
     isManuallyPosted(run, status.clipIndex) ? { ...status, state: 'posted', manuallyPosted: true } : status
-  if (!context) return output.clips.map((clip) => withManualStatus(clipPostingStatus(clip.clip_index, [])))
+  if (!context) return output.clips.map((clip) => {
+    const status = withManualStatus(clipPostingStatus(clip.clip_index, []))
+    return cleanup ? { ...status, cleanable: status.state === 'posted' } : status
+  })
   const { posts, origins, bankPosts, bankFiles } = context
-  const statuses: LibraryClipPostingStatus[] = []
+  const statuses: (LibraryClipPostingStatus & { cleanable?: boolean })[] = []
   for (const clip of output.clips) {
     const path = mediaPath(clip.s3_url)
     if (!isWithinDirectory(path, run)) throw new Error('A clip is outside its Library run.')
@@ -97,9 +100,26 @@ async function runPostingStatus(outputDir: unknown, library: string, context: Po
         if (bank && bank.size === original.size && await bank.hash() === await original.hash()) matches.push(post)
       }
     }
-    statuses.push(withManualStatus(clipPostingStatus(clip.clip_index, matches)))
+    const status = withManualStatus(clipPostingStatus(clip.clip_index, matches))
+    // A published copy must not hide a second scheduled post, failed retry or
+    // inbox delivery that still needs its original media.
+    statuses.push(cleanup ? { ...status, cleanable: status.state === 'posted' && matches.every(post =>
+      post.status === 'cancelled' || post.status === 'published' && post.targets.length > 0 && post.targets.every(target => target.status === 'published' && !target.inbox)) } : status)
   }
   return statuses
+}
+
+/** Main-only bulk eligibility; shares expensive legacy bank matching across runs. */
+export async function publishedCleanupClips(outputDirs: string[]): Promise<Map<string, number[] | null>> {
+  const { outputDirectory: library, zernioApiKey: workspaceKey } = loadSettings()
+  const context = workspaceKey ? await postingContext(library) : null
+  const result = new Map<string, number[] | null>()
+  for (const dir of outputDirs) {
+    try { result.set(dir, (await runPostingStatus(dir, library, context, true)).filter(status => status.cleanable).map(status => status.clipIndex)) }
+    catch { result.set(dir, null) }
+  }
+  if (loadSettings().zernioApiKey !== workspaceKey || loadSettings().outputDirectory !== library) throw new Error('The Library changed. Refresh and try again.')
+  return result
 }
 
 export async function libraryPostingStatus(outputDir: unknown): Promise<LibraryClipPostingStatus[]> {

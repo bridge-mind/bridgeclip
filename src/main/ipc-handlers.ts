@@ -6,6 +6,7 @@ import { existsSync, realpathSync } from 'fs'
 import { loadSettings, publicSettings, replaceApiKey, savePublicSettings, type ApiKeyName, type PublicSettings } from './settings-store'
 import { getJobHistory, getJobOutput, generateThumbnail } from './file-manager'
 import { measureOutputStorage } from './output-storage'
+import { cleanStoredContent, previewStorageCleanup, sourceStorageSummary } from './storage-cleanup'
 import { inspectEdits } from './edit-inspector'
 import { getEnginePath, getBridgeRunnerPath, resolvePythonPath, validatePython } from './pipeline-runner'
 import { cancelTrackedJob, dismissJob, initJobManager, listJobs, liveJobIds } from './job-manager'
@@ -58,6 +59,9 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return publicSettings(loadSettings())
   })
   handle('settings:storageUsage', (_event, fresh: unknown = false) => measureOutputStorage(loadSettings().outputDirectory, { fresh: fresh === true }))
+  handle('settings:sourceStorage', () => sourceStorageSummary())
+  handle('settings:previewCleanup', (_event, kind: unknown) => previewStorageCleanup(kind))
+  handle('settings:cleanContent', (_event, token: unknown, ids: unknown) => cleanStoredContent(token, ids))
   handle('captions:list', () => listCaptionStyles())
   handle('captions:save', (_event, style: unknown) => saveCaptionStyle(style))
   handle('captions:delete', (_event, id: unknown) => deleteCaptionStyle(id))

@@ -13,7 +13,7 @@ import { scanOutputStorage, STORAGE_SCAN_LIMITS } from './output-storage'
 import type { LibraryDeletionPreview, OutputStorageUsage } from '../shared/output-storage'
 
 /** Only a completed, immediate child of the configured Library can be changed. */
-async function checkedRun(raw: unknown, { allowBusy = false }: { allowBusy?: boolean } = {}): Promise<{ check: () => string; output: JobOutput; library: string; identity: { dev: number; ino: number } }> {
+export async function checkedRun(raw: unknown, { allowBusy = false }: { allowBusy?: boolean } = {}): Promise<{ check: () => string; output: JobOutput; library: string; identity: { dev: number; ino: number } }> {
   const librarySetting = loadSettings().outputDirectory
   if (typeof raw !== 'string' || !isAbsolute(raw) || raw.includes('\0')) throw new Error('Choose a run in your Library.')
   const library = realpathSync(librarySetting)
@@ -72,8 +72,9 @@ export async function setLibraryFavorite(outputDir: unknown, favorite: unknown):
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const isDeletingRun = (name: string): boolean => name.startsWith(DELETING_RUN_PREFIX) && UUID.test(name.slice(DELETING_RUN_PREFIX.length))
 
-export async function deleteLibraryRun(outputDir: unknown): Promise<void> {
+export async function deleteLibraryRun(outputDir: unknown, beforeDelete?: () => void): Promise<boolean> {
   const { check, output, library, identity } = await checkedRun(outputDir)
+  beforeDelete?.()
   removeRunThumbnails(check(), output)
   // Rename right after the final check (no await in between), then delete.
   // The Library never lists a half-deleted run, a locked file on Windows
@@ -92,7 +93,9 @@ export async function deleteLibraryRun(outputDir: unknown): Promise<void> {
   // directory; recursive rm unlinks internal symlinks rather than their targets.
   try { rmSync(trash, { recursive: true }) } catch {
     logger.warn('library.delete.cleanup_deferred', { message: 'Some run files could not be removed; they will be removed at the next start.' })
+    return false
   }
+  return true
 }
 
 /**
@@ -135,7 +138,7 @@ export async function setLibraryPosted(outputDir: unknown, clipIndex: unknown, p
 }
 
 /** Keep the complete persisted metadata, including fields not exposed to React. */
-function readRunJson(run: string, name: string): Record<string, unknown> {
+export function readRunJson(run: string, name: string): Record<string, unknown> {
   const path = join(run, name)
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
   try {
@@ -152,7 +155,7 @@ function readRunJson(run: string, name: string): Record<string, unknown> {
   } finally { closeSync(fd) }
 }
 
-export async function deleteLibraryClips(outputDir: unknown, indices: unknown): Promise<JobOutput> {
+export async function deleteLibraryClips(outputDir: unknown, indices: unknown, { beforeDelete, keepFinishedCandidates = false }: { beforeDelete?: () => void; keepFinishedCandidates?: boolean } = {}): Promise<JobOutput> {
   if (!Array.isArray(indices) || indices.length === 0 || indices.length > 1000 ||
       indices.some((id) => !Number.isSafeInteger(id) || id < 0 || id > 999) || new Set(indices).size !== indices.length) {
     throw new Error('Select clips from this Library run to delete.')
@@ -194,7 +197,9 @@ export async function deleteLibraryClips(outputDir: unknown, indices: unknown): 
       c.exports = previous.filter((id) => !selected.has(id))
       // Earlier exports may describe older edits. Removing the latest bake
       // means the current edit needs rendering again, even if older copies remain.
-      if (c.status === 'baked' && previous.length && selected.has(previous[previous.length - 1])) c.status = 'ready'
+      // Published-content cleanup removes a delivered export, not its completed
+      // editing work. Ordinary clip deletion still asks for a fresh bake.
+      if (!keepFinishedCandidates && c.status === 'baked' && previous.length && selected.has(previous[previous.length - 1])) c.status = 'ready'
     }
     project.revision = (project.revision as number) + 1
     changes.push(['editor-project.json', project])
@@ -207,6 +212,7 @@ export async function deleteLibraryClips(outputDir: unknown, indices: unknown): 
   raw.total_clips = (raw.clips as unknown[]).length
   changes.push(['job_output.json', raw])
   check()
+  beforeDelete?.()
   removeRunThumbnails(run, { ...output, clips: picked })
   const staging = mkdtempSync(join(run, '.delete-clips-'))
   const moved: [string, string][] = [], installed: string[] = []

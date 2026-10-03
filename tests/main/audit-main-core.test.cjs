@@ -58,7 +58,8 @@ function ipcWithLibrary(library) {
     './edit-inspector': {},
     './youtube-preview': {},
     './library-posting': {},
-    './library-management': {}
+    './library-management': {},
+    './storage-cleanup': {}
   })
   ipc.registerIpcHandlers(() => window)
   const event = { sender: contents, senderFrame: frame }

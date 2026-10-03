@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- **Clean published content** in Settings → About → Content storage previews reclaimable space and removes selected local posted clips or fully published projects. Online posts, queued deliveries and unfinished edits are kept.
+- Content storage tracks retained source videos and editor previews for **Review & edit**, and lets you free media from finished projects while keeping their exports.
 - **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets open in a table with edit, duplicate and delete actions, ready for Create and the editor.
 - Caption presets can arrange captions across 1, 2 or 3 balanced lines, or keep Auto wrapping, in both previews and exports.
 

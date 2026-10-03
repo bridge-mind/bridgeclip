@@ -205,6 +205,8 @@ function saveAttempts(): void {
   }
 }
 const running = new Map<string, AbortController>()
+/** Cleanup waits for uploads, including those not yet in saved post history. */
+export function hasActiveUploads(): boolean { return running.size > 0 }
 let workspaceGeneration = 0
 
 onZernioReset(() => {
