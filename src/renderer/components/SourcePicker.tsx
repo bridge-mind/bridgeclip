@@ -7,7 +7,7 @@ import { Button } from './ui/Button'
 import { TextInput } from './ui/Field'
 import { Badge } from './ui/Badge'
 import { IconTile } from './ui/IconTile'
-import { YouTubeSourcePreview } from './YouTubeSourcePreview'
+import { YouTubeSourcePreview, type SavedSourceMetadata } from './YouTubeSourcePreview'
 
 interface SourcePickerProps {
   value: string
@@ -205,23 +205,25 @@ export function SourcePreview({
   onClear,
   onReplace,
   disabled,
-  readOnly = false
+  readOnly = false,
+  saved
 }: {
   source: string
   onClear?: () => void
   onReplace?: () => void
   disabled?: boolean
   readOnly?: boolean
+  saved?: SavedSourceMetadata
 }): React.JSX.Element {
   const link = isUrl(source)
   const ytId = link ? youtubeId(source) : null
   const twitchId = link ? twitchVodId(source) : null
   const displaySource = link ? displaySourceLink(source) : basename(source)
-  const [durationMs, setDurationMs] = useState<number | null>(null)
+  const [durationMs, setDurationMs] = useState<number | null>(saved?.durationSeconds ? saved.durationSeconds * 1000 : null)
   const [mediaFailed, setMediaFailed] = useState(false)
   const youtubeUrl = youtubeSourceUrl(source)
 
-  if (youtubeUrl) return <YouTubeSourcePreview readOnly={readOnly} url={youtubeUrl} onClear={onClear} onReplace={onReplace} disabled={disabled} />
+  if (youtubeUrl) return <YouTubeSourcePreview readOnly={readOnly} url={youtubeUrl} onClear={onClear} onReplace={onReplace} disabled={disabled} saved={saved} />
 
   return (
     <div className="glass flex flex-col gap-3 rounded-2xl p-3 sm:flex-row sm:items-center sm:gap-4 animate-fade-in">
@@ -266,9 +268,9 @@ export function SourcePreview({
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-semibold text-ink" title={displaySource} data-selectable>
-          {displaySource}
-        </p>
+        <h3 className="line-clamp-2 break-words text-base font-semibold text-ink" title={saved?.title ?? displaySource} data-selectable>
+          {saved?.title ?? displaySource}
+        </h3>
         <div className="mt-1.5 flex min-w-0 items-center gap-2">
           <Badge
             icon={twitchId ? <Twitch className="h-3 w-3" /> : ytId ? <Youtube className="h-3 w-3" /> : link ? <Link2 className="h-3 w-3" /> : <FileVideo className="h-3 w-3" />}

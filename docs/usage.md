@@ -92,7 +92,7 @@ Each previous job has a three-dot menu for **Open in Library** (or **Open job** 
 
 ### Progress and cost
 
-During creation, each stage shows its own elapsed time and progress: downloaded bytes, transcription chunks, prepared candidates, rendered clips, saved files and editor-preview encoding where measurable. AI requests without measurable progress show an indeterminate bar. The overall percentage is an estimate; completed runs retain a **Processing time by stage** breakdown in the Library and editor. Each stage keeps its own color in the time breakdown. The progress page reuses the source preview from Create for YouTube and local files.
+During creation, each stage shows its own elapsed time and progress: downloaded bytes, transcription chunks, prepared candidates, rendered clips, saved files and editor-preview encoding where measurable. AI requests without measurable progress show an indeterminate bar. The overall percentage is an estimate; completed runs retain their timings under **… → Processing details** in the Library and **Processing time by stage** in the editor. Each stage keeps its own color in the time breakdown. The progress page reuses the source preview from Create for YouTube and local files.
 
 New runs show live model requests, input/output tokens and provider-reported cost; missing usage stays unknown and partial totals exclude unreported charges. **Inside frame & review** separates face sampling, camera scans, detailed face tracking, shot-layout checks and Jev review, with the current candidate and accumulated timings. These diagnostics are saved with the run and remain available in its processing-time details. See [the framing performance investigation](FRAMING_PERFORMANCE_2026-09-27.md) for the long-video decoding fix.
 
@@ -100,7 +100,9 @@ New runs show live model requests, input/output tokens and provider-reported cos
 
 ### Find clips and track posting
 
-Inside a Library run, **Search clips** filters by title, tag or clip number across both posted and unposted clips. Selection and bulk actions apply only to visible results. The YouTube icon beside **Inspect transcript & edits** opens the original video in your browser when a YouTube source link is saved. **Not Posted** and **Posted** are independently collapsible sections with clip counts. **Not Posted** opens by default and appears first; **Posted** starts collapsed below it. Selection applies only to expanded sections.
+Inside a Library run, the source card shows the original video's thumbnail, saved title, channel and duration when available. **View on YouTube** opens the original video. **Continue editing** stays visible for unfinished review projects. The header's **…** menu contains **Transcript & edits**, **Processing details**, **Open folder** and **Refresh post status**. Processing details includes run statistics, API costs and recorded stage timings.
+
+The clip toolbar keeps **Search clips**, selection and sorting together. Search filters by title, tag or clip number across both posted and unposted clips; bulk actions appear when clips are selected. **Not Posted** and **Posted** are independently collapsible sections with clip counts. **Not Posted** opens by default and appears first; **Posted** starts collapsed below it. Selection applies only to visible results and expanded sections. Editorial ranking weights appear only when sorting by **Editorial**.
 
 Badges distinguish scheduled, publishing, partially posted and failed posts using this workspace’s saved posting history.
 
