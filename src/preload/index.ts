@@ -1,5 +1,6 @@
 import type { CrashReport } from '../shared/crash-report'
 import type { CustomCaptionPreset } from '../shared/custom-captions'
+import type { CaptionPreferences } from '../shared/caption-preferences'
 import type { JevThresholdSettings } from '../shared/jev-settings'
 import type { LibraryClipTarget } from '../shared/library-posting'
 import type { AutomationReviewResult } from '../shared/automations'
@@ -133,7 +134,13 @@ export interface BridgeClipAPI {
     closeReady: (saved: boolean) => Promise<void>
   }
   edits: { inspect: (outputDir: string) => Promise<EditAudit> }
-  captions: { list: () => Promise<CustomCaptionPreset[]>; save: (style: CustomCaptionPreset) => Promise<CustomCaptionPreset[]>; delete: (id: string) => Promise<CustomCaptionPreset[]> }
+  captions: {
+    list: () => Promise<CustomCaptionPreset[]>
+    save: (style: CustomCaptionPreset) => Promise<CustomCaptionPreset[]>
+    delete: (id: string) => Promise<CustomCaptionPreset[]>
+    preferences: (legacyFavorites?: string[]) => Promise<CaptionPreferences>
+    savePreferences: (patch: Partial<CaptionPreferences>) => Promise<CaptionPreferences>
+  }
   models: { list: (refresh?: boolean) => Promise<OpenRouterCatalog> }
   automations: {
     reviewContent: (id: string, contentId: string, returnToQueue: boolean) => Promise<AutomationReviewResult>
@@ -330,7 +337,11 @@ const api: BridgeClipAPI = {
     closeReady: (saved) => ipcRenderer.invoke('editor:closeReady', saved)
   },
   edits: { inspect: (outputDir) => ipcRenderer.invoke('edits:inspect', outputDir) },
-  captions: { list: () => ipcRenderer.invoke('captions:list'), save: (style) => ipcRenderer.invoke('captions:save', style), delete: (id) => ipcRenderer.invoke('captions:delete', id) },
+  captions: {
+    list: () => ipcRenderer.invoke('captions:list'), save: (style) => ipcRenderer.invoke('captions:save', style), delete: (id) => ipcRenderer.invoke('captions:delete', id),
+    preferences: (legacyFavorites) => ipcRenderer.invoke('captions:preferences', legacyFavorites),
+    savePreferences: (patch) => ipcRenderer.invoke('captions:savePreferences', patch)
+  },
   models: { list: (refresh = false) => ipcRenderer.invoke('models:list', refresh) },
   automations: {
     reviewContent: (id, contentId, returnToQueue) => ipcRenderer.invoke('automations:reviewContent', id, contentId, returnToQueue),

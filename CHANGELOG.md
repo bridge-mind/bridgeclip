@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- **Default caption** on the Captions page lets you choose a saved or built-in preset for new clips in Create and Chat, or follow your first bookmark. Existing drafts keep their selected style.
 - Caption bookmarks keep favorite defaults and custom presets easy to find across app launches. Create and the clip editor offer an **All / Favorites** filter, with bookmarks first in each style group.
 - **Crash reports** in Settings → About lets you review and copy a local issue report after an app or interface error. Reports omit keys, media paths and raw error messages; Help also offers **Copy Latest Crash Report**.
 - Caption presets expose separate **Horizontal padding** and **Vertical padding** controls for backgrounds, applied to previews and exports. New presets start with 24 horizontal padding; existing presets keep their saved padding.

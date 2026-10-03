@@ -44,6 +44,7 @@ function ipcWithLibrary(library) {
     './job-manager': { initJobManager() {} },
     './job-start': {},
     './caption-library': {},
+    './caption-preferences': {},
     './logger': {},
     './security': security,
     './network-policy': {},

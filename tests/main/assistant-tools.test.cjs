@@ -15,6 +15,7 @@ function loadTools(t, mocks = {}) {
   const mod = loadMain(`
     export * from './src/main/assistant/bridgeclip-tools'
     export * from './src/main/caption-library'
+    export * from './src/main/caption-preferences'
     export { defaultCaptionStyle } from './src/shared/custom-captions'
     export { parseCandidateEdit } from './src/shared/clip-editor'
     export { validateJobConfig } from './src/main/validation'
@@ -132,6 +133,33 @@ test('Chat discovers newly saved, renamed and deleted caption presets without re
   assert.deepEqual((await options.run({}, {})).customCaptionStyles, [])
   fs.writeFileSync(path.join(dir, 'userData', 'caption-styles.json'), '{broken')
   await assert.rejects(options.run({}, {}), /Could not read your caption styles/, 'a damaged library must not be reported as empty')
+})
+
+test('Chat reports and applies the shared default, including bookmarks, custom presets and deletion fallback', async (t) => {
+  const { mod, tools } = loadTools(t)
+  const options = tools.find((tool) => tool.name === 'get_clip_options')
+  const source = '/picked.mp4'
+  mod.loadCaptionPreferences(['paper', 'glow'])
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'glow')
+  assert.equal(mod.clipJobRequestFromInput({ source }).captionPreset, 'glow')
+  mod.saveCaptionPreferences({ defaultId: 'neon' })
+  assert.equal((await options.run({}, {})).defaultCaptionStyleName, 'Neon')
+  assert.equal(mod.clipJobRequestFromInput({ source }).captionPreset, 'neon')
+  assert.equal(mod.clipJobRequestFromInput({ source, captionStyle: 'pop' }).captionPreset, 'pop', 'an explicit request overrides the preference')
+  const preset = customPreset(mod)
+  mod.saveCaptionStyle(preset)
+  mod.saveCaptionPreferences({ defaultId: preset.id })
+  assert.deepEqual(mod.clipJobRequestFromInput({ source }).customCaption, preset)
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, preset.id)
+  const start = tools.find((tool) => tool.name === 'start_clip_job')
+  assert.ok((await start.confirm({ source })).includes('Captions: Preset 1'))
+  mod.saveCaptionStyle({ ...preset, name: 'New name' })
+  assert.equal((await options.run({}, {})).defaultCaptionStyleName, 'New name')
+  mod.deleteCaptionStyle(preset.id)
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'glow')
+  assert.equal(mod.clipJobRequestFromInput({ source }).customCaption, undefined)
+  mod.saveCaptionPreferences({ defaultId: null, favorites: [] })
+  assert.equal((await options.run({}, {})).defaultCaptionStyle, 'pop')
 })
 
 test('Chat uses validated custom style snapshots in either workflow and refuses missing presets', async (t) => {

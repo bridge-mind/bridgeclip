@@ -2,7 +2,7 @@
 
 These examples use synthetic videos, local test folders and mock provider metadata. No private media, provider keys or paid clipping runs are included.
 
-The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison at `e09c091`, caption browser at `0a09f2d`, and Library details at `6dc143a`, all from earlier versions of this draft PR. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
+The **before** images were captured from upstream `main` at `b996820`, except the caption editor comparison at `e09c091`, caption browser at `0a09f2d`, Library details at `6dc143a`, and the caption default setting at `5d60f04`, all from earlier versions of this draft PR. The **after** images show this change on macOS. Automated checks also cover compact windows and reduced motion.
 
 ## Before and after
 
@@ -16,6 +16,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
 | Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
+| Default caption | ![Caption browser before a shared default setting](captions-cards.png) | ![Choose a default for both Create and Chat](captions-default-setting.png) |
 | Caption browser | ![Table above defaults and a separate preview on the right](captions-browse-before.png) | ![Custom and default presets share a preview on the left](captions-cards.png) |
 | Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
@@ -30,6 +31,10 @@ Review & edit users also see retained source videos and editor previews. Select 
 ![Select finished source media while protecting unfinished projects](source-cleanup.png)
 
 ## Captions lab
+
+**Default caption** chooses the preset used for new clips in Create and Chat. Choose a built-in or saved custom preset, or **First bookmark** to keep automatic selection (Pop when there are no available bookmarks). The setting survives restarts and leaves existing drafts unchanged.
+
+![Shared caption default in a compact window](captions-default-compact.png)
 
 Choose a default as a starting point, then adjust your own preset with a live preview. Switch between short and long voice samples, or select a caption line to jump to it. This example shows two balanced lines with separate horizontal and vertical background padding.
 
@@ -49,7 +54,7 @@ Previews on the Captions page open paused with sample text visible, even with so
 
 ![Captions visible at the paused opening frame](captions-paused.png)
 
-In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches. New clip setups select the first available bookmark in picker order, or Pop when there are none; explicit choices stay selected.
+In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches. With **First bookmark** selected, new clip setups select the first available bookmark in picker order, or Pop when there are none; explicit choices stay selected.
 
 ![Favorite caption styles in Create](captions-favorites.png)
 

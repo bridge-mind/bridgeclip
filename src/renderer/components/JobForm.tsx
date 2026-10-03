@@ -111,11 +111,11 @@ export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason,
   const draft = useDraftStore()
   const { update, step, setStep } = draft
   const { styles, loaded: captionsLoaded, load: loadCaptions } = useCaptionStore()
-  const favorites = useCaptionFavoritesStore(state => state.favorites)
+  const { favorites, defaultId, loaded: preferencesLoaded, saving: preferencesSaving, error: preferencesError, load: loadPreferences } = useCaptionFavoritesStore()
   useEffect(() => { void loadCaptions() }, [loadCaptions])
   useEffect(() => {
-    if (captionsLoaded && (step === 'captions' || step === 'review')) draft.initializeCaption(favorites, styles)
-  }, [captionsLoaded, step, draft.initializeCaption, favorites, styles])
+    if (captionsLoaded && preferencesLoaded && !preferencesSaving && (step === 'captions' || step === 'review')) draft.initializeCaption(favorites, styles, defaultId)
+  }, [captionsLoaded, preferencesLoaded, preferencesSaving, step, draft.initializeCaption, favorites, styles, defaultId])
 
   const trim = useMemo(
     () => parseTrimRange(draft.trimOpen, draft.trimStart, draft.trimEnd),
@@ -129,13 +129,13 @@ export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason,
   const videoValid = hasSource && draft.workflow !== null && !trim.error
   const modelsValid = draft.clippingMode !== 'advanced' || (isModelId(draft.plannerModel) && isModelId(draft.transcriptionModel))
   const stepValid = videoValid && (step !== 'clips' || modelsValid)
-  const captionReady = !draft.captionDefaultPending || favorites.length === 0 || captionsLoaded
+  const captionReady = !draft.captionDefaultPending || captionsLoaded && preferencesLoaded && !preferencesSaving
   const canSubmit = videoValid && modelsValid && captionReady && !blockedReason && !submitting && !draft.started
 
   const submit = (): void => {
     if (canSubmit) {
       // Generate is available from every step, including before visiting Captions.
-      draft.initializeCaption(favorites, styles)
+      draft.initializeCaption(favorites, styles, defaultId)
       onSubmit(buildJobRequest(useDraftStore.getState(), trim))
     }
   }
@@ -183,6 +183,7 @@ export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason,
           <p className="mt-0.5 text-xs text-ink-muted">{meta.description}</p>
         </div>}
         {sourceError && <p role="alert" className="text-sm text-danger">{sourceError}</p>}
+        {preferencesError && <p role="alert" className="mb-3 text-xs text-danger">{preferencesError}{!preferencesLoaded && <button type="button" className="ml-2 underline" onClick={() => void loadPreferences()}>Retry</button>}</p>}
         {step === 'video' && <VideoStep draft={draft} update={update} trimError={trim.error} disabled={submitting} />}
         {step === 'format' && <FormatStep draft={draft} update={update} />}
         {step === 'clips' && <ClipsStep draft={draft} update={update} />}

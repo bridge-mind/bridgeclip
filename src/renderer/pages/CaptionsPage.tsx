@@ -3,6 +3,7 @@ import { usePageRoot } from '../hooks/use-page-root'
 import { ArrowLeft, ArrowRight, Check, Copy, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { CAPTION_FONTS, defaultCaptionStyle, parseCustomCaption, type CaptionStyleSettings, type CustomCaptionPreset } from '../../shared/custom-captions'
 import { DEFAULT_CAPTION_PRESET, isCaptionPresetId, type CaptionPresetId } from '../../shared/caption-presets'
+import { defaultCaptionId } from '../../shared/caption-preferences'
 import { PRESETS, CaptionMotionPreview, CaptionStyleTile, captionPreviewPreset } from '../components/CaptionPresetPicker'
 import { ActionMenu } from '../components/ui/ActionMenu'
 import type { Page as PageId } from '../components/Sidebar'
@@ -26,7 +27,9 @@ import './captions.css'
 
 export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => void }): React.JSX.Element {
   const { styles, editing, selectedBaseId: baseId, selectedCustomId, view, fromWizard, loaded, loading, error: loadError, load, save, remove } = useCaptionStore()
-  const favorites = useCaptionFavoritesStore(state => state.favorites)
+  const { favorites, defaultId, loaded: preferencesLoaded, saving: preferencesSaving, error: preferencesError, setDefault, load: loadPreferences } = useCaptionFavoritesStore()
+  const automaticId = defaultCaptionId({ defaultId: null, favorites }, styles)
+  const automaticName = PRESETS.find(preset => preset.id === automaticId)?.name ?? styles.find(style => style.id === automaticId)?.name ?? 'Pop'
   const orderedStyles = [...styles].sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)))
   const orderedDefaults = [...PRESETS].sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)))
   const { gridRef: catalogRef, capture } = useReorderMotion()
@@ -168,6 +171,15 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     {(error || loadError) && <Callout tone="danger" className="mt-3" action={loadError ? <Button size="sm" onClick={() => void load()}>Retry</Button> : undefined}>{error ?? loadError}</Callout>}
     {!loaded && <Panel className="mt-4"><p role="status" className="text-xs text-ink-muted">{loading ? 'Loading presets…' : 'Your presets are unavailable.'}</p></Panel>}
     {loaded && <>
+      <Panel className="mt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="text-sm font-semibold">Default caption</p><p className="mt-1 text-xs text-ink-muted">For new clips in Create and Chat.</p></div>
+          <Select aria-label="Default caption" className="w-full sm:w-64" value={defaultId ?? 'automatic'} disabled={busy || !preferencesLoaded || preferencesSaving}
+            options={[{ value: 'automatic', label: `First bookmark (${automaticName})` }, ...styles.map(style => ({ value: style.id, label: style.name, detail: 'Custom' })), ...PRESETS.map(preset => ({ value: preset.id, label: preset.name }))]}
+            onChange={id => { void setDefault(id === 'automatic' ? null : id).catch(() => {}) }} />
+        </div>
+        {preferencesError && <Callout tone="danger" className="mt-3" action={!preferencesLoaded ? <Button size="sm" onClick={() => void loadPreferences()}>Retry</Button> : undefined}>{preferencesError}</Callout>}
+      </Panel>
       <div className="caption-stage-header mt-4">
         <div className="flex min-w-0 items-center gap-3">
           {stage !== 'home' && (styles.length > 0 || stage === 'edit') && <Button variant="ghost" icon={<ArrowLeft size={14} />} disabled={busy} onClick={stage === 'edit' && !existing ? backToBase : backToPresets}>{stage === 'edit' && !existing ? 'Back to base' : 'Back to presets'}</Button>}

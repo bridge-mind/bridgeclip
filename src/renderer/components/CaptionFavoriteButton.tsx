@@ -7,7 +7,8 @@ export function CaptionFavoriteButton({ id, name, disabled, className, onToggle,
   id: string; name: string; disabled?: boolean; className?: string; onToggle?: () => void; beforeToggle?: () => void
 }): React.JSX.Element {
   const favorite = useCaptionFavoritesStore(state => state.favorites.includes(id))
-  return <Button size="sm" variant="ghost" iconOnly disabled={disabled}
+  const loaded = useCaptionFavoritesStore(state => state.loaded)
+  return <Button size="sm" variant="ghost" iconOnly disabled={disabled || !loaded}
     className={cn('caption-bookmark', favorite && 'text-[#f2c66d] hover:text-[#f2c66d]', className)}
     aria-label={`${favorite ? 'Remove bookmark from' : 'Bookmark'} ${name}`} aria-pressed={favorite}
     title={favorite ? 'Remove from favorites' : 'Add to favorites'}

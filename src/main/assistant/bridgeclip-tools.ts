@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { basename, join } from 'path'
 import { dialog, shell, type BrowserWindow } from 'electron'
-import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET, isCaptionPresetId } from '../../shared/caption-presets'
+import { CAPTION_PRESETS, isCaptionPresetId } from '../../shared/caption-presets'
 import type { AssistantNavigationPage } from '../../shared/assistant'
 import { DURATION_IDS, DURATION_OPTIONS, VIDEO_SPEED_OPTIONS, CLIP_REQUEST_MAX_CHARS } from '../../shared/job-contract'
 import type { ClipJobRequest, JobSnapshot } from '../../shared/jobs'
@@ -17,6 +17,8 @@ import { getJobHistory, getJobOutput } from '../file-manager'
 import { cancelTrackedJob, getJob, listJobs, liveJobIds, onJobUpdate } from '../job-manager'
 import { startClipJobRequest } from '../job-start'
 import { listCaptionStyles } from '../caption-library'
+import { loadCaptionPreferences } from '../caption-preferences'
+import { defaultCaptionId } from '../../shared/caption-preferences'
 import { authorizeMedia, isWebUrl } from '../security'
 import { getYouTubePreview } from '../youtube-preview'
 import { resolveBinary } from '../tools'
@@ -59,7 +61,8 @@ const runIdProperty = { type: 'string', description: 'A Library run id: the runI
 const clipIndexProperty = { type: 'integer', minimum: 0, maximum: 999, description: 'clipIndex from get_library_run.' }
 const captionStyleProperty = { type: 'string', minLength: 1, maxLength: 64, description: 'A default or saved custom caption style id from get_clip_options. Use the id, not its name.' }
 
-function resolveCaptionStyle(id: unknown = DEFAULT_CAPTION_PRESET): Pick<ClipJobRequest, 'captionPreset' | 'customCaption'> {
+function resolveCaptionStyle(id?: unknown): Pick<ClipJobRequest, 'captionPreset' | 'customCaption'> {
+  if (id === undefined) id = defaultCaptionId(loadCaptionPreferences(), listCaptionStyles())
   if (isCaptionPresetId(id)) return { captionPreset: id }
   const customCaption = listCaptionStyles().find((style) => style.id === id)
   if (!customCaption) throw new AssistantToolError('Caption style not found. Call get_clip_options for current default and saved custom preset ids.')
@@ -293,21 +296,29 @@ export function createBridgeClipTools(host: ToolHost): AssistantToolSpec[] {
       description: 'Current default caption styles and saved custom caption presets from the Captions lab, plus clip lengths, speeds, aspect ratios, workflows and modes. Use the returned caption ids with start_clip_job or update_review_candidates. Read this to answer questions about saved caption presets; they are separate from Settings.',
       inputSchema: object({}),
       readOnly: true,
-      run: async () => ({
-        captionStyles: CAPTION_PRESETS,
-        customCaptionStyles: listCaptionStyles().map(({ id, name }) => ({ id, name })),
-        defaultCaptionStyle: DEFAULT_CAPTION_PRESET,
-        durations: DURATION_OPTIONS,
-        speeds: VIDEO_SPEED_OPTIONS,
-        aspectRatios: ['9:16 (vertical, for TikTok/Reels/Shorts)', '16:9 (horizontal)'],
-        workflows: {
-          automatic: 'Finds, checks and exports clips with no further input. Best default.',
-          review: 'Builds a review project of candidate clips; nothing is exported until clips are marked ready and exported (see get_review_project).'
-        },
-        modes: { quality: 'Best results (default).', economy: 'Cheaper planning model, no paid vision checks.' },
-        layouts: { auto: 'Smart per-shot framing (default for 9:16).', fill: 'Always crop to fill the frame.', fit: 'Letterbox the full frame.' },
-        pacing: { tight: 'Cut dead air and filler words (default).', natural: 'Keep original timing.' }
-      })
+      run: async () => {
+        const styles = listCaptionStyles()
+        const preferences = loadCaptionPreferences()
+        const defaultId = defaultCaptionId(preferences, styles)
+        return {
+          captionStyles: CAPTION_PRESETS,
+          customCaptionStyles: styles.map(({ id, name }) => ({ id, name })),
+          defaultCaptionStyle: defaultId,
+          defaultCaptionStyleName: CAPTION_PRESETS.find(style => style.id === defaultId)?.name ?? styles.find(style => style.id === defaultId)?.name,
+          captionDefaultMode: preferences.defaultId ? 'selected-preset' : 'first-bookmark',
+          captionDefaultSetting: 'Captions → Default caption. First bookmark uses the first available bookmarked style, or Pop when none are available.',
+          durations: DURATION_OPTIONS,
+          speeds: VIDEO_SPEED_OPTIONS,
+          aspectRatios: ['9:16 (vertical, for TikTok/Reels/Shorts)', '16:9 (horizontal)'],
+          workflows: {
+            automatic: 'Finds, checks and exports clips with no further input. Best default.',
+            review: 'Builds a review project of candidate clips; nothing is exported until clips are marked ready and exported (see get_review_project).'
+          },
+          modes: { quality: 'Best results (default).', economy: 'Cheaper planning model, no paid vision checks.' },
+          layouts: { auto: 'Smart per-shot framing (default for 9:16).', fill: 'Always crop to fill the frame.', fit: 'Letterbox the full frame.' },
+          pacing: { tight: 'Cut dead air and filler words (default).', natural: 'Keep original timing.' }
+        }
+      }
     },
     {
       name: 'preview_video',
@@ -362,7 +373,7 @@ export function createBridgeClipTools(host: ToolHost): AssistantToolSpec[] {
         mode: { type: 'string', enum: ['quality', 'economy'], description: 'Default quality.' },
         aspectRatio: { type: 'string', enum: ['9:16', '16:9'], description: 'Default 9:16.' },
         captions: { type: 'boolean', description: 'Burn in captions. Default true.' },
-        captionStyle: { ...captionStyleProperty, description: `${captionStyleProperty.description} Omit for Pop.` },
+        captionStyle: { ...captionStyleProperty, description: `${captionStyleProperty.description} Omit to use the saved Default caption preference reported by get_clip_options.` },
         titleCard: { type: 'boolean', description: 'Title card at the top of Automatic clips. Default true.' },
         durations: { type: 'array', items: { type: 'string', enum: DURATION_IDS }, minItems: 1, maxItems: DURATION_IDS.length, description: 'Clip length ranges. Default ["short"] (30–60s).' },
         maxClips: { type: 'integer', minimum: 1, maximum: 100, description: 'Exact number of clips. Omit to let BridgeClip decide.' },

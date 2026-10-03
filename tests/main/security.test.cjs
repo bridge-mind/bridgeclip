@@ -189,6 +189,7 @@ test('the native picker authorizes media and shell opening rejects aliased appli
       './job-manager': { initJobManager() {} },
       './job-start': {},
     './caption-library': {},
+    './caption-preferences': {},
       './logger': {},
       './security': security,
       './network-policy': {},

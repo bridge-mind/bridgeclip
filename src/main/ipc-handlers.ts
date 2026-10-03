@@ -1,6 +1,7 @@
 import { openEditor, saveEditor, runEditor, cancelEditor, replaceEditorSource } from './clip-editor'
 import { editorCloseReady, freeEditorMedia, readEditorProgress } from './clip-editor'
 import { listCaptionStyles, saveCaptionStyle, deleteCaptionStyle } from './caption-library'
+import { loadCaptionPreferences, saveCaptionPreferences } from './caption-preferences'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, realpathSync } from 'fs'
 import { loadSettings, publicSettings, replaceApiKey, savePublicSettings, type ApiKeyName, type PublicSettings } from './settings-store'
@@ -64,6 +65,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('settings:previewCleanup', (_event, kind: unknown) => previewStorageCleanup(kind))
   handle('settings:cleanContent', (_event, token: unknown, ids: unknown) => cleanStoredContent(token, ids))
   handle('captions:list', () => listCaptionStyles())
+  handle('captions:preferences', (_event, legacyFavorites: unknown) => loadCaptionPreferences(legacyFavorites))
+  handle('captions:savePreferences', (_event, patch: unknown) => saveCaptionPreferences(patch))
   handle('captions:save', (_event, style: unknown) => saveCaptionStyle(style))
   handle('captions:delete', (_event, id: unknown) => deleteCaptionStyle(id))
   handle('models:list', (_event, refresh: unknown = false) => getModelCatalog(refresh))

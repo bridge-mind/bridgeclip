@@ -39,7 +39,7 @@ export const useCaptionStore = create<CaptionState>((set, get) => ({
   save: async (style) => { set({ styles: await getApi().captions.save(style), loaded: true, error: null }) },
   remove: async (id) => {
     set({ styles: await getApi().captions.delete(id), error: null })
-    useCaptionFavoritesStore.getState().remove(id)
+    await useCaptionFavoritesStore.getState().remove(id)
   }
 }))
 

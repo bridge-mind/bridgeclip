@@ -21,6 +21,7 @@ import { useChangelogStore } from './store/use-changelog-store'
 import { useAssistantStore } from './store/use-assistant-store'
 import { useDataVersionStore } from './store/use-data-version-store'
 import { usePostsStore } from './store/use-posts-store'
+import { useCaptionFavoritesStore } from './store/use-caption-favorites-store'
 import { requestSettingsSection } from './lib/settings-focus'
 import { ChangelogDialog } from './components/Changelog'
 import { Button } from './components/ui/Button'
@@ -78,6 +79,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     setLoadError(false)
+    void useCaptionFavoritesStore.getState().load()
     void loadSettings().then(() => checkTools()).catch(() => setLoadError(true))
   }, [loadSettings, checkTools, retry])
 

@@ -1,3 +1,4 @@
+#page-scroll:has(.caption-lab) { scrollbar-gutter: stable; }
 .caption-stage-header { min-height: 32px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .caption-stage-heading:focus { outline: none; }
 .caption-creation-steps { display: flex; align-items: center; gap: 10px; }

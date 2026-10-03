@@ -13,7 +13,7 @@ BridgeClip renders on your computer and calls providers directly with your keys.
 | Jev review | Bounded transcript excerpts, titles and diagnostic text | TypeSafe Jev through OpenRouter |
 | Optional source research | Public video title, description and channel | OpenRouter web search and brief generation |
 | Social publishing | Selected clip, caption, accounts and publishing options | Zernio and the selected platforms |
-| Caption preset lookup in Chat | Default styles and saved custom preset names and IDs | The selected Chat provider (Claude, OpenAI or OpenRouter) |
+| Caption preset lookup in Chat | Default styles, saved custom preset names and IDs, and the current default selection | The selected Chat provider (Claude, OpenAI or OpenRouter) |
 
 For a link, the app downloads the source using your network connection. Audio for MAI Transcribe 2 (Quality), Whisper Turbo (Economy), or your selected transcription model (Advanced) goes to OpenRouter. Quality and Economy retry temporary transcription failures and use fallback models when needed; Economy tries Whisper Large V3 before MAI. Advanced retries only your chosen model. Transcript text for clip planning also goes to OpenRouter.
 
@@ -73,6 +73,8 @@ Downloads and intermediate media are held in a private `work/` directory under B
 New runs also save `source_context.json` (the source metadata, including its description, plus any research brief and citations) and `edit_audit.json` (the full transcript, planner and repair prompts and responses, and Jev judgments, probabilities and usage). **Review & edit** runs keep a copy of the source video, a playback preview and the project file there too. Review these files before sharing a run folder, and delete the run folder to remove those local outputs.
 
 ### Settings, accounts and logs
+
+Caption presets and caption preferences (bookmarks and the default for Create and Chat) are saved in the per-user application data folder. Older bookmarks are imported from the interface’s local storage once; new jobs keep independent copies of custom styling.
 
 Settings, the last synced list of connected accounts (platforms, handles and Zernio IDs), local posting history, and upload retry records live in Electron's per-user application data folder. Posting history can include clip paths and titles, account handles, targets, status and links; retry records can include a clip path and an uploaded media URL. Changing or removing the Zernio key switches to a separate local post history and quarantines the old account and upload retry caches.
 
