@@ -171,6 +171,8 @@ class CaptionStyle:
     position: Literal["top", "center", "bottom"] = "bottom"
     alignment: Literal["left", "center", "right"] = "center"
     max_words_per_line: int = 3
+    # None keeps automatic wrapping; numeric choices balance groups across rows.
+    max_lines: Optional[int] = None
     word_by_word_highlight: bool = True
 
     primary_color: str = "#FFFFFF"
@@ -215,6 +217,9 @@ class CaptionStyle:
     line_box_color: Optional[str] = None
     line_box_opacity: float = 0.6
     line_box_padding: int = 22
+    # Per-axis overrides; None preserves uniform padding in older snapshots.
+    line_box_padding_x: Optional[int] = None
+    line_box_padding_y: Optional[int] = None
 
     # Keyword emphasis: planner-chosen punch words render in this color
     # (None disables). Chosen per preset to contrast with the highlight.

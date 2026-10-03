@@ -1,0 +1,15 @@
+.review-step { animation: review-arrive 320ms cubic-bezier(.2,.8,.2,1) both; }
+.review-card { animation: review-arrive 380ms cubic-bezier(.2,.8,.2,1) both; }
+.review-card:nth-child(2) { animation-delay: 35ms; }
+.review-card:nth-child(3) { animation-delay: 70ms; }
+.review-card:nth-child(4) { animation-delay: 105ms; }
+.review-source > .glass { box-shadow: none; background: rgb(255 255 255 / .025); }
+.review-caption-sample > span { transform: scale(1.45); }
+.review-format { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 5px; border: 1.5px solid rgb(170 174 188 / .5); border-radius: 6px; background: rgb(255 255 255 / .025); flex-shrink: 0; }
+.review-format-vertical { width: 28px; height: 44px; }
+.review-format-wide { width: 52px; height: 30px; }
+.review-format span { height: 3px; background: rgb(170 174 188 / .35); border-radius: 2px; }
+.review-format span:nth-child(2) { width: 75%; }
+.review-format span:nth-child(3) { width: 50%; }
+@keyframes review-arrive { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .review-step, .review-card { animation: none; } }

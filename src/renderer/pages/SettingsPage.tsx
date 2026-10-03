@@ -19,6 +19,7 @@ import { Badge, StatusDot } from '../components/ui/Badge'
 import { IconTile } from '../components/ui/IconTile'
 import { Callout } from '../components/ui/Callout'
 import { UpdatesRow } from '../components/Updates'
+import { CrashReportPanel } from '../components/CrashReportPanel'
 import { OutputStorage } from '../components/OutputStorage'
 import { AssistantSettings } from '../components/assistant/AssistantSettings'
 import { useAssistantStore } from '../store/use-assistant-store'
@@ -298,6 +299,7 @@ export function SettingsPage({ showUpdates = 0 }: { showUpdates?: number }): Rea
               </div>
             </div>
             <UpdatesRow />
+            <CrashReportPanel />
             <OutputStorage outputDirectory={outputDirectory} />
           </Section>
         </div>

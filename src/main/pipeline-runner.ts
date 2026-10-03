@@ -468,6 +468,7 @@ export function startClipJob(
     video_speed: config.videoSpeed ?? 1,
     include_captions: config.includeCaptions,
     caption_preset: config.captionPreset,
+    ...(config.customCaption ? { custom_caption: config.customCaption } : {}),
     include_title: config.includeTitle ?? true,
     keyterms: vocabularyTerms(settings.customVocabulary),
     start_time_seconds: config.startTimeSeconds,

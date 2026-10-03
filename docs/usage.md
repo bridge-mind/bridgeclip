@@ -4,6 +4,8 @@
 
 Install BridgeClip, create clips, follow jobs, and manage your Library and publishing queues. These instructions describe the current source; check the [release notes](https://github.com/bridge-mind/bridgeclip/releases) for the features in your installed version.
 
+Selecting the current page in the sidebar (or using its keyboard shortcut) keeps your view, scroll position and filters intact. From a Library item, job detail or caption editor, the sidebar still returns to the page root and prompts for unsaved caption changes.
+
 ## Install and update
 
 Choose your platform on [bridgeclip.ai](https://www.bridgeclip.ai) or [GitHub Releases](https://github.com/bridge-mind/bridgeclip/releases). Packages include Python, FFmpeg and yt-dlp.
@@ -40,19 +42,45 @@ In **Create**, choose a workflow before continuing: **Automatic · Beginner frie
 
 ### Models
 
-In **Create → Clips**, choose **Quality**, **Economy**, or **Advanced**. Advanced offers searchable OpenRouter model pickers for transcription and clip planning, with model IDs, planning prices and compatibility notes. Both selections are required and appear in Review. Advanced retries the selected models without automatically switching models. Transcription must provide word timestamps; planning must support structured output. See [model selection and transcription](transcription.md).
+In **Create → Clips**, choose **Quality**, **Economy**, or **Advanced**. Advanced offers searchable OpenRouter model pickers for transcription and clip planning, with model IDs, planning prices and compatibility notes. Both selections are required and appear in Review. Quality finds moments with Claude Opus 5.5, with Gemini 3.8 Flash and GPT-6 Sol as fallbacks; Economy uses GLM 5.3 Flash. GPT-6 Sol also handles Quality boundary repairs when automatic Jev review is enabled. Advanced retries the selected models without automatically switching models. Transcription must provide word timestamps; planning must support structured output. See [model selection and transcription](transcription.md).
 
 ### Framing, captions and speed
 
 Smart framing follows faces and arranges screen shares with facecams shot by shot. Optional AI vision checks help with ambiguous layouts and can add OpenRouter cost. Use [Review & edit](editor.md) to adjust crops and camera changes before exporting.
 
-Choose from nine caption styles: Viral, Hormozi, Bold, Clean, Minimal, Fire, Glow, Neon and Karaoke. In **Create → Captions**, the selected style plays an animated sample showing how words appear and highlights advance. Pause or restart it to compare styles.
+Choose from 13 default caption styles: Pop, Spotlight, Impact, Glow, Boxed, Sweep, Editorial, Hype, Punch, Neon, Headline, Paper and Subtle. In **Create → Captions**, the selected style plays an animated sample showing how words appear and highlights advance. Pause or restart it to compare styles.
 
 In **Create → Format → Video speed**, choose **1×** (normal), **1.1×**, **1.25×**, **1.5×**, **1.75×**, or **2×** for every clip in the job. Exports preserve voice pitch and keep captions synchronized. Speed works with **Cut dead air** and appears in Review and the saved results. Clip lengths and source trim times refer to the original footage: a 60-second clip at 1.5× exports in about 40 seconds, before any dead-air cuts. The choice stays selected when you clip another video in the same session.
 
 Existing exports stay as they are; generate a new job to change their speed.
 
 See [video speed](video-speed.md) for timing and export details.
+
+### Make a caption style
+
+Chat can list your saved caption presets and use one by name when creating clips or updating Review & edit candidates. No extra setup is needed. Ask “What custom caption presets do I have?” or “Use Preset 1 for these clips.” Chat can also open the Captions page so you can edit a preset.
+
+Use **Captions → Default caption** to choose a default or custom preset for new clips in both Create and Chat. **First bookmark** prefers your bookmarked custom presets, then bookmarked built-in styles, and uses Pop when none are available. The choice persists across app launches; changing it does not replace captions already selected in a draft or saved project. If a custom default is deleted, new clips return to First bookmark.
+
+Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions step. Your first preset starts with **Choose a base**: select a default, preview it, then choose **Customize**. Adjust its typeface, font size, text and highlight colors, word grouping, animation, outline, pill, glow or background. Karaoke sweep always dims upcoming words; use **Upcoming opacity** to adjust them. Switching animation keeps your previous upcoming-word choice. Enabling **Background** reveals separate **Horizontal padding** and **Vertical padding** sliders, plus opacity. New presets start with 24 horizontal padding. Both axes also apply to exports; existing presets keep their saved padding on each axis. Under **Sample text**, switch between **Short** and **Long** voice samples. Select a line to jump to that part of the recording; the line list updates with your caption settings. Pause or scrub the preview to compare timing. Previews start muted. Use the speaker button to hear the sample; your sound and sample choices carry across styles while the app is open.
+
+Give it a name and choose **Save preset** to save without leaving the editor. **Back to presets** opens **Your presets** as cards matching the default styles, three per row, with edit, duplicate and delete in each card’s **…** menu; future visits start there. Select a saved preset card to preview it without editing. The preview stays in the left column when you choose **Edit preset**; on compact windows it stays above the controls. **New preset** starts the base-selection wizard again. Leaving unsaved caption edits offers **Save & leave**, **Discard**, or **Keep editing**. Reloading or closing the app also asks whether to save. When opened from Create, **Save & use** returns to the same draft with the preset selected, or select a card and choose **Use preset** below the preview. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
+
+Default presets also appear below your saved cards. Select one to preview it, choose **Customize** to start a new preset, or **Use preset** to return it to Create. The initial base-selection wizard remains available when you have no custom presets.
+
+Use the bookmark beside a custom preset or on any default tile to add it to **Favorites**. Bookmarks stay saved on this device across app launches and move smoothly to the front of each group, with reduced-motion preferences respected. In Create and the clip editor, switch from **All** to **Favorites** to show only your bookmarks; default and custom styles remain separate. With **Default caption → First bookmark**, new clip setups select the first available bookmark in each group’s display order (custom presets first, then built-in styles), or Pop if none are available. Once selected, bookmarking or filtering does not change the draft's caption style. Renaming a preset keeps its bookmark, and deleting it removes the bookmark.
+
+On the Captions page, previews open paused with sample text visible, including when switching styles or opening an editor. Press **Play** to start playback. Turning sound on does not start a paused preview.
+
+**Clean switch** changes the active word’s color instantly. **Color fade** and **Pop & fade** deliberately blend colors in both the preview and exported captions; short word events switch instantly to match the export.
+
+Saved presets are independent copies of their starting default. Changing or retiring a default does not change your preset’s appearance or prevent you from editing, duplicating or exporting it.
+
+**Words at once** controls the size of each caption group. **Lines** lets you choose Auto, 1, 2 or 3 lines. A number balances each group across that many rows, using fewer rows only when there are fewer words. Groups advance sooner when needed to fit the video width, keeping your font size and every spoken word. The layout applies to previews and exported clips. Existing presets keep Auto wrapping.
+
+### Review before generating
+
+Review reuses the video preview and groups format, pace, clip lengths, caption styling and models into editable cards. Use each card’s pencil to return to that step. **Review & edit** keeps manual cuts and has no title overlay; Automatic applies the selected pacing and title options. Clip lengths describe source footage, before playback speed changes.
 
 ### Clip a Twitch VOD
 
@@ -64,11 +92,13 @@ Live channels, Twitch clips, collections, subscriber-only videos and deleted or 
 
 Every run gets its own folder. The **Library** shows completed clips with virality scores, timecodes and tags. **Jobs** shows what is running or queued right now (up to two clipping runs go at once; more wait in a queue) and every earlier run, including completed, failed, cancelled and interrupted jobs; completed runs open directly in Library, and failed runs from this session can run again.
 
+**Previous** starts at ten runs per page. Use the page-size selector to choose 10, 25, 50 or 100; the app remembers your choice across navigation and restarts. Changing the count, search or filters returns to the first page. Search and filters apply across the full history; **Active** always shows every running and queued job. Page transitions respect reduced-motion preferences.
+
 Each previous job has a three-dot menu for **Open in Library** (or **Open job** for session jobs), **Open folder** and **Details**. Details opens the saved transcript and edit trace, including for failed runs. Older runs without a saved status appear as unfinished. You can optionally connect social accounts through Zernio to publish or schedule a selected clip.
 
 ### Progress and cost
 
-During creation, each stage shows its own elapsed time and progress: downloaded bytes, transcription chunks, prepared candidates, rendered clips, saved files and editor-preview encoding where measurable. AI requests without measurable progress show an indeterminate bar. The overall percentage is an estimate; completed runs retain a **Processing time by stage** breakdown in the Library and editor. Each stage keeps its own color in the time breakdown. The progress page reuses the source preview from Create for YouTube and local files.
+During creation, each stage shows its own elapsed time and progress: downloaded bytes, transcription chunks, prepared candidates, rendered clips, saved files and editor-preview encoding where measurable. AI requests without measurable progress show an indeterminate bar. The overall percentage is an estimate; completed runs retain their timings under **… → Processing details** in the Library and **Processing time by stage** in the editor. Each stage keeps its own color in the time breakdown. The progress page reuses the source preview from Create for YouTube and local files.
 
 New runs show live model requests, input/output tokens and provider-reported cost; missing usage stays unknown and partial totals exclude unreported charges. **Inside frame & review** separates face sampling, camera scans, detailed face tracking, shot-layout checks and Jev review, with the current candidate and accumulated timings. These diagnostics are saved with the run and remain available in its processing-time details. See [the framing performance investigation](FRAMING_PERFORMANCE_2026-09-27.md) for the long-video decoding fix.
 
@@ -76,7 +106,9 @@ New runs show live model requests, input/output tokens and provider-reported cos
 
 ### Find clips and track posting
 
-Inside a Library run, **Search clips** filters by title, tag or clip number across both posted and unposted clips. Selection and bulk actions apply only to visible results. The YouTube icon beside **Inspect transcript & edits** opens the original video in your browser when a YouTube source link is saved. **Not Posted** and **Posted** are independently collapsible sections with clip counts. **Not Posted** opens by default and appears first; **Posted** starts collapsed below it. Selection applies only to expanded sections.
+Inside a Library run, the source card shows the original video's thumbnail, saved title, channel and duration when available. A compact 2×2 grid beside it shows clip count, processing time, API cost and creation date; the two panels share the row equally and stack in smaller windows. **View on YouTube** opens the original video. **Continue editing** stays visible for unfinished review projects. The header's **…** menu contains **Transcript & edits**, **Processing details**, **Open folder** and **Refresh post status**. Processing details includes recorded stage timings and model usage.
+
+The clip toolbar keeps **Search clips**, selection and sorting together. Search filters by title, tag or clip number across both posted and unposted clips; bulk actions appear when clips are selected. **Not Posted** and **Posted** are independently collapsible sections with clip counts. **Not Posted** opens by default and appears first; **Posted** starts collapsed below it. Selection applies only to visible results and expanded sections. Editorial ranking weights appear only when sorting by **Editorial**.
 
 Badges distinguish scheduled, publishing, partially posted and failed posts using this workspace’s saved posting history.
 
@@ -88,15 +120,29 @@ Select clips to reveal the red trash button for deleting just those exports, wit
 
 ### Bookmarks and run deletion
 
-Library overview cards show the total clip count at the top left and separate **Posted** / **Not Posted** counts below the title. Bookmark a run to keep it in the **Bookmarked** section. Cards move smoothly between Bookmarked and Recent runs without reloading their thumbnails; removing the last bookmark returns to one **All runs** grid. Bookmarks persist across restarts, and reduced-motion preferences turn off movement.
+Library overview cards show the total clip count at the top left, the run's local file size beside its date and cost, and separate **Posted** / **Not Posted** counts below the title. Sizes include all files in the run folder and update when you refresh the Library; **≥** marks an incomplete total. Bookmark a run to keep it in the **Bookmarked** section. Cards move smoothly between Bookmarked and Recent runs without reloading their thumbnails; removing the last bookmark returns to one **All runs** grid. Bookmarks persist across restarts, and reduced-motion preferences turn off movement.
 
-The trash action asks for confirmation before permanently deleting the run folder, all clips and other files inside it, and cached clip previews. It does not remove published social posts or copies stored elsewhere. Active runs cannot be deleted.
+The trash action shows estimated space freed and a visual summary before permanently deleting the run folder, all clips and other files inside it, and cached clip previews. The estimate counts the run's files, including saved edits and source copies; incomplete scans are marked. Published social posts and copies stored elsewhere are kept. Expand **Folder location** to check the exact folder. Active runs cannot be deleted.
 
 **Settings → About → Content storage** shows the total file size and file count in your output folder. Refresh to recalculate; inaccessible files are reported as a partial total.
+
+**Clean published content** opens a space estimate and a selectable list of projects. It uses the Library’s posted status, including clips you manually marked as posted. Fully published, finished projects can have their entire local folder removed, including source copies and edits. Mixed projects lose only the posted exports you reviewed; unposted clips and unfinished edits stay. Clips needed by pending posts or automations are kept, and cleanup waits for uploads to finish. Online posts and automation bank copies are not deleted.
+
+If you have retained **Review & edit** media, a **Source files** section shows source-video size, editor-preview size and how much is ready to free. **Review sources** lists the projects; only those with every candidate baked or discarded can be selected. Freeing this media keeps exported clips but makes the project read-only, so you cannot refine or bake it again. Automatic-only libraries do not show these editor controls.
+
+Both actions permanently delete only the local content selected in the confirmation. Projects changed since the preview are kept for a fresh review, and partial failures are reported. No cleanup runs automatically. If saved publishing history is damaged, cleanup stops and keeps your files, even after restarting or saving new activity. Recover the complete history before retrying; dismissing activity does not clear this protection.
 
 ## Publish and automate
 
 Connect social accounts with your own Zernio account and API key to post or schedule clips. Metadata enhancement uses your OpenRouter key. For platform-specific drafts, scheduling consent and required TikTok reviews, see [publishing and metadata](automation-metadata.md). **BridgeClip must be open for daily automations to run.**
+
+### Browse posts
+
+**Posts** is your publishing activity feed. Use **×** to dismiss an update without changing the clip’s **Posted** status in the Library or its eligibility for **Clean published content**. Published posts and local videos stay intact. Dismissed partial or inbox deliveries keep their existing status and cleanup protections; dismissing them does not complete publication. Scheduled and publishing posts stay visible until they finish or are cancelled.
+
+**Posts → Recent** uses numbered pages. Choose 10, 25, 50 or 100 rows per page; the choice is shared with Jobs and remembered after restarting. **Scheduled** and **Needs attention** remain visible above Recent on every page.
+
+Posting records are kept separately when activity is dismissed or older updates leave the feed, including across app restarts. They remain scoped to the connected Zernio workspace. Activity removed before this change cannot be recovered automatically; mark a clip as posted in the Library if its record is already gone.
 
 ### Organize the content bank
 
@@ -128,5 +174,11 @@ Recovery also works when local post history was removed or aged out, provided Ze
 - If a link fails, check it in a signed-out browser or download the video yourself and select the local file.
 - Open a job’s **Details** to inspect its saved transcript and edit trace, including failed runs. Inspecting saved results makes no provider calls. See [saved reviews and diagnostics](ai-and-privacy.md#inspect-saved-reviews).
 - Logs omit raw provider responses and private source details, but review logs and run files before sharing them. See [local storage and cleanup](ai-and-privacy.md#local-storage-and-cleanup).
+
+### Report an app crash
+
+After an app or interface error, open **Settings → About → Crash reports → View report**. Choose **Copy issue report**, open GitHub, and paste it into a new issue with your steps to reproduce. **Help → Copy Latest Crash Report** also works when the interface is unavailable. Nothing is sent automatically.
+
+The latest report includes app and system versions, safe error details and recent event names. If the app stopped without a clean shutdown, the next launch can record an **Unexpected shutdown**; forced quits and power loss can also cause this, and no crash stack is available for that event. Reports are local diagnostics, not full native crash dumps.
 
 For help, use [GitHub Issues](https://github.com/bridge-mind/bridgeclip/issues) or [Discord](https://www.bridgemind.ai/discord). Report security issues using [SECURITY.md](../SECURITY.md).

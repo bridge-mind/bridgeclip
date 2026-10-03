@@ -1,19 +1,19 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { randomUUID } from 'crypto'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { createHash, randomUUID } from 'crypto'
 import { basename, dirname, extname, join } from 'path'
 import { isZernioId } from '../../shared/zernio'
 import type { PostRecord, PostRecordTarget, PostStatus, PostTargetStatus } from '../../shared/zernio-posts'
 import { quarantineUnbound, readableCache } from './workspace-cache'
 
-// Local history of posts made from BridgeClip, so the Accounts page can show
-// scheduled and recent posts without listing the whole Zernio workspace.
+// Bounded activity for Posts, plus durable records for Library posting status.
 // Holds ids, paths, titles and statuses: nothing secret.
 
 const VERSION = 1
-/** Oldest finished posts are dropped past this. Active posts are never discarded. */
+/** Oldest finished activity is archived past this. Active posts are never discarded. */
 const MAX_RECORDS = 300
 const MAX_CACHE_BYTES = 2 * 1024 * 1024
 const MAX_LEGACY_BYTES = 16 * 1024 * 1024
+const HISTORY_UNAVAILABLE = 'Saved publishing history could not be read. Your files have been kept. Restore the saved history before cleaning up content.'
 
 const STATUSES: PostStatus[] = ['draft', 'scheduled', 'publishing', 'published', 'partial', 'failed', 'cancelled', 'missing']
 const TARGET_STATUSES: PostTargetStatus[] = ['pending', 'processing', 'uploading', 'published', 'failed', 'cancelled']
@@ -76,6 +76,49 @@ export class PostsStore {
     this.path = workspace ? join(dirname(filePath), `${basename(filePath, extension)}-${workspace}${extension}`) : filePath
   }
 
+  private readRecords(value: unknown): PostRecord[] {
+    if (!Array.isArray(value)) throw new Error(HISTORY_UNAVAILABLE)
+    const records = value.map(parsePostRecord)
+    if (records.some(post => post === null) || new Set(records.map(post => post?.id)).size !== records.length) throw new Error(HISTORY_UNAVAILABLE)
+    return records as PostRecord[]
+  }
+
+  private markUnreadable(file = this.path): void {
+    // Persist BEFORE quarantining. New activity, restarts and quarantine expiry
+    // must never turn lost pending deliveries into permission to delete media.
+    try { writeFileSync(`${file}.unreadable`, 'Publishing history needs recovery.\n', { mode: 0o600, flag: 'wx' }) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
+  private checkHistoryComplete(): void {
+    try {
+      const names = readdirSync(dirname(this.path))
+      for (const file of new Set([this.path, this.filePath])) {
+        const name = basename(file)
+        if (names.includes(`${name}.unreadable`)) throw new Error(HISTORY_UNAVAILABLE)
+        // Also recognize files quarantined by earlier versions of the app.
+        if (names.some(entry => entry.startsWith(`${name}.damaged-`) || entry.startsWith(`${name}.quarantine-`))) {
+          this.markUnreadable(file)
+          throw new Error(HISTORY_UNAVAILABLE)
+        }
+      }
+    } catch { throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
+  private readActive(): PostRecord[] {
+    try { lstatSync(this.path) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw new Error(HISTORY_UNAVAILABLE)
+    }
+    try {
+      if (!readableCache(this.path, MAX_CACHE_BYTES)) throw new Error(HISTORY_UNAVAILABLE)
+      const raw = JSON.parse(readFileSync(this.path, 'utf-8'))
+      if (raw.version !== (this.workspace ? 2 : VERSION) || this.workspace && raw.workspace !== this.workspace) throw new Error(HISTORY_UNAVAILABLE)
+      return this.readRecords(raw.posts).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    } catch { throw new Error(HISTORY_UNAVAILABLE) }
+  }
+
   private serialize(posts: PostRecord[]): string {
     const active = posts.filter((post) => post.status === 'scheduled' || post.status === 'publishing')
     const finished = posts.filter((post) => post.status !== 'scheduled' && post.status !== 'publishing')
@@ -108,12 +151,17 @@ export class PostsStore {
     if (!readableCache(this.filePath, MAX_LEGACY_BYTES)) throw new Error('Legacy post history could not be migrated. The file was preserved.')
     let raw: { version?: unknown; workspace?: unknown; posts?: unknown }
     try { raw = JSON.parse(readFileSync(this.filePath, 'utf-8')) }
-    catch { quarantineUnbound(this.filePath); return }
-    if (raw.version !== 2 || raw.workspace !== this.workspace) {
-      if (raw.version !== 2 || typeof raw.workspace !== 'string') quarantineUnbound(this.filePath)
+    catch { this.markUnreadable(this.filePath); quarantineUnbound(this.filePath); return }
+    if (!raw || raw.version !== 2 || raw.workspace !== this.workspace) {
+      if (!raw || raw.version !== 2 || typeof raw.workspace !== 'string') {
+        this.markUnreadable(this.filePath)
+        quarantineUnbound(this.filePath)
+      }
       return
     }
-    const records = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((post): post is PostRecord => post !== null) : []
+    let records: PostRecord[]
+    try { records = this.readRecords(raw.posts) }
+    catch { this.markUnreadable(this.filePath); quarantineUnbound(this.filePath); return }
     this.write(records)
     try { renameSync(this.filePath, `${this.filePath}.migrated-${Date.now()}`) }
     catch { /* The scoped copy is already durable; leave the old file for recovery. */ }
@@ -122,17 +170,9 @@ export class PostsStore {
   /** Newest first. A damaged file is set aside so the next write can't erase it. */
   list(): PostRecord[] {
     this.migrateLegacy()
-    if (!existsSync(this.path)) return []
-    try {
-      if (!readableCache(this.path, MAX_CACHE_BYTES)) { quarantineUnbound(this.path); return [] }
-      const raw = JSON.parse(readFileSync(this.path, 'utf-8')) as { version?: unknown; workspace?: unknown; posts?: unknown }
-      if (this.workspace && (raw.version !== 2 || raw.workspace !== this.workspace)) {
-        quarantineUnbound(this.path)
-        return []
-      }
-      const posts = Array.isArray(raw.posts) ? raw.posts.map(parsePostRecord).filter((p): p is PostRecord => p !== null) : []
-      return posts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    } catch {
+    try { return this.readActive() }
+    catch {
+      this.markUnreadable()
       try { renameSync(this.path, `${this.path}.damaged-${Date.now()}`) } catch { /* Keep going with an empty history. */ }
       return []
     }
@@ -140,6 +180,77 @@ export class PostsStore {
 
   get(id: string): PostRecord | null {
     return this.list().find((post) => post.id === id) ?? null
+  }
+
+  private archiveDirectory(): string { return `${this.path}.history` }
+
+  private archivePath(id: string): string {
+    return join(this.archiveDirectory(), `${createHash('sha256').update(id).digest('hex')}.json`)
+  }
+
+  private checkArchiveDirectory(): boolean {
+    try {
+      const stat = lstatSync(this.archiveDirectory())
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid history directory')
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+      throw new Error('Saved publishing history is unavailable.')
+    }
+  }
+
+  private readArchived(file: string): PostRecord {
+    // An unreadable record could hide a pending delivery. Fail closed so disk
+    // cleanup cannot treat incomplete publishing evidence as safe to delete.
+    try {
+      if (!readableCache(file, MAX_CACHE_BYTES)) throw new Error('Invalid record file')
+      const raw = JSON.parse(readFileSync(file, 'utf-8'))
+      const post = parsePostRecord(raw.post)
+      if (raw.version !== 1 || raw.workspace !== this.workspace || !post || this.archivePath(post.id) !== file) throw new Error('Invalid record')
+      return post
+    } catch { throw new Error('Saved publishing history could not be read. Your files have been kept.') }
+  }
+
+  private archive(post: PostRecord): void {
+    if (!parsePostRecord(post)) throw new Error('Invalid publishing record. Activity was kept.')
+    if (!this.checkArchiveDirectory()) mkdirSync(this.archiveDirectory(), { mode: 0o700 })
+    const file = this.archivePath(post.id)
+    const payload = JSON.stringify({ version: 1, workspace: this.workspace, post })
+    if (Buffer.byteLength(payload) > MAX_CACHE_BYTES) throw new Error('Publishing record is too large. Activity was kept.')
+    const temporary = `${file}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, payload, { encoding: 'utf-8', mode: 0o600, flag: 'wx' })
+      renameSync(temporary, file)
+    } finally { rmSync(temporary, { force: true }) }
+  }
+
+  /** Main-only publishing evidence, independent of dismissed or trimmed activity. */
+  history(): PostRecord[] {
+    this.migrateLegacy()
+    this.checkHistoryComplete()
+    const visible = this.readActive()
+    const records = new Map<string, PostRecord>()
+    if (this.checkArchiveDirectory()) {
+      for (const name of readdirSync(this.archiveDirectory())) {
+        if (!/^[a-f0-9]{64}\.json$/.test(name)) continue
+        const post = this.readArchived(join(this.archiveDirectory(), name))
+        records.set(post.id, post)
+      }
+    }
+    // A retried or refreshed activity entry supersedes its archived snapshot.
+    for (const post of visible) records.set(post.id, post)
+    return [...records.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
+  }
+
+  /** Removing an automation bank copy must preserve its original Library link. */
+  relink(id: string, bankPath: string, originalPath: string): void {
+    const visible = this.get(id)
+    if (visible) {
+      if (visible.clipPath === bankPath) this.save({ ...visible, clipPath: originalPath })
+    } else if (this.checkArchiveDirectory() && existsSync(this.archivePath(id))) {
+      const archived = this.readArchived(this.archivePath(id))
+      if (archived.clipPath === bankPath) this.archive({ ...archived, clipPath: originalPath })
+    }
   }
 
   /** Reserve enough room for the largest accepted provider response before creating a remote post. */
@@ -167,8 +278,12 @@ export class PostsStore {
     }
   }
 
-  private write(posts: PostRecord[]): void {
+  private write(posts: PostRecord[], dismissed: PostRecord[] = []): void {
     const payload = this.serialize(posts)
+    const retained = new Set<string>((JSON.parse(payload).posts as PostRecord[]).map(post => post.id))
+    // Preserve evidence BEFORE removing activity, including on legacy migration
+    // and automatic pruning. A failed archive leaves the activity file intact.
+    for (const post of [...dismissed, ...posts.filter(post => !retained.has(post.id))]) this.archive(post)
     const tempPath = `${this.path}.${randomUUID()}.tmp`
     try {
       writeFileSync(tempPath, payload, { encoding: 'utf-8', mode: 0o600, flag: 'wx' })
@@ -185,11 +300,12 @@ export class PostsStore {
   }
 
   remove(id: string): PostRecord[] {
-    this.write(this.list().filter((post) => post.id !== id))
+    const posts = this.list()
+    this.write(posts.filter((post) => post.id !== id), posts.filter((post) => post.id === id))
     return this.list()
   }
 
   clear(): void {
-    this.write([])
+    this.write([], this.list())
   }
 }

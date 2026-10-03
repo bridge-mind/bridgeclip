@@ -12,8 +12,9 @@ const REUSE_MS = 10_000
 const PARALLEL = 32
 
 /** Sum file sizes asynchronously, without following links inside the output folder. */
-export async function scanOutputStorage(outputDirectory: string, limits = STORAGE_SCAN_LIMITS): Promise<OutputStorageUsage> {
+export async function scanOutputStorage(outputDirectory: string, limits = STORAGE_SCAN_LIMITS, { reclaimable = false }: { reclaimable?: boolean } = {}): Promise<OutputStorageUsage> {
   const usage: OutputStorageUsage = { outputDirectory, bytes: 0, fileCount: 0, exists: true, unreadableCount: 0 }
+  const linkedFiles = new Map<string, { bytes: number; links: number; seen: number }>()
   try {
     if (!(await stat(outputDirectory)).isDirectory()) throw new Error('The output folder is not a directory.')
   } catch (error) {
@@ -46,7 +47,12 @@ export async function scanOutputStorage(outputDirectory: string, limits = STORAG
             if (depth < limits.maxDepth) directories.push([path, depth + 1])
             else usage.truncated = true
           } else if (info.isFile()) {
-            usage.bytes += info.size
+            if (reclaimable && info.nlink > 1) {
+              const key = `${info.dev}:${info.ino}`
+              const linked = linkedFiles.get(key)
+              if (linked) linked.seen++
+              else linkedFiles.set(key, { bytes: info.size, links: info.nlink, seen: 1 })
+            } else usage.bytes += info.size
             usage.fileCount++
           }
         } catch (error) {
@@ -57,6 +63,9 @@ export async function scanOutputStorage(outputDirectory: string, limits = STORAG
     }
     if (usage.truncated && entries >= limits.maxEntries) break
   }
+  // A hard-linked file frees space only when all its links are removed.
+  // Count it once, and exclude files with links outside this run folder.
+  for (const file of linkedFiles.values()) if (file.seen >= file.links) usage.bytes += file.bytes
   return usage
 }
 

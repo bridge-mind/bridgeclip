@@ -39,11 +39,11 @@ export function ConfirmDialog({ request, onClose }: { request: ConfirmRequest; o
   }, [onClose])
   return (
     <Dialog ref={panelRef} role="alertdialog" aria-labelledby={titleId} onBackdropMouseDown={onClose} panelClassName="max-w-[420px]">
-      <div className="px-5 pb-5 pt-5">
+      <div className="min-h-0 overflow-y-auto px-5 pb-5 pt-5">
         <h2 id={titleId} className="text-base font-semibold text-ink">{request.title}</h2>
-        <p className="mt-1.5 text-sm text-ink-muted" data-selectable>{request.body}</p>
+        <div className="mt-1.5 text-sm text-ink-muted" data-selectable>{request.body}</div>
       </div>
-      <DialogFooter>
+      <DialogFooter className="shrink-0">
         <Button ref={cancelRef} onClick={onClose}>Cancel</Button>
         <Button
           variant={request.tone ?? 'danger'}

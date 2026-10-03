@@ -432,7 +432,7 @@ test('review editor refines candidates, restores discards, edits captions and ba
   await caption.fill('The corrected moment.')
   if (shots) await page.screenshot({ path: path.join(shots, 'editor-caption-edit.png') })
   await page.getByRole('button', { name: 'Done', exact: true }).click()
-  await page.getByRole('button', { name: 'Captions', exact: true }).click()
+  await page.locator('.editor-tabs').getByRole('button', { name: 'Captions', exact: true }).click()
   await seek(3000)
   await page.getByRole('button', { name: 'Suppress captions here', exact: true }).click()
   const hiddenStart = page.getByLabel('Caption-free section 1 start', { exact: true })
@@ -608,7 +608,7 @@ test('review editor refines candidates, restores discards, edits captions and ba
   await page.keyboard.press('Escape')
   assert.equal(await bakeOptions.evaluate(el => el === document.activeElement), true)
   await page.getByRole('button', { name: 'Restore clip', exact: true }).click()
-  await page.getByRole('button', { name: 'Captions', exact: true }).click()
+  await page.locator('.editor-tabs').getByRole('button', { name: 'Captions', exact: true }).click()
   await page.getByRole('switch').uncheck()
   await page.getByRole('button', { name: 'Mark ready', exact: true }).click()
   // Invoke immediately: the batch must flush the latest edits before starting.

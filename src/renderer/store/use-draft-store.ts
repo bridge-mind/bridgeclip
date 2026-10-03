@@ -1,3 +1,6 @@
+import type { CustomCaptionPreset } from '../../shared/custom-captions'
+import { DEFAULT_CAPTION_PRESET } from '../../shared/caption-presets'
+import { defaultCaptionId } from '../../shared/caption-preferences'
 import { create } from 'zustand'
 
 /** The Create wizard's steps, in order. */
@@ -36,6 +39,7 @@ export interface ClipDraft {
   maxClips: number
   includeCaptions: boolean
   captionPreset: string
+  customCaption?: CustomCaptionPreset
   /** Automatic clips: the title card at the top of each clip. */
   includeTitle: boolean
   trimOpen: boolean
@@ -44,6 +48,8 @@ export interface ClipDraft {
 }
 
 interface DraftState extends ClipDraft {
+  captionDefaultPending: boolean
+  initializeCaption: (favorites: string[], styles: CustomCaptionPreset[], defaultId?: string | null) => void
   step: WizardStep
   started: StartedJob | null
   update: (patch: Partial<ClipDraft>) => void
@@ -51,7 +57,7 @@ interface DraftState extends ClipDraft {
   clearSource: () => void
   /** The job was queued: show the confirmation. */
   markStarted: (started: StartedJob) => void
-  /** Start a new video with no workflow selected, keeping output preferences (not the video-specific clip request). */
+  /** Start a new video, keeping output preferences and applying the current caption default. */
   startAnother: () => void
 }
 
@@ -71,16 +77,27 @@ export const useDraftStore = create<DraftState>((set) => ({
   autoClipCount: true,
   maxClips: 5,
   includeCaptions: true,
-  captionPreset: 'pop',
+  captionPreset: DEFAULT_CAPTION_PRESET,
+  captionDefaultPending: true,
+  initializeCaption: (favorites, styles, defaultId = null) => set(state => {
+    if (!state.captionDefaultPending) return state
+    const id = defaultCaptionId({ favorites, defaultId }, styles)
+    const custom = styles.find(item => item.id === id)
+    return {
+      captionDefaultPending: false,
+      captionPreset: custom?.baseId ?? id,
+      customCaption: custom ? structuredClone(custom) : undefined
+    }
+  }),
   includeTitle: true,
   trimOpen: false,
   trimStart: '',
   trimEnd: '',
   step: 'video',
   started: null,
-  update: (patch) => set(patch),
+  update: (patch) => set({ ...patch, ...('captionPreset' in patch || 'customCaption' in patch ? { captionDefaultPending: false } : {}) }),
   setStep: (step) => set({ step }),
   clearSource: () => set({ source: '', trimStart: '', trimEnd: '' }),
   markStarted: (started) => set({ started }),
-  startAnother: () => set({ workflow: null, source: '', clipRequest: '', trimOpen: false, trimStart: '', trimEnd: '', step: 'video', started: null })
+  startAnother: () => set({ workflow: null, source: '', clipRequest: '', trimOpen: false, trimStart: '', trimEnd: '', step: 'video', started: null, captionDefaultPending: true })
 }))

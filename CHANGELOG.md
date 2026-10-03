@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- **Default caption** on the Captions page lets you choose a saved or built-in preset for new clips in Create and Chat, or follow your first bookmark. Existing drafts keep their selected style.
+- Caption bookmarks keep favorite defaults and custom presets easy to find across app launches. Create and the clip editor offer an **All / Favorites** filter, with bookmarks first in each style group.
+- **Crash reports** in Settings → About lets you review and copy a local issue report after an app or interface error. Reports omit keys, media paths and raw error messages; Help also offers **Copy Latest Crash Report**.
+- Caption presets expose separate **Horizontal padding** and **Vertical padding** controls for backgrounds, applied to previews and exports. New presets start with 24 horizontal padding; existing presets keep their saved padding.
+
+- **Clean published content** in Settings → About → Content storage previews reclaimable space and removes selected local posted clips or fully published projects. Online posts, queued deliveries and unfinished edits are kept.
+- Content storage tracks retained source videos and editor previews for **Review & edit**, and lets you free media from finished projects while keeping their exports.
+- **Captions lab**: choose a base, then customize the typeface, size, colors, animation and effects. Saved presets appear as cards with edit, duplicate and delete actions, ready for Create and the editor.
+- Caption presets can arrange captions across 1, 2 or 3 balanced lines, or keep Auto wrapping, in both previews and exports.
+
 - **What to clip** in Create → Clips: describe the moments you want, such as "every time they talk about pricing". Leave it blank to get the strongest moments as before.
 - **Show title at the top** in Create → Captions turns off the title card on Automatic clips.
 - **Review & edit** workflow: look over clip candidates before exporting. Trim, split and extend cuts, change layouts and camera changes, fix and place captions, then bake one clip or every ready clip with **Bake all**. You can also swap in a higher-quality copy of the source video.
@@ -26,11 +36,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- **First bookmark** now prefers bookmarked custom caption presets, then bookmarked built-ins, with Pop as the fallback in both Create and Chat.
+- Library item details pairs the source video with a compact 2×2 grid of run statistics, combines search and sorting in one toolbar, and moves transcript, stage timings, folder access and post-status refresh into the **…** menu.
+- **Your presets** on the Captions page uses the same cards as Default presets, with three cards per row, preview selection, bookmarks and a compact menu for edit, duplicate and delete.
+
+- Captions previews saved presets directly from their cards and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.
+- Captions opens previews paused with sample text visible; press Play to hear or watch them. New clip setups select your first bookmarked caption style, falling back to Pop when there are no available bookmarks.
+- Captions shows default styles below your saved presets, with previews and actions to customize or use them in Create.
+- Posts explains its activity feed below the heading and makes clear that dismissing updates keeps published posts and Library status intact.
+- Captions keeps the editor open after saving, simplifies the preview header, and offers **Save & leave**, **Discard**, or **Keep editing** before leaving unsaved changes.
+- Posts replaces **Show all** with numbered pages for Recent posts and remembers the page-size setting shared with Jobs. Scheduled posts and items needing attention stay visible.
+
+- Library deletion shows estimated space freed and a visual summary of what is deleted and kept.
+- Library cards show each run's local file size, loaded in the background and updated on refresh.
+- **Jobs → Previous** offers 10, 25, 50 or 100 runs per page with animated navigation and remembers your choice across app launches. Active jobs stay visible, and search and filters cover the full history.
+- **Create → Review** shows the source thumbnail and metadata alongside editable cards for format, moments, captions and models.
+- Caption previews follow recorded voice samples with synchronized word timing and an optional sound toggle. In the Captions lab, switch between short and long text and select a line to jump to it.
+
 - Smart framing ignores weak background faces, stays on a speaker who briefly looks away, follows talking heads inside 4:3 video, and analyzes footage faster.
 - Screen + webcam clips fill the top panel again.
 - Editor previews use much less disk space, and downloaded sources are moved into the project instead of copied.
 
 ### Fixed
+
+- Content cleanup stops when publishing history is damaged, keeping files that may still be needed by pending deliveries. The protection survives restarting and dismissing activity.
+- Karaoke caption previews keep upcoming words dimmed to match exports, including presets based on Impact. The opacity control also adjusts the unswept part of the current word.
+- Chat finds saved custom caption presets and can use them for new clips or Review & edit candidates, showing the selected preset’s name before starting a job.
+- Clicking the current sidebar page or its keyboard shortcut keeps the view steady, preserving scroll and filters. Detail views still return to the page root, with unsaved edits protected.
+- Dismissing Posts activity or trimming older updates keeps the Library’s **Posted** status and published-content cleanup eligibility, including after restarting.
+- Caption previews match export color-fade timing, including an instant switch for short words and styles without a fade.
+
+- Caption drafts survive restarts, and development runs rebuild background code when shared settings change.
+- Custom presets keep their complete appearance when a starting default is changed or retired; presets no longer show Base.
+- Captions lab previews wrap larger text and word groups within the portrait video's width.
+- Quality mode now correctly identifies **Claude Opus 5.5** as the model that finds moments. Review reflects the selected settings and the effective behavior of each workflow.
 
 - Smooth camera movement in the editor works in installed apps.
 - **Bake all** keeps going when one clip fails, and says what went wrong.

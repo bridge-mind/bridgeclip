@@ -21,8 +21,10 @@ import math
 import os
 import re
 import struct
+from copy import copy
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import combinations
 from typing import Any, Callable, Optional
 
 from clip_engine.config import CaptionStyle, get_settings
@@ -223,9 +225,9 @@ class CaptionGeneratorService:
                 return [self._pin(line, alignment, output_width // 2, y) for line in events]
 
         if has_word_timing and style.word_by_word_highlight:
-            events = self._word_by_word_events(relevant_segments, clip_start_ms, clip_end_ms, style, place)
+            events = self._word_by_word_events(relevant_segments, clip_start_ms, clip_end_ms, style, place, output_width)
         else:
-            events = self._segment_events(relevant_segments, clip_start_ms, clip_end_ms, style, place)
+            events = self._segment_events(relevant_segments, clip_start_ms, clip_end_ms, style, place, output_width)
         ass_content = header + self._events_header() + "\n".join(events)
 
         if anchors and placer is None:
@@ -332,6 +334,7 @@ class CaptionGeneratorService:
         clip_end_ms: int,
         style: CaptionStyle,
         place: Optional[Callable[[list[str], list[str]], list[str]]] = None,
+        output_width: int = 1080,
     ) -> list[str]:
         all_words: list[TranscriptWord] = []
         for segment in segments:
@@ -345,6 +348,8 @@ class CaptionGeneratorService:
             if w.end_time_ms > clip_start_ms and w.start_time_ms < clip_end_ms
         ]
         word_groups = self._group_words(clip_words, style.max_words_per_line)
+        if style.max_lines is not None:
+            word_groups = self._cap_word_groups(word_groups, style, output_width)
 
         events: list[str] = []
         for group_idx, group in enumerate(word_groups):
@@ -352,8 +357,11 @@ class CaptionGeneratorService:
                 next_group_start_ms = word_groups[group_idx + 1].words[0].start_time_ms
             else:
                 next_group_start_ms = None
+            shown = [self._display_word(w.word, style) for w in group.words]
+            render_style = self._fit_single_word(shown, style, output_width)
+            line_ends = self._line_ends(shown, render_style, output_width) if style.max_lines is not None else None
             group_events = self._generate_word_group_events(
-                group, clip_start_ms, style, next_group_start_ms
+                group, clip_start_ms, render_style, next_group_start_ms, line_ends
             )
             events.extend(place(group_events, [w.word for w in group.words]) if place else group_events)
         return events
@@ -365,10 +373,27 @@ class CaptionGeneratorService:
         clip_end_ms: int,
         style: CaptionStyle,
         place: Optional[Callable[[list[str], list[str]], list[str]]] = None,
+        output_width: int = 1080,
     ) -> list[str]:
         """Whole segments without word timing: every word drawn as already spoken."""
         events: list[str] = []
         for segment in segments:
+            if style.max_lines is not None:
+                words = [w for w in self._split_segment_into_words(segment)
+                         if w.end_time_ms > clip_start_ms and w.start_time_ms < clip_end_ms]
+                groups = self._cap_word_groups(self._group_words(words, style.max_words_per_line), style, output_width)
+                for group in groups:
+                    shown = [self._display_word(w.word, style) for w in group.words]
+                    render_style = self._fit_single_word(shown, style, output_width)
+                    tokens = [_Token(text, PAST, self._is_emphasis(w.word)) for text, w in zip(shown, group.words)]
+                    start_ms = max(0, group.start_time_ms - clip_start_ms)
+                    end_ms = min(clip_end_ms, group.end_time_ms) - clip_start_ms
+                    if end_ms <= start_ms:
+                        continue
+                    group_events = self._layered_events(tokens, start_ms, end_ms, render_style, entrance=False,
+                        line_ends=self._line_ends(shown, render_style, output_width))
+                    events.extend(place(group_events, [w.word for w in group.words]) if place else group_events)
+                continue
             start_ms = max(0, segment.start_time_ms - clip_start_ms)
             end_ms = min(clip_end_ms - clip_start_ms, segment.end_time_ms - clip_start_ms)
             if end_ms <= start_ms:
@@ -413,8 +438,8 @@ class CaptionGeneratorService:
     def _block_size(self, words: list[str], style: CaptionStyle, output_width: int) -> tuple[int, int]:
         r"""Approximate drawn (width, height) of one caption group, in output px.
 
-        Follows how libass lays the events out: explicit lines of
-        max_words_per_line words, wrapped again past the side margins, with
+        Follows the measured explicit lines for capped styles, or legacy lines
+        of max_words_per_line words wrapped again past the side margins, with
         the block centered on its \pos. Measured to the glyphs actually drawn,
         then grown by the widest effect around them and the pop-in overshoot.
         The height is symmetric about the \pos (twice the larger half).
@@ -424,7 +449,12 @@ class CaptionGeneratorService:
         gap = "  " if pill else " "
         per_line = max(1, style.max_words_per_line)
         shown = [self._display_word(w, style) for w in words if w.strip()] or [""]
-        texts = [gap.join(shown[i:i + per_line]) for i in range(0, len(shown), per_line)]
+        style = self._fit_single_word(shown, style, output_width)
+        if style.max_lines is not None:
+            ends = self._line_ends(shown, style, output_width)
+            texts = [gap.join(shown[start:end]) for start, end in zip([0, *ends[:-1]], ends)]
+        else:
+            texts = [gap.join(shown[i:i + per_line]) for i in range(0, len(shown), per_line)]
         size = style.font_size
 
         metrics = _caption_font(style.font_name)
@@ -436,7 +466,7 @@ class CaptionGeneratorService:
         else:
             widths = [len(t) * (size * FALLBACK_CHAR_EM + style.letter_spacing) for t in texts]
             baseline, ink_top, ink_bottom = size, -size, 0  # the whole line box
-        lines = sum(max(1, math.ceil(w / wrap_w)) for w in widths)
+        lines = len(texts) if style.max_lines is not None else sum(max(1, math.ceil(w / wrap_w)) for w in widths)
 
         # From the \pos (block center) to the first line's glyph tops and the
         # last line's glyph bottoms; each line is font_size tall.
@@ -447,14 +477,15 @@ class CaptionGeneratorService:
         pad = max(
             style.outline_width,
             style.outline_width + style.shadow_spread + style.shadow_blur if style.shadow_opacity > 0 else 0,
-            style.line_box_padding + 1 if style.line_box_color else 0,
             style.glow_radius + style.glow_blur if style.glow_color else 0,
             style.highlight_box_padding + 1 if pill else 0,
         )
+        pad_x = max(pad, (style.line_box_padding_x if style.line_box_padding_x is not None else style.line_box_padding) + 1) if style.line_box_color else pad
+        pad_y = max(pad, (style.line_box_padding_y if style.line_box_padding_y is not None else style.line_box_padding) + 1) if style.line_box_color else pad
         shadow = style.shadow_offset if style.shadow_opacity > 0 else 0
         grow = 1.06 if style.entrance_pop else 1.0
-        half = max(pad - top, bottom + pad + shadow) * grow
-        return round((min(max(widths), wrap_w) + 2 * pad) * grow), round(2 * half)
+        half = max(pad_y - top, bottom + pad_y + shadow) * grow
+        return round((min(max(widths), wrap_w) + 2 * pad_x) * grow), round(2 * half)
 
     @staticmethod
     def _parse_ass_time(value: str) -> int:
@@ -549,6 +580,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
         clip_start_ms: int,
         style: CaptionStyle,
         next_group_start_ms: Optional[int] = None,
+        line_ends: Optional[list[int]] = None,
     ) -> list[str]:
         r"""Generate ASS dialogue events for a word group.
 
@@ -579,7 +611,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
                 )
                 for k, w in enumerate(words)
             ]
-            return self._layered_events(tokens, start, end, style, entrance=style.entrance_pop)
+            return self._layered_events(tokens, start, end, style, entrance=style.entrance_pop, line_ends=line_ends)
 
         events: list[str] = []
         for i, current_word in enumerate(words):
@@ -603,6 +635,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
                 tokens, word_start, word_end, style,
                 entrance=style.entrance_pop and not events,
                 active_ms=word_end - word_start,
+                line_ends=line_ends,
             ))
 
         return events
@@ -615,6 +648,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
         style: CaptionStyle,
         entrance: bool,
         active_ms: int = 0,
+        line_ends: Optional[list[int]] = None,
     ) -> list[str]:
         """One Dialogue line per enabled layer, all sharing the same words."""
         layers: list[tuple[int, Callable[[_Token], str]]] = []
@@ -629,6 +663,10 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
         layers.append((LAYER_FACE, lambda t: self._face_tags(t, style, active_ms)))
 
         lead = POP_TAGS if entrance else ""
+        if line_ends is not None:
+            # Explicit lines must be identical across all layers and highlight
+            # states. Disable libass soft wrapping so it cannot exceed the cap.
+            lead = f"\\q2\\fs{style.font_size}" + lead
         # The pill overhangs its word; hard spaces keep it clear of the neighbors
         # (on every event, so words don't shift as the pill moves).
         gap = " \\h" if style.highlight_box_color and not style.karaoke_fill else " "
@@ -639,7 +677,9 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
             for t in tokens:
                 karaoke = f"\\kf{t.karaoke_cs}" if t.karaoke_cs else ""
                 parts.append(f"{{{karaoke}{tags_for(t)}}}{t.text}")
-            text = "\\N".join(self._wrap_words(parts, style.max_words_per_line, gap))
+            lines = self._wrap_words(parts, style.max_words_per_line, gap) if line_ends is None else [
+                gap.join(parts[start:end]) for start, end in zip([0, *line_ends[:-1]], line_ends)]
+            text = "\\N".join(lines)
             events.append(f"Dialogue: {layer},{start},{end},Default,,0,0,0,,{{{lead}}}{text}")
         return events
 
@@ -718,9 +758,12 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
     def _plate_tags(self, token: _Token, style: CaptionStyle) -> str:
         # Unspoken words keep their plate so the box never changes size.
         color = self._hex_to_ass(style.line_box_color)
+        pad_x = style.line_box_padding_x if style.line_box_padding_x is not None else style.line_box_padding
+        pad_y = style.line_box_padding_y if style.line_box_padding_y is not None else style.line_box_padding
+        border = f"\\bord{pad_x}" if pad_x == pad_y else f"\\xbord{pad_x}\\ybord{pad_y}"
         return (
             f"\\1a&HFF&\\3a{self._alpha(style.line_box_opacity)}\\3c{color}"
-            f"\\bord{style.line_box_padding}\\shad0\\blur1"
+            f"{border}\\shad0\\blur1"
         )
 
     def _is_emphasis(self, word: str) -> bool:
@@ -730,6 +773,84 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
     # ------------------------------------------------------------------
     # Word Grouping (punctuation-aware)
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _text_width(text: str, style: CaptionStyle) -> float:
+        """The same libass-normalized advances used for caption placement."""
+        metrics = _caption_font(style.font_name)
+        if metrics is not None:
+            return metrics.font.getlength(text) * style.font_size / metrics.height + style.letter_spacing * len(text)
+        return len(text) * (style.font_size * FALLBACK_CHAR_EM + style.letter_spacing)
+
+    def _greedy_line_ends(self, shown: list[str], style: CaptionStyle, output_width: int) -> list[int]:
+        """Greedy line ends, measured before inserting ASS tags or hard spaces."""
+        available = max(1, output_width - 2 * SIDE_MARGIN)
+        gap = "  " if style.highlight_box_color and not style.karaoke_fill else " "
+        ends, start = [], 0
+        for index in range(len(shown)):
+            if index > start and self._text_width(gap.join(shown[start:index + 1]), style) > available:
+                ends.append(index)
+                start = index
+        return [*ends, len(shown)]
+
+    def _line_ends(self, shown: list[str], style: CaptionStyle, output_width: int) -> list[int]:
+        """Balance numeric Lines into nonempty rows; Auto keeps natural wrapping."""
+        fallback = self._greedy_line_ends(shown, style, output_width)
+        if style.max_lines is None or not shown:
+            return fallback
+        count = min(style.max_lines, len(shown))
+        available = max(1, output_width - 2 * SIDE_MARGIN)
+        gap = "  " if style.highlight_box_color and not style.karaoke_fill else " "
+        best, score = None, None
+        # Timed groups contain at most six words. Exhaustive cuts are tiny and
+        # deterministic; fuller earlier rows win when width scores are tied.
+        for cuts in sorted(combinations(range(1, len(shown)), count - 1), reverse=True):
+            ends = [*cuts, len(shown)]
+            widths = [self._text_width(gap.join(shown[start:end]), style)
+                      for start, end in zip([0, *cuts], ends)]
+            if any(width > available for width in widths):
+                continue
+            candidate = max(widths), sum(width * width for width in widths)
+            if score is None or candidate[0] < score[0] - 1e-6 or (
+                    abs(candidate[0] - score[0]) <= 1e-6 and candidate[1] < score[1] - 1e-6):
+                best, score = ends, candidate
+        return best if best is not None else fallback
+
+    def _fit_single_word(self, shown: list[str], style: CaptionStyle, output_width: int) -> CaptionStyle:
+        """Only an indivisible word may shrink; normal groups keep the chosen size."""
+        if style.max_lines is None or len(shown) != 1:
+            return style
+        available = max(1, output_width - 2 * SIDE_MARGIN)
+        width = self._text_width(shown[0], style)
+        if width <= available:
+            return style
+        spacing = style.letter_spacing * len(shown[0])
+        fitted = copy(style)
+        fitted.font_size = max(1, math.floor(style.font_size * max(0, available - spacing) / max(1, width - spacing)))
+        return fitted
+
+    def _cap_word_groups(self, groups: list[WordGroup], style: CaptionStyle, output_width: int) -> list[WordGroup]:
+        """Split existing timed groups at the line cap without dropping any words."""
+        if style.max_lines is None:
+            return groups
+        result = []
+        available = max(1, output_width - 2 * SIDE_MARGIN)
+        for group in groups:
+            current = []
+            for word in group.words:
+                shown = [self._display_word(w.word, style) for w in [*current, word]]
+                # An oversize word owns its group so reducing its size never
+                # changes the size of neighboring, otherwise fitting words.
+                oversize = any(self._text_width(text, style) > available for text in shown)
+                if current and (oversize or len(self._greedy_line_ends(shown, style, output_width)) > style.max_lines):
+                    result.append(WordGroup(current, current[0].start_time_ms, current[-1].end_time_ms,
+                        " ".join(w.word for w in current)))
+                    current = []
+                current.append(word)
+            if current:
+                result.append(WordGroup(current, current[0].start_time_ms, current[-1].end_time_ms,
+                    " ".join(w.word for w in current)))
+        return result
 
     def _group_words(
         self,

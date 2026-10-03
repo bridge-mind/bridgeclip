@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Bookmark, Clapperboard, FolderOpen, ListVideo, Pencil, RefreshCw, Search, Sparkles, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bookmark, Clapperboard, FolderOpen, HardDrive, ListVideo, Pencil, RefreshCw, Search, Sparkles, Trash2 } from 'lucide-react'
 import { getApi } from '../lib/ipc'
 import { useDataVersion } from '../store/use-data-version-store'
-import { cn, errorMessage, formatRelativeDate, formatUsd, localFileUrl } from '../lib/utils'
+import { cn, errorMessage, formatBytes, formatRelativeDate, formatUsd, localFileUrl } from '../lib/utils'
 import { clipFilePath, loadThumbnail } from '../lib/thumbnails'
 import { useSettingsStore } from '../store/use-settings-store'
 import { usePostsStore } from '../store/use-posts-store'
@@ -18,8 +18,12 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { Callout } from '../components/ui/Callout'
 import { Skeleton } from '../components/ui/Skeleton'
 import { ConfirmDialog, type ConfirmRequest } from '../components/ui/ConfirmDialog'
+import { LibraryDeleteSummary } from '../components/LibraryDeleteSummary'
 import { HoverCard } from '../components/ui/HoverCard'
 import { useLibraryMotion } from '../hooks/use-library-motion'
+import { useLibraryStorage } from '../hooks/use-library-storage'
+import { usePageRoot } from '../hooks/use-page-root'
+import type { OutputStorageUsage } from '../../shared/output-storage'
 import './library.css'
 import type { Page as AppPage } from '../components/Sidebar'
 
@@ -29,6 +33,7 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState<{ entry: HistoryEntry; output: JobOutput; clipIndex?: number } | null>(null)
+  usePageRoot(open === null)
   const requestId = useRef(0)
   const openRequestId = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +111,7 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
   }, [configured, open])
 
   const entryPaths = JSON.stringify(entries?.map((entry) => entry.outputDir).sort() ?? [])
+  const storage = useLibraryStorage(entryPaths, previewRevision)
   // The posts store refreshes every 30 s with a new array. Re-check posting
   // status only when a post's link to a clip or its outcome actually changed.
   const postsRevision = useMemo(() => JSON.stringify(posts.map((post) => [post.id, post.clipPath, post.status,
@@ -210,7 +216,7 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
 
   const confirmDelete = (entry: HistoryEntry): void => setConfirm({
     title: 'Delete this Library item?',
-    body: <>Permanently delete “{entry.videoTitle}” and all {entry.clipCount} clips, plus every other file in its run folder? This includes saved transcripts, previews and logs. This cannot be undone. Published posts and copies saved outside this folder remain.<span className="mt-3 block break-all text-xs text-ink-subtle">{entry.outputDir}</span></>,
+    body: <LibraryDeleteSummary key={entry.outputDir} entry={entry} />,
     confirmLabel: 'Delete local files',
     onConfirm: () => { void changeRun(entry, 'delete') }
   })
@@ -328,6 +334,7 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
                 entry={entry}
                 previewRevision={previewRevision}
                 counts={counts[entry.outputDir]}
+                storage={storage[entry.outputDir]}
                 busy={busy.has(entry.outputDir)}
                 onFavorite={() => { void changeRun(entry, 'favorite') }}
                 onDelete={() => confirmDelete(entry)}
@@ -350,10 +357,11 @@ export function LibraryPage({ onNavigate, initialRun, initialClipIndex }: { onNa
   )
 }
 
-function RunCard({ entry, previewRevision, counts, busy, onFavorite, onDelete, onOpen, onOpenFolder }: {
+function RunCard({ entry, previewRevision, counts, storage, busy, onFavorite, onDelete, onOpen, onOpenFolder }: {
   entry: HistoryEntry
   previewRevision: number
   counts: { posted: number; notPosted: number } | null | undefined
+  storage: OutputStorageUsage | null | undefined
   busy: boolean
   onFavorite: () => void
   onDelete: () => void
@@ -363,6 +371,9 @@ function RunCard({ entry, previewRevision, counts, busy, onFavorite, onDelete, o
   const failed = entry.status !== 'completed'
   const { thumb, remaining } = useRunPreview(failed ? null : entry, previewRevision)
   const editing = remaining !== null && remaining > 0
+  const partialSize = Boolean(storage?.truncated || storage?.unreadableCount)
+  const storageLabel = storage ? `${partialSize ? 'At least ' : ''}${formatBytes(storage.bytes)} of local files${partialSize ? ' · Some files couldn’t be counted' : ''}`
+    : storage === null ? 'Size unavailable · Refresh the Library to retry' : 'Calculating local file size…'
   const [previewFailed, setPreviewFailed] = useState(false)
   useEffect(() => { setPreviewFailed(false) }, [thumb, previewRevision])
 
@@ -410,15 +421,21 @@ function RunCard({ entry, previewRevision, counts, busy, onFavorite, onDelete, o
         <p className="truncate text-sm font-medium text-ink" title={entry.videoTitle}>
           {failed ? `${entry.status === 'incomplete' ? 'Unfinished' : 'Unreadable'} run · Open folder` : entry.videoTitle}
         </p>
-        <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-subtle">
-          <span>{formatRelativeDate(entry.date)}</span>
-          {entry.totalCostUsd != null && (
-            <>
-              <span className="text-ink-faint">·</span>
-              <span className="font-mono tabular">{formatUsd(entry.totalCostUsd)}</span>
-            </>
-          )}
-        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-ink-subtle">
+          <p className="flex flex-wrap items-center gap-1.5">
+            <span>{formatRelativeDate(entry.date)}</span>
+            {entry.totalCostUsd != null && (
+              <>
+                <span className="text-ink-faint">·</span>
+                <span className="font-mono tabular">{formatUsd(entry.totalCostUsd)}</span>
+              </>
+            )}
+          </p>
+          <span data-library-storage className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap tabular-nums" title={storageLabel} aria-label={storageLabel}>
+            <HardDrive aria-hidden className="h-3 w-3" />
+            {storage ? `${partialSize ? '≥ ' : ''}${formatBytes(storage.bytes)}` : storage === null ? '—' : '…'}
+          </span>
+        </div>
         <p className="mt-2 text-xs text-ink-muted" title="Only fully published clips count as posted. Scheduled, partial and inbox deliveries remain Not Posted.">
           {entry.editorProject && entry.clipCount === 0 ? remaining === 0 ? 'No clips to finish' : 'No clips baked yet' : counts ? <><span className="text-success">{counts.posted} Posted</span><span className="mx-2 text-ink-faint">·</span><span>{counts.notPosted} Not Posted</span></>
             : counts === null ? 'Posting status unavailable' : 'Checking posting status…'}

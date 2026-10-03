@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Pagination } from '../components/ui/Pagination'
+import { useTablePreferencesStore } from '../store/use-table-preferences-store'
+import { usePageRoot } from '../hooks/use-page-root'
+import './jobs-pagination.css'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Ban, FileText, FolderOpen, ListVideo, Pencil, Plus, RefreshCw, RotateCcw, Search, X } from 'lucide-react'
 import type { HistoryEntry } from '../../preload/index'
 import { MAX_PARALLEL_JOBS } from '../../shared/jobs'
@@ -52,6 +56,7 @@ export function JobsPage({ onNavigate, onViewLibrary }: {
 }): React.JSX.Element {
   const focusedJobId = useJobStore((s) => s.focusedJobId)
   const focused = useJobStore((s) => (s.focusedJobId ? s.jobs[s.focusedJobId] ?? null : null))
+  usePageRoot(focused === null)
   const focusJob = useJobStore((s) => s.focusJob)
   const active = useActiveJobs()
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
@@ -213,6 +218,32 @@ function JobsList({ active, entries, filter, query, error, refreshing, onFilter,
       (filter === 'all' || entry.status === filter) &&
       (!q || entry.videoTitle.toLowerCase().includes(q) || entry.jobId.toLowerCase().includes(q)))
   }, [previous, filter, query])
+  const { pageSize, setPageSize } = useTablePreferencesStore()
+  const [pagination, setPagination] = useState({ page: 1, filter, query, pageSize, direction: 'forward' })
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize))
+  const page = filter !== pagination.filter || query !== pagination.query || pageSize !== pagination.pageSize ? 1 : Math.min(pagination.page, pageCount)
+  // Commit the clamped page, so a later refresh cannot jump back to a vanished page.
+  useEffect(() => {
+    if (page !== pagination.page || filter !== pagination.filter || query !== pagination.query || pageSize !== pagination.pageSize) {
+      setPagination({ page, filter, query, pageSize, direction: 'forward' })
+    }
+  }, [page, filter, query, pageSize, pagination])
+  const historyWindow = useRef<HTMLDivElement>(null)
+  const previousHeight = useRef(0)
+  useLayoutEffect(() => {
+    const element = historyWindow.current
+    if (!element) { previousHeight.current = 0; return }
+    const height = element.scrollHeight
+    const before = previousHeight.current
+    previousHeight.current = height
+    if (!before || before === height || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const animation = element.animate([{ height: `${before}px` }, { height: `${height}px` }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    return () => animation.cancel()
+  }, [page, filter, query, pageSize, visible.length])
+  const changePage = (next: number): void => {
+    if (next === page) return
+    setPagination({ page: Math.max(1, Math.min(next, pageCount)), filter, query, pageSize, direction: next < page ? 'back' : 'forward' })
+  }
   const counts = previous.reduce<Partial<Record<Filter, number>>>((acc, entry) => {
     acc[entry.status] = (acc[entry.status] ?? 0) + 1
     return acc
@@ -329,12 +360,15 @@ function JobsList({ active, entries, filter, query, error, refreshing, onFilter,
               ) : visible.length === 0 ? (
                 <p className="px-4 py-3 text-xs text-ink-subtle">No jobs match this filter.</p>
               ) : (
-                <ul className="divide-y divide-white/[0.05]">
-                  {visible.map((entry) => (
-                    <PreviousJobRow key={entry.jobId} entry={entry} hasDetails={Boolean(sessionJobs[entry.jobId])} onOpen={() => onOpenEntry(entry)} onOpenFolder={() => onOpenFolder(entry.outputDir)} />
-                  ))}
-                </ul>
+                <div ref={historyWindow} className="history-window">
+                  <ul key={`${filter}:${query}:${page}:${pageSize}`} className="history-page divide-y divide-white/[0.05]" data-direction={pagination.direction} aria-label={`Previous jobs, page ${page}`}>
+                    {visible.slice((page - 1) * pageSize, page * pageSize).map((entry) => (
+                      <PreviousJobRow key={entry.jobId} entry={entry} hasDetails={Boolean(sessionJobs[entry.jobId])} onOpen={() => onOpenEntry(entry)} onOpenFolder={() => onOpenFolder(entry.outputDir)} />
+                    ))}
+                  </ul>
+                </div>
               )}
+              {entries !== null && previous.length > 0 && <Pagination page={page} pages={pageCount} total={visible.length} pageSize={pageSize} onChange={changePage} onPageSizeChange={setPageSize} />}
             </section>
           </Panel>
         )}

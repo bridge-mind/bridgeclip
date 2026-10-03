@@ -19,5 +19,5 @@
     },
     "types": ["node"]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/preload/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/preload/**/*.ts", "src/shared/**/*.ts", "engine/clip_engine/data/*.json"]
 }

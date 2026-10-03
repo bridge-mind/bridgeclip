@@ -1,7 +1,9 @@
 import { commitBeforeNavigation } from './lib/navigation'
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { PageRootContext } from './hooks/use-page-root'
 import { Layout } from './components/Layout'
 import { NAV_ITEMS, SIDEBAR_SHORTCUT_KEY, type Page } from './components/Sidebar'
+import { CaptionsPage } from './pages/CaptionsPage'
 import { ClipPage } from './pages/ClipPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { JobsPage } from './pages/JobsPage'
@@ -19,15 +21,26 @@ import { useChangelogStore } from './store/use-changelog-store'
 import { useAssistantStore } from './store/use-assistant-store'
 import { useDataVersionStore } from './store/use-data-version-store'
 import { usePostsStore } from './store/use-posts-store'
+import { useCaptionFavoritesStore } from './store/use-caption-favorites-store'
 import { requestSettingsSection } from './lib/settings-focus'
 import { ChangelogDialog } from './components/Changelog'
 import { Button } from './components/ui/Button'
 import { getApi } from './lib/ipc'
 
+function navigateAfterSave(go: () => void): void {
+  if (document.querySelector('[aria-modal="true"]')) return
+  void commitBeforeNavigation().then(allowed => { if (allowed !== false) go() }, () => {
+    if (window.confirm('Your latest clip edits could not be saved. Leave the editor and discard them?')) go()
+  })
+}
+
 export default function App(): React.JSX.Element {
   const [loadError, setLoadError] = useState(false)
   const [retry, setRetry] = useState(0)
   const [page, setPage] = useState<Page>('clip')
+  const currentPage = useRef(page)
+  currentPage.current = page
+  const atPageRoot = useRef(true)
   const [pageVisit, setPageVisit] = useState(0)
   const [libraryRun, setLibraryRun] = useState<{ outputDir: string; clipIndex?: number } | null>(null)
   /** Set when Help → Check for Updates… asks for Settings → About. */
@@ -39,9 +52,11 @@ export default function App(): React.JSX.Element {
   const changelogOpen = useChangelogStore((s) => s.open)
   const closeChangelog = useCallback(() => useChangelogStore.getState().setOpen(false), [])
 
-  // Sidebar destinations always open the page root, even when already active.
+  // Re-selecting a page root keeps its content, scroll and entrance animation intact.
+  // Nested views still return to the root through the usual save guard.
   // In-page navigation keeps setPage so links to a specific job retain focus.
   const navigateRoot = useCallback((destination: Page): void => {
+    if (destination === currentPage.current && atPageRoot.current) return
     // Keep a modal's progress and cancel controls mounted during an upload.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
     const go = (): void => {
@@ -50,21 +65,21 @@ export default function App(): React.JSX.Element {
       setPage(destination)
       setPageVisit((visit) => visit + 1)
     }
-    // A failed save (e.g. the project changed elsewhere) must not trap the user in the editor.
-    void commitBeforeNavigation().then(go, () => {
-      if (window.confirm('Your latest clip edits could not be saved. Leave the editor and discard them?')) go()
-    })
+    navigateAfterSave(go)
   }, [])
 
   useEffect(() => { if (page !== 'library') setLibraryRun(null) }, [page])
   const viewLibraryRun = useCallback((outputDir: string, clipIndex?: number): void => {
-    setLibraryRun({ outputDir, clipIndex })
-    setPage('library')
-    setPageVisit((visit) => visit + 1)
+    navigateAfterSave(() => {
+      setLibraryRun({ outputDir, clipIndex })
+      setPage('library')
+      setPageVisit((visit) => visit + 1)
+    })
   }, [])
 
   useEffect(() => {
     setLoadError(false)
+    void useCaptionFavoritesStore.getState().load()
     void loadSettings().then(() => checkTools()).catch(() => setLoadError(true))
   }, [loadSettings, checkTools, retry])
 
@@ -112,8 +127,7 @@ export default function App(): React.JSX.Element {
     const unsubscribes = [
       api.update.onState((state) => useUpdateStore.getState().set(state)),
       api.update.onShow(() => {
-        setPage('settings')
-        setShowUpdates((count) => count + 1)
+        navigateAfterSave(() => { setPage('settings'); setShowUpdates((count) => count + 1) })
       })
     ]
     void api.update.getState().then((state) => useUpdateStore.getState().set(state)).catch(() => {})
@@ -155,16 +169,19 @@ export default function App(): React.JSX.Element {
     <>
       {settingsLoaded ? (
         <Layout currentPage={page} onNavigate={navigateRoot}>
-          <Fragment key={pageVisit}>
-            {page === 'clip' && <ClipPage onNavigate={setPage} />}
-            {page === 'library' && <LibraryPage onNavigate={setPage} initialRun={libraryRun?.outputDir} initialClipIndex={libraryRun?.clipIndex} />}
-            {page === 'jobs' && <JobsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
-            {page === 'assistant' && <AssistantPage onOpenSettings={openAssistantSettings} />}
-            {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
-            {page === 'posts' && <PostsPage onNavigate={setPage} />}
-            {page === 'automations' && <AutomationsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
-            {page === 'settings' && <SettingsPage showUpdates={showUpdates} />}
-          </Fragment>
+          <PageRootContext.Provider value={atPageRoot}>
+            <Fragment key={pageVisit}>
+              {page === 'clip' && <ClipPage onNavigate={setPage} />}
+              {page === 'library' && <LibraryPage onNavigate={setPage} initialRun={libraryRun?.outputDir} initialClipIndex={libraryRun?.clipIndex} />}
+              {page === 'captions' && <CaptionsPage onNavigate={setPage} />}
+              {page === 'jobs' && <JobsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
+              {page === 'assistant' && <AssistantPage onOpenSettings={openAssistantSettings} />}
+              {page === 'accounts' && <AccountsPage onNavigate={setPage} />}
+              {page === 'posts' && <PostsPage onNavigate={setPage} />}
+              {page === 'automations' && <AutomationsPage onNavigate={setPage} onViewLibrary={viewLibraryRun} />}
+              {page === 'settings' && <SettingsPage showUpdates={showUpdates} />}
+            </Fragment>
+          </PageRootContext.Provider>
         </Layout>
       ) : (
         <div className="app-backdrop drag flex h-screen items-center justify-center">

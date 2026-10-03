@@ -1,3 +1,4 @@
+import { parseCustomCaption } from '../shared/custom-captions'
 import { normalizeVideoSource, twitchSourceError } from '../shared/video-source'
 import { isAbsolute } from 'path'
 import type { ClipJobConfig } from './pipeline-runner'
@@ -32,6 +33,8 @@ export function validateJobConfig(value: unknown): ClipJobConfig {
     if (!allowed.includes(v[key as keyof ClipJobConfig] as string)) throw new Error(`Invalid ${key}`)
   }
   if (typeof v.captionPreset !== 'string' || !/^[a-z0-9_-]{1,64}$/i.test(v.captionPreset)) throw new Error('Invalid caption preset')
+  const customCaption = v.customCaption === undefined ? undefined : parseCustomCaption(v.customCaption)
+  if (customCaption && customCaption.baseId !== v.captionPreset) throw new Error('Caption style does not match its base')
   if (v.durationRanges !== null && (!Array.isArray(v.durationRanges) || v.durationRanges.length > DURATION_IDS.length || v.durationRanges.some((item) => !DURATION_IDS.includes(item)))) throw new Error('Invalid clip duration')
   for (const time of [v.startTimeSeconds, v.endTimeSeconds]) {
     if (time !== null && (typeof time !== 'number' || !Number.isFinite(time) || time < 0)) throw new Error('Invalid trim time')
@@ -43,11 +46,11 @@ export function validateJobConfig(value: unknown): ClipJobConfig {
   const clipRequest = v.clipRequest === undefined ? undefined : trimClipRequest(v.clipRequest) || undefined
   // Only known fields continue: a misspelled option must not ride along in the job record.
   const known = Object.fromEntries(JOB_REQUEST_FIELDS.filter((key) => v[key] !== undefined).map((key) => [key, v[key]])) as unknown as ClipJobConfig
-  return { ...known, videoUrl: normalizeVideoSource(v.videoUrl), videoSpeed: v.videoSpeed ?? 1, includeTitle: v.includeTitle ?? true, clipRequest, plannerCapabilities: undefined }
+  return { ...known, ...(customCaption ? { customCaption } : {}), videoUrl: normalizeVideoSource(v.videoUrl), videoSpeed: v.videoSpeed ?? 1, includeTitle: v.includeTitle ?? true, clipRequest, plannerCapabilities: undefined }
 }
 
 const JOB_REQUEST_FIELDS: readonly (keyof ClipJobRequest)[] = [
   'workflow', 'videoUrl', 'clippingMode', 'plannerModel', 'transcriptionModel', 'clipRequest', 'maxClips', 'autoClipCount',
-  'durationRanges', 'aspectRatio', 'layoutStyle', 'layoutVision', 'pacing', 'videoSpeed', 'includeCaptions', 'captionPreset',
+  'durationRanges', 'aspectRatio', 'layoutStyle', 'layoutVision', 'pacing', 'videoSpeed', 'includeCaptions', 'captionPreset', 'customCaption',
   'includeTitle', 'startTimeSeconds', 'endTimeSeconds', 'bannerPlatform', 'bannerChannelUrl'
 ]

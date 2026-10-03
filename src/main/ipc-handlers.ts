@@ -1,10 +1,14 @@
 import { openEditor, saveEditor, runEditor, cancelEditor, replaceEditorSource } from './clip-editor'
 import { editorCloseReady, freeEditorMedia, readEditorProgress } from './clip-editor'
+import { listCaptionStyles, saveCaptionStyle, deleteCaptionStyle } from './caption-library'
+import { loadCaptionPreferences, saveCaptionPreferences } from './caption-preferences'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, realpathSync } from 'fs'
 import { loadSettings, publicSettings, replaceApiKey, savePublicSettings, type ApiKeyName, type PublicSettings } from './settings-store'
 import { getJobHistory, getJobOutput, generateThumbnail } from './file-manager'
 import { measureOutputStorage } from './output-storage'
+import { copyCrashReport, getCrashReport, recordCrash } from './crash-reports'
+import { cleanStoredContent, previewStorageCleanup, sourceStorageSummary } from './storage-cleanup'
 import { inspectEdits } from './edit-inspector'
 import { getEnginePath, getBridgeRunnerPath, resolvePythonPath, validatePython } from './pipeline-runner'
 import { cancelTrackedJob, dismissJob, initJobManager, listJobs, liveJobIds } from './job-manager'
@@ -18,7 +22,7 @@ import { automationEnhancementGroups, enhanceAutomationBatch, automationContentS
 import { acknowledgeAutomationWarnings, retryAutomationContent, dismissAutomationMetadataError, automationLibraryClip, reorderAutomationContent, reviewAutomationContent, showAutomationContentInFolder } from './automations'
 import { libraryPostingStatus, libraryMetadataSource, enhanceLibraryMetadata } from './library-posting'
 import { libraryPostingSummary } from './library-posting'
-import { deleteLibraryClips, deleteLibraryRun, setLibraryFavorite, setLibraryPosted } from './library-management'
+import { deleteLibraryClips, deleteLibraryRun, libraryStorageUsage, previewLibraryDeletion, setLibraryFavorite, setLibraryPosted } from './library-management'
 import {
   cancelZernioConnect,
   connectZernioAccount,
@@ -57,6 +61,14 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
     return publicSettings(loadSettings())
   })
   handle('settings:storageUsage', (_event, fresh: unknown = false) => measureOutputStorage(loadSettings().outputDirectory, { fresh: fresh === true }))
+  handle('settings:sourceStorage', () => sourceStorageSummary())
+  handle('settings:previewCleanup', (_event, kind: unknown) => previewStorageCleanup(kind))
+  handle('settings:cleanContent', (_event, token: unknown, ids: unknown) => cleanStoredContent(token, ids))
+  handle('captions:list', () => listCaptionStyles())
+  handle('captions:preferences', (_event, legacyFavorites: unknown) => loadCaptionPreferences(legacyFavorites))
+  handle('captions:savePreferences', (_event, patch: unknown) => saveCaptionPreferences(patch))
+  handle('captions:save', (_event, style: unknown) => saveCaptionStyle(style))
+  handle('captions:delete', (_event, id: unknown) => deleteCaptionStyle(id))
   handle('models:list', (_event, refresh: unknown = false) => getModelCatalog(refresh))
   handle('source:youtubePreview', (_event, source: unknown, details: unknown = false) => getYouTubePreview(source, details))
 
@@ -164,6 +176,13 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('jobs:list', () => listJobs())
   handle('jobs:dismiss', (_event, jobId: unknown) => typeof jobId === 'string' && dismissJob(jobId))
 
+  handle('diagnostics:crashReport', () => getCrashReport())
+  handle('diagnostics:copyCrashReport', (_event, recordedAt: unknown) => copyCrashReport(recordedAt))
+  handle('diagnostics:rendererError', (_event, error: unknown) => {
+    if (!error || typeof error !== 'object') return
+    const value = error as { name?: unknown; stack?: unknown; code?: unknown }
+    recordCrash('renderer-error', { name: typeof value.name === 'string' ? value.name.slice(0, 32) : '', code: typeof value.code === 'string' ? value.code.slice(0, 32) : '', stack: typeof value.stack === 'string' ? value.stack.slice(0, 8192) : '' })
+  })
   handle('diagnostics:getLogPath', () => {
     return getLogFilePath()
   })
@@ -187,6 +206,8 @@ export function registerIpcHandlers(getMainWindow: () => BrowserWindow | null): 
   handle('history:setPosted', (_event, outputDir: unknown, clipIndex: unknown, posted: unknown) => setLibraryPosted(outputDir, clipIndex, posted))
   handle('history:setFavorite', (_event, outputDir: unknown, favorite: unknown) => setLibraryFavorite(outputDir, favorite))
   handle('history:delete', (_event, outputDir: unknown) => deleteLibraryRun(outputDir))
+  handle('history:deletionPreview', (_event, outputDir: unknown) => previewLibraryDeletion(outputDir))
+  handle('history:storageUsage', (_event, outputDir: unknown) => libraryStorageUsage(outputDir))
   handle('history:deleteClips', (_event, outputDir: unknown, indices: unknown) => deleteLibraryClips(outputDir, indices))
   handle('history:metadataSource', (_event, outputDir: unknown, clipIndex: unknown) => libraryMetadataSource(outputDir, clipIndex))
   handle('history:enhanceMetadata', (_event, outputDir: unknown, clipIndex: unknown, options: unknown) => enhanceLibraryMetadata(outputDir, clipIndex, options))

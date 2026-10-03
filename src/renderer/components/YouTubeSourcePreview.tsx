@@ -2,17 +2,22 @@ import { useEffect, useState } from 'react'
 import { Check, ExternalLink, RefreshCw, X, Youtube } from 'lucide-react'
 import type { YouTubePreview } from '../../shared/youtube-preview'
 import { getApi } from '../lib/ipc'
-import { formatTimecode } from '../lib/utils'
+import { cn, formatTimecode } from '../lib/utils'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
 
-export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOnly = false }: {
+export type SavedSourceMetadata = Pick<YouTubePreview, 'title' | 'channel' | 'durationSeconds'>
+
+export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOnly = false, saved, className }: {
   /** Canonical YouTube watch URL. */
   url: string
   onClear?: () => void
   onReplace?: () => void
   disabled?: boolean
   readOnly?: boolean
+  /** Completed runs already have metadata; show it immediately without refetching. */
+  saved?: SavedSourceMetadata
+  className?: string
 }): React.JSX.Element {
   const [summary, setSummary] = useState<YouTubePreview | null>(null)
   const [details, setDetails] = useState<YouTubePreview | null>(null)
@@ -21,8 +26,10 @@ export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOn
   const [imageFailed, setImageFailed] = useState(false)
   const [openError, setOpenError] = useState(false)
   const id = new URL(url).searchParams.get('v')!
+  const hasSaved = !!saved
 
   useEffect(() => {
+    if (hasSaved) return
     let active = true
     setSummary(null)
     setDetails(null)
@@ -35,10 +42,10 @@ export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOn
       })
     }
     return () => { active = false }
-  }, [url, attempt])
+  }, [url, attempt, hasSaved])
 
-  const preview = details ?? summary
-  const channel = details?.channel ?? summary?.channel
+  const preview = saved ? { ...saved, viewCount: null, uploadedOn: null } : details ?? summary
+  const channel = saved?.channel ?? details?.channel ?? summary?.channel
   const loading = !preview && pending > 0
   const uploaded = preview?.uploadedOn ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${preview.uploadedOn}T00:00:00Z`)) : null
   const views = preview?.viewCount != null ? `${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(preview.viewCount)} views` : null
@@ -47,8 +54,8 @@ export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOn
   }
 
   return (
-    <section aria-label="YouTube video preview" className="glass overflow-hidden rounded-2xl animate-fade-in">
-      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:gap-4">
+    <section aria-label="YouTube video preview" className={cn('glass flex flex-col overflow-hidden rounded-2xl animate-fade-in', className)}>
+      <div className="flex flex-1 flex-col gap-3 p-3 sm:flex-row sm:gap-4">
         <div className="relative aspect-video w-full shrink-0 self-start overflow-hidden rounded-xl bg-black/40 sm:w-44 xl:w-52">
           {!imageFailed ? <img
             src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt="Video thumbnail" draggable={false}

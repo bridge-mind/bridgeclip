@@ -33,3 +33,13 @@ test('automatic caption anchors follow portrait layouts and landscape; manual pl
   c.caption_y = .2
   assert.deepEqual(schema.captionAnchor(project, c, 2000), { y: .2, bottom: false })
 })
+
+
+test('caption highlight switches instantly unless the export uses a color fade', () => {
+  assert.equal(schema.captionColorProgress(0, 300, false), 1)
+  assert.equal(schema.captionColorProgress(0, 149, true), 1)
+  assert.equal(schema.captionColorProgress(0, 150, true), 0)
+  assert.equal(schema.captionColorProgress(45, 300, true), .5)
+  assert.equal(schema.captionColorProgress(90, 300, true), 1)
+  assert.equal(schema.captionColorProgress(400, 300, true), 1)
+})

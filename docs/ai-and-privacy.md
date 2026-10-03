@@ -13,6 +13,7 @@ BridgeClip renders on your computer and calls providers directly with your keys.
 | Jev review | Bounded transcript excerpts, titles and diagnostic text | TypeSafe Jev through OpenRouter |
 | Optional source research | Public video title, description and channel | OpenRouter web search and brief generation |
 | Social publishing | Selected clip, caption, accounts and publishing options | Zernio and the selected platforms |
+| Caption preset lookup in Chat | Default styles, saved custom preset names and IDs, and the current default selection | The selected Chat provider (Claude, OpenAI or OpenRouter) |
 
 For a link, the app downloads the source using your network connection. Audio for MAI Transcribe 2 (Quality), Whisper Turbo (Economy), or your selected transcription model (Advanced) goes to OpenRouter. Quality and Economy retry temporary transcription failures and use fallback models when needed; Economy tries Whisper Large V3 before MAI. Advanced retries only your chosen model. Transcript text for clip planning also goes to OpenRouter.
 
@@ -73,11 +74,15 @@ New runs also save `source_context.json` (the source metadata, including its des
 
 ### Settings, accounts and logs
 
+Caption presets and caption preferences (bookmarks and the default for Create and Chat) are saved in the per-user application data folder. Older bookmarks are imported from the interface’s local storage once; new jobs keep independent copies of custom styling.
+
 Settings, the last synced list of connected accounts (platforms, handles and Zernio IDs), local posting history, and upload retry records live in Electron's per-user application data folder. Posting history can include clip paths and titles, account handles, targets, status and links; retry records can include a clip path and an uploaded media URL. Changing or removing the Zernio key switches to a separate local post history and quarantines the old account and upload retry caches.
 
 Returning to the same key restores its saved post history; a newly rotated key has separate history. Quarantined copies remain on disk until a later cleanup after 30 days; to erase them immediately, quit the app and delete the `zernio-*.quarantine-*` files from its application data folder. Key changes do not delete media or posts already held by Zernio or a social platform. Diagnostic logs live in the per-user logs folder.
 
 Remove provider keys in Settings to clear their encrypted saved copies, and review logs before sharing them in an issue.
+
+The app also keeps its latest crash report (`crash-report.json`) and a session marker (`app-session.json`) in the per-user application data folder. The report contains app/system versions, allowlisted error types and codes, a normalized application line number when available, process exit details and up to 30 event names with timestamps. Raw error messages, API keys, media paths, URLs and log context are excluded. **Settings → About → Crash reports** lets you review and copy the report for an issue; nothing is uploaded automatically. A session marker left after an abnormal exit allows the next launch to report an unexpected shutdown, including when the cause was a forced quit or power loss.
 
 Keys are encrypted with your operating system's secure storage. If secure storage is unavailable, BridgeClip asks you to configure or unlock it before saving keys.
 
