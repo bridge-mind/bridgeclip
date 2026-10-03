@@ -16,6 +16,7 @@ test('browse defaults beside custom presets and keep bookmarks through selection
   page.setDefaultTimeout(10000)
   await app.evaluate(({ BrowserWindow, ipcMain }, root) => {
     BrowserWindow.getAllWindows()[0].setSize(1200, 1000)
+    BrowserWindow.getAllWindows()[0].webContents.setBackgroundThrottling(false)
     for (const [channel, handler] of [
       ['settings:load', () => ({ openrouterConfigured: true, zernioConfigured: false, outputDirectory: root, pythonPath: '' })],
       ['system:checkTools', () => ({ python: true, pythonDeps: true, ffmpeg: true, ffmpegCaptions: true, ffprobe: true, ytdlp: true, engine: true, bridgeRunner: true })]
@@ -24,7 +25,11 @@ test('browse defaults beside custom presets and keep bookmarks through selection
   const preset = { id: 'custom-studio', name: 'Studio Mint', baseId: 'pop', style: defaultCaptionStyle('pop') }
   await page.evaluate(preset => window.bridgeclip.captions.save(preset), preset)
   await page.reload()
-  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+  })
   const nav = name => page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name, exact: true })
   const shot = async name => {
     if (!process.env.BRIDGECLIP_E2E_SHOTS) return
@@ -45,6 +50,37 @@ test('browse defaults beside custom presets and keep bookmarks through selection
   const defaults = page.getByRole('radiogroup', { name: 'Default caption presets', exact: true })
   await table.waitFor()
   assert.equal(await defaults.getByRole('radio').count(), 13)
+  const preview = page.getByRole('region', { name: 'Caption preview', exact: true })
+  const assertStill = async () => {
+    await preview.getByRole('button', { name: 'Play caption preview', exact: true }).waitFor()
+    await page.waitForFunction(() => document.querySelector('[aria-label="Caption preview"] audio')?.readyState >= 2)
+    assert.equal(await preview.locator('audio').evaluate(el => el.paused && el.currentTime === 0), true)
+    assert.equal(await preview.locator('[data-caption-state="active"]').evaluate(el => getComputedStyle(el).visibility), 'visible', 'the paused opening frame contains visible captions')
+  }
+  for (const name of ['Pop', 'Spotlight', 'Impact', 'Glow', 'Boxed', 'Sweep', 'Editorial', 'Hype', 'Punch', 'Neon', 'Headline', 'Paper', 'Subtle']) {
+    await defaults.getByRole('radio', { name, exact: true }).click()
+    await assertStill()
+  }
+  await preview.getByRole('button', { name: 'Enable preview audio', exact: true }).click()
+  await assertStill()
+  await preview.getByRole('button', { name: 'Play caption preview', exact: true }).click()
+  await page.waitForFunction(() => document.querySelector('[aria-label="Caption preview"] audio')?.currentTime > .15)
+  const oldAudio = await preview.locator('audio').elementHandle()
+  await defaults.getByRole('radio', { name: 'Pop', exact: true }).click()
+  assert.equal(await oldAudio.evaluate(el => el.paused), true)
+  await oldAudio.dispose()
+  await assertStill()
+  assert.equal(await preview.locator('audio').evaluate(el => el.muted), false, 'sound preference is preserved without autoplay')
+  await nav('Jobs').click()
+  await nav('Captions').click()
+  await assertStill()
+  await page.waitForTimeout(200)
+  await assertStill()
+  if (process.env.BRIDGECLIP_E2E_SHOTS) {
+    fs.mkdirSync(process.env.BRIDGECLIP_E2E_SHOTS, { recursive: true })
+    await page.screenshot({ path: path.join(process.env.BRIDGECLIP_E2E_SHOTS, 'captions-paused.png') })
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await defaults.getByRole('button', { name: 'Bookmark Paper', exact: true }).click()
   assert.equal(await defaults.getByRole('radio', { name: 'Pop', exact: true }).getAttribute('aria-checked'), 'true', 'bookmarking does not select a different style')
   await table.getByRole('button', { name: 'Bookmark Studio Mint', exact: true }).click()
@@ -60,10 +96,11 @@ test('browse defaults beside custom presets and keep bookmarks through selection
   const custom = page.getByRole('radiogroup', { name: 'Your caption styles', exact: true })
   const filters = page.getByRole('radiogroup', { name: 'Caption style filter', exact: true })
   assert.equal(await allDefaults.getByRole('radio').first().getAttribute('aria-label'), 'Paper', 'bookmarks come first')
+  assert.equal(await allDefaults.getByRole('radio', { name: 'Paper', exact: true }).getAttribute('aria-checked'), 'true', 'the first bookmark is selected by default')
   await filters.getByRole('radio', { name: /Favorites/ }).click()
   assert.equal(await allDefaults.getByRole('radio').count(), 1)
   assert.equal(await custom.getByRole('radio').count(), 1)
-  await page.getByText('Pop preview', { exact: true }).waitFor()
+  await page.getByText('Paper preview', { exact: true }).waitFor()
   await custom.getByRole('radio', { name: 'Studio Mint', exact: true }).click()
   await shot('captions-wizard-favorites.png')
   await allDefaults.getByRole('button', { name: 'Remove bookmark from Paper', exact: true }).click()
@@ -89,6 +126,7 @@ test('browse defaults beside custom presets and keep bookmarks through selection
   await allDefaults.getByRole('button', { name: 'Bookmark Paper', exact: true }).click()
   await page.getByRole('button', { name: 'Open captions lab', exact: true }).click()
   await table.getByRole('button', { name: 'Edit Studio Mint', exact: true }).click()
+  await assertStill()
   await page.getByRole('textbox', { name: 'Style name', exact: true }).fill('Studio Rose')
   await page.getByRole('button', { name: 'Save preset', exact: true }).click()
   await page.getByText('All changes saved', { exact: true }).waitFor()

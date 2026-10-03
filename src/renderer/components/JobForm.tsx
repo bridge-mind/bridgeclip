@@ -5,6 +5,8 @@ import { useEffect, useMemo, type ReactNode } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ListVideo, FlaskConical, Minus, Plus, Sparkles } from 'lucide-react'
 import { cn, MOD_KEY, parseTimecode, sourceLabel } from '../lib/utils'
 import { useDraftStore, type ClipDraft, type WizardStep } from '../store/use-draft-store'
+import { useCaptionStore } from '../store/use-caption-store'
+import { useCaptionFavoritesStore } from '../store/use-caption-favorites-store'
 import type { ClipJobRequest } from '../../shared/jobs'
 import { MAX_PARALLEL_JOBS } from '../../shared/jobs'
 import { CaptionPresetPicker } from './CaptionPresetPicker'
@@ -108,6 +110,12 @@ type Update = (patch: Partial<ClipDraft>) => void
 export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason, submitting, className }: JobFormProps): React.JSX.Element {
   const draft = useDraftStore()
   const { update, step, setStep } = draft
+  const { styles, loaded: captionsLoaded, load: loadCaptions } = useCaptionStore()
+  const favorites = useCaptionFavoritesStore(state => state.favorites)
+  useEffect(() => { void loadCaptions() }, [loadCaptions])
+  useEffect(() => {
+    if (captionsLoaded && (step === 'captions' || step === 'review')) draft.initializeCaption(favorites, styles)
+  }, [captionsLoaded, step, draft.initializeCaption, favorites, styles])
 
   const trim = useMemo(
     () => parseTrimRange(draft.trimOpen, draft.trimStart, draft.trimEnd),
@@ -121,10 +129,15 @@ export function JobForm({ onOpenCaptionsLab, onSubmit, onViewJob, blockedReason,
   const videoValid = hasSource && draft.workflow !== null && !trim.error
   const modelsValid = draft.clippingMode !== 'advanced' || (isModelId(draft.plannerModel) && isModelId(draft.transcriptionModel))
   const stepValid = videoValid && (step !== 'clips' || modelsValid)
-  const canSubmit = videoValid && modelsValid && !blockedReason && !submitting && !draft.started
+  const captionReady = !draft.captionDefaultPending || favorites.length === 0 || captionsLoaded
+  const canSubmit = videoValid && modelsValid && captionReady && !blockedReason && !submitting && !draft.started
 
   const submit = (): void => {
-    if (canSubmit) onSubmit(buildJobRequest(draft, trim))
+    if (canSubmit) {
+      // Generate is available from every step, including before visiting Captions.
+      draft.initializeCaption(favorites, styles)
+      onSubmit(buildJobRequest(useDraftStore.getState(), trim))
+    }
   }
 
   // ⌘↵ / Ctrl+↵ generates only once a video and workflow are chosen.

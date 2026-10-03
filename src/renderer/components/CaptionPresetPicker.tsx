@@ -412,7 +412,7 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
   const transcriptRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 480, height: 128 })
-  const [playRequested, setPlayRequested] = useState(!reducedMotion)
+  const [playRequested, setPlayRequested] = useState(!labControls && !reducedMotion)
   const [playAttempt, setPlayAttempt] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)

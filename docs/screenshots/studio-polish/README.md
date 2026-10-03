@@ -37,7 +37,11 @@ Once presets are saved, the page opens with a table and a New preset action. Def
 
 ![Custom presets and default styles with bookmarks](captions-table.png)
 
-In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches.
+Previews on the Captions page open paused with sample text visible, even with sound enabled. Play starts the recording; switching styles or reopening the page returns to a still preview.
+
+![Captions visible at the paused opening frame](captions-paused.png)
+
+In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches. New clip setups select the first available bookmark in picker order, or Pop when there are none; explicit choices stay selected.
 
 ![Favorite caption styles in Create](captions-favorites.png)
 

@@ -62,7 +62,9 @@ Give it a name and choose **Save preset** to save without leaving the editor. **
 
 Default presets also appear below your saved table. Select one to preview it, choose **Customize** to start a new preset, or **Use preset** to return it to Create. The initial base-selection wizard remains available when you have no custom presets.
 
-Use the bookmark beside a custom preset or on any default tile to add it to **Favorites**. Bookmarks stay saved on this device across app launches and appear first in each group. In Create and the clip editor, switch from **All** to **Favorites** to show only your bookmarks; default and custom styles remain separate. Bookmarking or filtering never changes the selected caption style. Renaming a preset keeps its bookmark, and deleting it removes the bookmark.
+Use the bookmark beside a custom preset or on any default tile to add it to **Favorites**. Bookmarks stay saved on this device across app launches and appear first in each group. In Create and the clip editor, switch from **All** to **Favorites** to show only your bookmarks; default and custom styles remain separate. New clip setups select the first available bookmark in picker order (defaults, then custom styles), or Pop if none are available. Once selected, bookmarking or filtering does not change the draft's caption style. Renaming a preset keeps its bookmark, and deleting it removes the bookmark.
+
+On the Captions page, previews open paused with sample text visible, including when switching styles or opening an editor. Press **Play** to start playback. Turning sound on does not start a paused preview.
 
 **Clean switch** changes the active word’s color instantly. **Color fade** and **Pop & fade** deliberately blend colors in both the preview and exported captions; short word events switch instantly to match the export.
 
