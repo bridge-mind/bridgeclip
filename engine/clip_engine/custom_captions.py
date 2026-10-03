@@ -34,8 +34,11 @@ def validate_custom_caption(value, preset_id=None):
     if isinstance(style, dict) and base in LEGACY_RENDERING['presets']:
         style = {**LEGACY_RENDERING['common'], **LEGACY_RENDERING['presets'][base], **style}
     keys = set(INTEGERS) | PROBABILITIES | FLAGS | COLORS | OPTIONAL_COLORS | {'font_name', 'future_words', 'position', 'alignment'}
-    if not isinstance(style, dict) or set(style) - {'max_lines'} != keys:
+    if not isinstance(style, dict) or set(style) - {'max_lines', 'line_box_padding_x', 'line_box_padding_y'} != keys:
         fail()
+    for key in ('line_box_padding_x', 'line_box_padding_y'):
+        if key in style and (type(style[key]) is not int or not 0 <= style[key] <= 40):
+            fail()
     max_lines = style.get('max_lines')
     if max_lines is not None and (type(max_lines) is not int or not 1 <= max_lines <= 3):
         fail()

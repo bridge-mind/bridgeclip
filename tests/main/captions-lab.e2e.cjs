@@ -81,10 +81,42 @@ test('caption presets start with a base wizard, open a saved library table, and 
   await setInput('Outline color', '#112233')
   await page.getByRole('switch', { name: 'Background', exact: true }).click()
   await setInput('Background opacity', '75')
-  await setInput('Background padding', '35')
+  assert.equal(await page.getByLabel('Horizontal padding', { exact: true }).inputValue(), '22')
+  assert.equal(await page.getByLabel('Vertical padding', { exact: true }).inputValue(), '22')
+  await setInput('Horizontal padding', '35')
+  await setInput('Vertical padding', '8')
   assert.equal(await page.getByRole('switch', { name: 'Word pill', exact: true }).isDisabled(), true)
   const preview = page.getByRole('region', { name: 'Caption preview', exact: true })
   await preview.getByRole('button', { name: 'Play caption preview', exact: true }).waitFor()
+  const backgroundBounds = async (x, y) => {
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForFunction(({ x, y }) => {
+      const frame = document.querySelector('[aria-label="Caption preview"] .caption-preview-stage').firstElementChild
+      const plate = getComputedStyle(frame.querySelector('.caption-background'), '::before')
+      const style = getComputedStyle(frame), scale = parseFloat(frame.style.width) / 960
+      return Math.abs(parseFloat(style.fontSize) - parseFloat(frame.style.fontSize)) < .05 &&
+        Math.abs(parseFloat(style.lineHeight) - parseFloat(frame.style.lineHeight)) < .05 &&
+        Math.abs(parseFloat(plate.left) + x * scale) < .05 && Math.abs(parseFloat(plate.top) + y * scale) < .05
+    }, { x, y })
+    return preview.locator('.caption-background').evaluate(element => {
+    const plate = getComputedStyle(element, '::before')
+    const word = element.querySelector('[data-caption-state]').getBoundingClientRect()
+    return { width: parseFloat(plate.width), height: parseFloat(plate.height), left: parseFloat(plate.left), top: parseFloat(plate.top), word: [word.x, word.y, word.width, word.height] }
+    })
+  }
+  const padded = await backgroundBounds(35, 8)
+  await setInput('Horizontal padding', '0')
+  const narrow = await backgroundBounds(0, 8)
+  assert.equal(narrow.height, padded.height)
+  assert.ok(Math.abs(padded.width - narrow.width + 2 * padded.left) < .1)
+  assert.deepEqual(narrow.word, padded.word, 'horizontal padding must not reflow the caption')
+  await setInput('Vertical padding', '0')
+  const short = await backgroundBounds(0, 0)
+  assert.equal(short.width, narrow.width)
+  assert.ok(Math.abs(narrow.height - short.height + 2 * narrow.top) < .1)
+  assert.deepEqual(short.word, narrow.word, 'vertical padding must not move the caption')
+  await setInput('Horizontal padding', '35')
+  await setInput('Vertical padding', '8')
   const sampleWord = CAPTION_DEMO_WORDS[2]
   const sampleTime = Math.round((sampleWord.start + sampleWord.end) / 20) * 10
 
@@ -293,7 +325,7 @@ test('caption presets start with a base wizard, open a saved library table, and 
     const line = el.closest('[data-caption-line]')
     const plate = line ? line.parentElement : el.parentElement
     return { font: style.fontFamily, weight: style.fontWeight, color: style.color, shadow: style.textShadow,
-      plate: getComputedStyle(plate).backgroundColor, plateInline: plate.getAttribute('style'), sweep: el.firstElementChild.style.clipPath,
+      plate: getComputedStyle(plate, '::before').backgroundColor, plateInline: plate.getAttribute('style'), sweep: el.firstElementChild.style.clipPath,
       highlight: getComputedStyle(el.firstElementChild).color }
   })
   assert.match(appearance.font, /Poppins/)
@@ -338,7 +370,8 @@ test('caption presets start with a base wizard, open a saved library table, and 
   assert.equal(await mine.getByRole('radio', { name: 'Studio Mint', exact: true }).getAttribute('aria-checked'), 'true')
   const saved = await page.evaluate(() => window.bridgeclip.captions.list())
   assert.equal(saved.length, 1)
-  assert.equal(saved[0].style.line_box_padding, 35)
+  assert.equal(saved[0].style.line_box_padding_x, 35)
+  assert.equal(saved[0].style.line_box_padding_y, 8)
   assert.equal(saved[0].style.font_size, 100)
   assert.equal(saved[0].style.karaoke_fill, true)
   assert.equal(saved[0].style.max_lines, 2)

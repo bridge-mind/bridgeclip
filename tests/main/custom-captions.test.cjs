@@ -91,6 +91,25 @@ test('line limits round-trip and legacy presets keep automatic wrapping', t => {
   }
 })
 
+test('independent background padding persists without rewriting legacy snapshots', t => {
+  const root = tempDir('bridgeclip-caption-padding-'); t.after(root.cleanup)
+  const { electron } = fakeElectron(root.dir)
+  const library = loadMain("export * from './src/main/caption-library'", { electron })
+  const legacy = preset()
+  legacy.style.line_box_padding = 31
+  assert.deepEqual(schema.parseCustomCaption(legacy), legacy)
+  for (const patch of [{ line_box_padding_x: 40 }, { line_box_padding_y: 0 }, { line_box_padding_x: 35, line_box_padding_y: 8 }]) {
+    const value = { ...legacy, style: { ...legacy.style, ...patch } }
+    library.saveCaptionStyle(value)
+    assert.deepEqual(library.listCaptionStyles(), [value])
+  }
+  for (const axis of ['line_box_padding_x', 'line_box_padding_y']) {
+    for (const value of [null, false, -1, 41, 1.5, '10', NaN]) {
+      assert.throws(() => schema.parseCustomCaption({ ...legacy, style: { ...legacy.style, [axis]: value } }), /Invalid custom caption/)
+    }
+  }
+})
+
 test('custom captions survive job validation and editor saves, invalidate bakes and preserve Jev reviews', () => {
   const request = { videoUrl: 'https://example.com/video', workflow: 'review', autoClipCount: true, maxClips: null,
     aspectRatio: '9:16', layoutStyle: 'auto', layoutVision: true, pacing: 'natural', includeCaptions: true, captionPreset: 'pop',

@@ -40,6 +40,9 @@ export interface CaptionStyleSettings {
   glow_blur: number
   glow_active_only: boolean
   line_box_padding: number
+  /** Per-axis overrides; absent values preserve the saved uniform padding. */
+  line_box_padding_x?: number
+  line_box_padding_y?: number
 }
 
 /** Embedded in jobs and editor projects so later library edits never change an existing clip. */
@@ -74,6 +77,9 @@ export function parseCustomCaption(value: unknown): CustomCaptionPreset {
     if (!Number.isInteger(s[key]) || s[key] < low || s[key] > high) fail()
   }
   if (s.max_lines !== null && (!Number.isInteger(s.max_lines) || s.max_lines < 1 || s.max_lines > 3)) fail()
+  for (const key of ['line_box_padding_x', 'line_box_padding_y'] as const) {
+    if (Object.hasOwn(s, key) && (typeof s[key] !== 'number' || !Number.isInteger(s[key]) || s[key]! < 0 || s[key]! > 40)) fail()
+  }
   for (const key of ['dim_opacity', 'line_box_opacity', 'shadow_opacity', 'glow_opacity'] as const) {
     if (typeof s[key] !== 'number' || !Number.isFinite(s[key]) || s[key] < 0 || s[key] > 1) fail()
   }
@@ -90,7 +96,7 @@ export function parseCustomCaption(value: unknown): CustomCaptionPreset {
     'primary_color', 'highlight_color', 'outline_color', 'outline_width', 'future_words', 'dim_opacity', 'entrance_pop',
     'karaoke_fill', 'color_transition', 'highlight_box_color', 'glow_color', 'line_box_color', 'line_box_opacity',
     'bold', 'letter_spacing', 'position', 'alignment', 'word_by_word_highlight', 'shadow_color', 'shadow_opacity',
-    'shadow_blur', 'shadow_offset', 'shadow_spread', 'highlight_box_padding', 'glow_opacity', 'glow_radius', 'glow_blur', 'glow_active_only', 'line_box_padding']
+    'shadow_blur', 'shadow_offset', 'shadow_spread', 'highlight_box_padding', 'glow_opacity', 'glow_radius', 'glow_blur', 'glow_active_only', 'line_box_padding', 'line_box_padding_x', 'line_box_padding_y']
   if (Object.keys(s).some(key => !keys.includes(key as keyof CaptionStyleSettings))) fail()
-  return { id: v.id, name: v.name.trim(), baseId: v.baseId, style: Object.fromEntries(keys.map(key => [key, s[key]])) as unknown as CaptionStyleSettings }
+  return { id: v.id, name: v.name.trim(), baseId: v.baseId, style: Object.fromEntries(keys.filter(key => Object.hasOwn(s, key)).map(key => [key, s[key]])) as unknown as CaptionStyleSettings }
 }

@@ -27,8 +27,9 @@ def custom():
 
 def test_lab_starting_values_match_every_engine_preset():
     for name, fields in DEFAULTS.items():
-        assert set(fields) == set(CaptionStyle.__annotations__) - {'emphasis_color'}
+        assert set(fields) == set(CaptionStyle.__annotations__) - {'emphasis_color', 'line_box_padding_x', 'line_box_padding_y'}
         base = get_caption_preset(name)
+        assert base.line_box_padding_x is None and base.line_box_padding_y is None
         for key, value in fields.items():
             assert getattr(base, key) == value, (name, key)
 
@@ -84,6 +85,69 @@ def test_legacy_custom_captions_normalize_to_automatic_lines():
     for limit in (None, 1, 2, 3):
         snapshot['style']['max_lines'] = limit
         assert validate_custom_caption(snapshot)['style']['max_lines'] == limit
+
+
+@pytest.mark.parametrize('axis', ['line_box_padding_x', 'line_box_padding_y'])
+@pytest.mark.parametrize('value', [None, False, -1, 41, 1.5, '10'])
+def test_invalid_background_padding_is_rejected(axis, value):
+    snapshot = custom()
+    snapshot['style'][axis] = value
+    with pytest.raises(ValueError):
+        validate_custom_caption(snapshot)
+
+
+def test_background_padding_preserves_legacy_exports_and_scales_each_axis(tmp_path):
+    from clip_engine.services.rendering_service import RenderingService
+
+    snapshot = custom()
+    snapshot['style'].update(line_box_color='#00FF00', line_box_padding=31, outline_width=0, shadow_opacity=0, entrance_pop=False)
+    service = CaptionGeneratorService()
+    legacy = resolve_caption_style('pop', snapshot)
+    equal = resolve_caption_style('pop', {**snapshot, 'style': {**snapshot['style'], 'line_box_padding_x': 31, 'line_box_padding_y': 31}})
+    assert service._plate_tags(None, legacy) == service._plate_tags(None, equal)
+    assert service._block_size(['Hello'], legacy, 1080) == service._block_size(['Hello'], equal, 1080)
+    snapshot['style'].update(line_box_padding_x=40, line_box_padding_y=0)
+    style = resolve_caption_style('pop', snapshot)
+    assert r'\xbord40\ybord0' in service._plate_tags(None, style)
+    size = service._block_size(['Hello'], style, 1080)
+    style.line_box_padding_y = 20
+    taller = service._block_size(['Hello'], style, 1080)
+    assert taller[0] == size[0] and taller[1] == size[1] + 40
+    style.line_box_padding_x = 10
+    narrower = service._block_size(['Hello'], style, 1080)
+    assert narrower[0] == taller[0] - 60 and narrower[1] == taller[1]
+    scaled = RenderingService._landscape_caption_style(style, 1080)
+    assert (scaled.line_box_padding_x, scaled.line_box_padding_y) == (6, 13)
+    assert (style.line_box_padding_x, style.line_box_padding_y) == (10, 20)
+
+
+def test_background_padding_changes_only_its_axis_in_baked_pixels(tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    ffmpeg = str(ROOT / 'engine-bin/ffmpeg') if (ROOT / 'engine-bin/ffmpeg').exists() else shutil.which('ffmpeg')
+    if not ffmpeg:
+        pytest.skip('FFmpeg is needed for the background render check')
+    bounds = []
+    for x, y in [(10, 8), (35, 8), (35, 30)]:
+        snapshot = custom()
+        snapshot['style'].update(line_box_color='#00FF00', line_box_opacity=1, line_box_padding_x=x, line_box_padding_y=y,
+            primary_color='#FFFFFF', highlight_color='#FFFFFF', outline_width=0, shadow_opacity=0, entrance_pop=False)
+        ass = tmp_path / f'padding-{x}-{y}.ass'
+        asyncio.run(CaptionGeneratorService().generate_captions([TranscriptSegment(0, 1000, 'Hello')],
+            0, 1000, str(ass), caption_style=resolve_caption_style('pop', snapshot), output_width=600, output_height=1000))
+        frame = ass.with_suffix('.png')
+        subprocess.run([ffmpeg, '-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=600x1000:r=1:d=1',
+            '-vf', f'ass={ass}:fontsdir={ROOT / "engine/assets/fonts"}', '-frames:v', '1', str(frame)],
+            capture_output=True, check=True, timeout=30)
+        pixels = np.asarray(Image.open(frame).convert('RGB'))
+        rows, columns = np.where((pixels[:, :, 1] > 100) & (pixels[:, :, 0] < 40) & (pixels[:, :, 2] < 40))
+        bounds.append((columns.min(), columns.max(), rows.min(), rows.max()))
+    normal, wide, tall = bounds
+    assert normal[2:] == wide[2:]
+    assert abs((wide[1] - wide[0]) - (normal[1] - normal[0]) - 50) <= 2
+    assert wide[:2] == tall[:2]
+    assert abs((tall[3] - tall[2]) - (wide[3] - wide[2]) - 44) <= 2
 
 
 @pytest.mark.parametrize('limit', [False, True, 0, -1, 4, 1.5, '2', [], {}])

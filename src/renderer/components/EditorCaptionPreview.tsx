@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { CandidateEdit, EditorProject } from '../../shared/clip-editor'
 import { captionAnchor } from '../lib/caption-preview'
-import { captionPreviewPreset, textShadow } from './CaptionPresetPicker'
+import { captionBackgroundStyle, captionPreviewPreset, textShadow } from './CaptionPresetPicker'
 
 // Preset sizes in the export's 1080×1920 coordinate system. Browser font metrics
 // differ from libass; this is a placement guide, not a pixel-exact render.
@@ -59,7 +59,7 @@ export function EditorCaptionPreview({ canvas, project, candidate, time, disable
         const center = anchor.y - (anchor.bottom ? e.currentTarget.getBoundingClientRect().height / bounds.height / 2 : 0)
         onMove(Math.max(.1, Math.min(.9, center + direction * (e.shiftKey ? .05 : .01))), true)
       }}>
-      <span className="editor-caption-words" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * size / (preset.exportSize ?? 84)}px ${preset.plate}` : undefined }}>
+      <span className="editor-caption-words caption-background" style={captionBackgroundStyle(preset, size / (preset.exportSize ?? 84))}>
         {['Captions', 'go', 'here'].map((word, i) => <span key={i} style={{ color: i === 1 ? preset.highlight : preset.primary,
           background: i === 1 ? preset.pill : undefined,
           padding: preset.pill ? '0 .15em' : undefined, borderRadius: '.15em',

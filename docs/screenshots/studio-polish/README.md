@@ -14,7 +14,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Library | ![Original Library cards](library-before.png) | ![Storage size on Library cards](library-after.png) |
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
-| Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and background padding](captions-lab.png) |
+| Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
 | Posts | ![Ten recent posts and Show all](posts-before.png) | ![Numbered pages with a shared page-size preference](posts-after.png) |
 
 ## Storage cleanup
@@ -29,7 +29,7 @@ Review & edit users also see retained source videos and editor previews. Select 
 
 ## Captions lab
 
-Choose a default as a starting point, then adjust your own preset with a live preview. Switch between short and long voice samples, or select a caption line to jump to it. This example shows two balanced lines and adjustable background padding.
+Choose a default as a starting point, then adjust your own preset with a live preview. Switch between short and long voice samples, or select a caption line to jump to it. This example shows two balanced lines with separate horizontal and vertical background padding.
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 

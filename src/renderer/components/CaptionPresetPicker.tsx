@@ -12,6 +12,7 @@ import captionLongDemoAudio from '../assets/audio/captions-demo-longer.mp3'
 import { onRadioKeyDown, Segmented } from './ui/Segmented'
 import { cn } from '../lib/utils'
 import { Button } from './ui/Button'
+import './caption-background.css'
 
 /**
  * Mirrors the caption presets in engine/clip_engine/config.py closely
@@ -41,7 +42,8 @@ export interface CaptionPreset {
   glow?: string
   /** Translucent plate behind the whole line. */
   plate?: string
-  platePadding?: number
+  platePaddingX?: number
+  platePaddingY?: number
   karaoke?: boolean
   /** How unspoken words look. */
   future?: 'show' | 'dim' | 'hide'
@@ -291,7 +293,7 @@ export function captionPreviewPreset(id: string, custom?: CustomCaptionPreset): 
     stroke: s.outline_width, uppercase: s.uppercase, maxWords: s.max_words_per_line, maxLines: s.max_lines,
     entrancePop: s.entrance_pop, karaoke: s.karaoke_fill, colorTransition: s.color_transition,
     future: s.future_words, dimOpacity: s.dim_opacity, pill: s.highlight_box_color ?? undefined,
-    glow: s.glow_color ?? undefined, platePadding: s.line_box_padding,
+    glow: s.glow_color ?? undefined, platePaddingX: s.line_box_padding_x ?? s.line_box_padding, platePaddingY: s.line_box_padding_y ?? s.line_box_padding,
     words: s.max_words_per_line === 1 ? ['', 'yours', ''] : s.max_words_per_line === 2 ? ['make', 'yours', ''] : ['make', 'it', 'yours'],
     plate: s.line_box_color ? `rgb(${parseInt(s.line_box_color.slice(1, 3), 16)} ${parseInt(s.line_box_color.slice(3, 5), 16)} ${parseInt(s.line_box_color.slice(5, 7), 16)} / ${s.line_box_opacity})` : undefined }
 }
@@ -311,6 +313,13 @@ export function textShadow(p: CaptionPreset, scale = SAMPLE_SCALE): string {
   if (p.shadow === 'hard') layers.push(`0 ${(w + 2.5).toFixed(2)}px 0 rgb(0 0 0 / 0.9)`)
   if (p.shadow === 'halo') layers.push('0 1px 6px rgb(0 0 0 / 0.85)', '0 0 3px rgb(0 0 0 / 0.6)')
   return layers.join(', ') || 'none'
+}
+
+/** Grow the backing without moving words or changing line wrapping. */
+export function captionBackgroundStyle(preset: CaptionPreset, scale: number): CSSProperties {
+  return { '--caption-background': preset.plate ?? 'transparent',
+    '--caption-padding-x': `${(preset.platePaddingX ?? 22) * scale}px`,
+    '--caption-padding-y': `${(preset.platePaddingY ?? 22) * scale}px` } as CSSProperties
 }
 
 export function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.Element {
@@ -366,7 +375,7 @@ export function CaptionSample({ preset }: { preset: CaptionPreset }): React.JSX.
   return (
     <span className="relative block text-center leading-[1.1]" style={base}>
       {preset.plate ? (
-        <span className="inline-block rounded" style={{ background: preset.plate, boxShadow: `0 0 0 ${(preset.platePadding ?? 22) * preset.size / (preset.exportSize ?? 84)}px ${preset.plate}` }}>
+        <span className="caption-background inline-block rounded" style={captionBackgroundStyle(preset, preset.size / (preset.exportSize ?? 84))}>
           {line}
         </span>
       ) : (
@@ -620,9 +629,9 @@ export function CaptionMotionPreview({ preset, disabled, labControls = false }: 
       {labControls && playbackError && <p role="status" className="px-3 pt-3 text-xs text-danger">Couldn’t play audio. Try replaying.</p>}
       <div ref={stageRef} aria-hidden="true" className="caption-preview-stage flex h-32 items-center justify-center overflow-hidden px-4">
         <div className="text-center leading-snug" style={base}>
-          {preset.maxLines == null ? <span className="inline-flex max-w-full flex-wrap justify-center gap-x-[0.3em] rounded-md" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * frameScale}px ${preset.plate}` : undefined }}>
+          {preset.maxLines == null ? <span className="caption-background inline-flex max-w-full flex-wrap justify-center gap-x-[0.3em] rounded-md" style={captionBackgroundStyle(preset, frameScale)}>
             {words.map((_, offset) => renderWord(groupStart + offset))}
-          </span> : <span className="inline-flex max-w-full flex-col items-center rounded-md" style={{ background: preset.plate, boxShadow: preset.plate ? `0 0 0 ${(preset.platePadding ?? 22) * frameScale}px ${preset.plate}` : undefined }}>
+          </span> : <span className="caption-background inline-flex max-w-full flex-col items-center rounded-md" style={captionBackgroundStyle(preset, frameScale)}>
             {group.lines.map(line => <span key={line.start} data-caption-line className="inline-flex flex-nowrap justify-center whitespace-nowrap" style={{ gap: layout.gap * frameScale, fontSize: line.scale < 1 ? fontSize * frameScale * line.scale : undefined, letterSpacing: line.scale < 1 ? (preset.letterSpacing ?? 0) * frameScale * line.scale : undefined }}>
               {demoWords.slice(line.start, line.end).map((_, offset) => renderWord(line.start + offset))}
             </span>)}

@@ -477,14 +477,15 @@ class CaptionGeneratorService:
         pad = max(
             style.outline_width,
             style.outline_width + style.shadow_spread + style.shadow_blur if style.shadow_opacity > 0 else 0,
-            style.line_box_padding + 1 if style.line_box_color else 0,
             style.glow_radius + style.glow_blur if style.glow_color else 0,
             style.highlight_box_padding + 1 if pill else 0,
         )
+        pad_x = max(pad, (style.line_box_padding_x if style.line_box_padding_x is not None else style.line_box_padding) + 1) if style.line_box_color else pad
+        pad_y = max(pad, (style.line_box_padding_y if style.line_box_padding_y is not None else style.line_box_padding) + 1) if style.line_box_color else pad
         shadow = style.shadow_offset if style.shadow_opacity > 0 else 0
         grow = 1.06 if style.entrance_pop else 1.0
-        half = max(pad - top, bottom + pad + shadow) * grow
-        return round((min(max(widths), wrap_w) + 2 * pad) * grow), round(2 * half)
+        half = max(pad_y - top, bottom + pad_y + shadow) * grow
+        return round((min(max(widths), wrap_w) + 2 * pad_x) * grow), round(2 * half)
 
     @staticmethod
     def _parse_ass_time(value: str) -> int:
@@ -757,9 +758,12 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
     def _plate_tags(self, token: _Token, style: CaptionStyle) -> str:
         # Unspoken words keep their plate so the box never changes size.
         color = self._hex_to_ass(style.line_box_color)
+        pad_x = style.line_box_padding_x if style.line_box_padding_x is not None else style.line_box_padding
+        pad_y = style.line_box_padding_y if style.line_box_padding_y is not None else style.line_box_padding
+        border = f"\\bord{pad_x}" if pad_x == pad_y else f"\\xbord{pad_x}\\ybord{pad_y}"
         return (
             f"\\1a&HFF&\\3a{self._alpha(style.line_box_opacity)}\\3c{color}"
-            f"\\bord{style.line_box_padding}\\shad0\\blur1"
+            f"{border}\\shad0\\blur1"
         )
 
     def _is_emphasis(self, word: str) -> bool:

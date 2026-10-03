@@ -844,7 +844,7 @@ class RenderingService:
     # Pixel-sized caption style fields, scaled together for landscape output.
     _CAPTION_PIXEL_FIELDS = (
         "font_size", "outline_width", "shadow_blur", "shadow_offset", "shadow_spread",
-        "highlight_box_padding", "glow_radius", "glow_blur", "line_box_padding", "letter_spacing",
+        "highlight_box_padding", "glow_radius", "glow_blur", "line_box_padding", "line_box_padding_x", "line_box_padding_y", "letter_spacing",
     )
 
     @classmethod
