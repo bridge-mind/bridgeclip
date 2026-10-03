@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Added
 
+- Caption bookmarks keep favorite defaults and custom presets easy to find across app launches. Create and the clip editor offer an **All / Favorites** filter, with bookmarks first in each style group.
 - **Crash reports** in Settings → About lets you review and copy a local issue report after an app or interface error. Reports omit keys, media paths and raw error messages; Help also offers **Copy Latest Crash Report**.
 - Caption presets expose separate **Horizontal padding** and **Vertical padding** controls for backgrounds, applied to previews and exports. New presets start with 24 horizontal padding; existing presets keep their saved padding.
 
@@ -34,6 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
+- Captions shows default styles below your saved presets, with previews and actions to customize or use them in Create.
 - Posts explains its activity feed below the heading and makes clear that dismissing updates keeps published posts and Library status intact.
 - Captions keeps the editor open after saving, simplifies the preview header, and offers **Save & leave**, **Discard**, or **Keep editing** before leaving unsaved changes.
 - Posts replaces **Show all** with numbered pages for Recent posts and remembers the page-size setting shared with Jobs. Scheduled posts and items needing attention stay visible.

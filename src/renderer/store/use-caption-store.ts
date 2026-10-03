@@ -4,6 +4,7 @@ import { DEFAULT_CAPTION_PRESET, isCaptionPresetId, type CaptionPresetId } from 
 import { getApi } from '../lib/ipc'
 import { errorMessage } from '../lib/utils'
 import { readCaptionLabDraft, writeCaptionLabDraft } from '../lib/caption-lab-draft'
+import { useCaptionFavoritesStore } from './use-caption-favorites-store'
 
 const recoveredDraft = readCaptionLabDraft()
 
@@ -34,7 +35,10 @@ export const useCaptionStore = create<CaptionState>((set, get) => ({
     finally { set({ loading: false }) }
   },
   save: async (style) => { set({ styles: await getApi().captions.save(style), loaded: true, error: null }) },
-  remove: async (id) => { set({ styles: await getApi().captions.delete(id), error: null }) }
+  remove: async (id) => {
+    set({ styles: await getApi().captions.delete(id), error: null })
+    useCaptionFavoritesStore.getState().remove(id)
+  }
 }))
 
 useCaptionStore.subscribe(({ editing, styles }) => {

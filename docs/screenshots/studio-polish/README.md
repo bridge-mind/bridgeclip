@@ -33,9 +33,13 @@ Choose a default as a starting point, then adjust your own preset with a live pr
 
 ![Editing a custom caption preset with two lines](captions-lab.png)
 
-Once presets are saved, the page opens with a table and a New preset action.
+Once presets are saved, the page opens with a table and a New preset action. Default styles stay visible below the table, with a preview and controls to customize or use one. Bookmark default and custom presets without changing the current selection.
 
-![Saved custom caption presets](captions-table.png)
+![Custom presets and default styles with bookmarks](captions-table.png)
+
+In Create and the clip editor, **Favorites** filters the picker to your bookmarks while keeping default and custom styles separate. Bookmarks are retained across app launches.
+
+![Favorite caption styles in Create](captions-favorites.png)
 
 Saving keeps the editor open. Leaving unsaved changes offers save, discard and cancel; reload and app close also ask whether to save.
 

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Check, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { Bookmark, Check, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
 import { defaultCaptionStyle, type CustomCaptionPreset } from '../../shared/custom-captions'
 import type { CaptionPresetId } from '../../shared/caption-presets'
 import { useCaptionStore } from '../store/use-caption-store'
 import { useCaptionPreviewStore } from '../store/use-caption-preview-store'
+import { useCaptionFavoritesStore } from '../store/use-caption-favorites-store'
+import { CaptionFavoriteButton } from './CaptionFavoriteButton'
 import { CAPTION_DEMO_DURATION_MS, CAPTION_DEMO_WORDS, CAPTION_LONG_DEMO_DURATION_MS, CAPTION_LONG_DEMO_WORDS } from '../lib/caption-demo'
 import { captionColorProgress } from '../lib/caption-preview'
 import { captionPreviewGroups } from '../lib/caption-layout'
@@ -691,6 +693,9 @@ interface CaptionPresetPickerProps {
 
 export function CaptionPresetPicker({ value, customCaption, onChange, disabled, showPreview = false }: CaptionPresetPickerProps): React.JSX.Element {
   const { styles, error, load } = useCaptionStore()
+  const favorites = useCaptionFavoritesStore(state => state.favorites)
+  const [filter, setFilter] = useState<'all' | 'favorites'>('all')
+  const pickerRef = useRef<HTMLDivElement>(null)
   useEffect(() => { void load() }, [load])
   const current = captionPreviewPreset(value, customCaption)
   // A draft owns its snapshot: editing or deleting a library style must not
@@ -698,20 +703,41 @@ export function CaptionPresetPicker({ value, customCaption, onChange, disabled, 
   const customStyles = customCaption
     ? [customCaption, ...styles.filter(style => style.id !== customCaption.id)]
     : styles
-  const groups = [
+  const allGroups = [
     { label: 'Default', items: PRESETS },
     { label: 'Your styles', items: customStyles.map(style => captionPreviewPreset(style.baseId, style)) }
   ]
+  const favoriteCount = allGroups.reduce((count, group) => count + group.items.filter(item => favorites.includes(item.id)).length, 0)
+  const groups = allGroups.map(group => ({ ...group, items: group.items
+    .filter(item => filter === 'all' || favorites.includes(item.id))
+    .sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id))) }))
+  const afterBookmark = (): void => {
+    if (filter !== 'favorites') return
+    // A removed favorite leaves this filtered grid. Keep keyboard focus in the
+    // picker instead of dropping it onto the document body.
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) pickerRef.current?.querySelector<HTMLButtonElement>('[aria-label="Caption style filter"] [aria-checked="true"]')?.focus()
+    })
+  }
   return (
-    <div>
+    <div ref={pickerRef}>
       {showPreview && <CaptionMotionPreview key={current.id} preset={current} disabled={disabled} />}
       {error && <div role="status" className="mb-2 flex items-center gap-2 text-xs text-warning">{error}<Button size="sm" onClick={() => void load()}>Retry</Button></div>}
-      {groups.map(group => <div key={group.label} className="mt-3 first:mt-0">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="eyebrow">Styles</p>
+        <Segmented label="Caption style filter" size="sm" value={filter} onChange={setFilter} options={[
+          { value: 'all', label: 'All' },
+          { value: 'favorites', label: <span className="inline-flex items-center gap-1.5"><Bookmark size={12} />Favorites{favoriteCount > 0 && <span className="font-mono text-2xs text-ink-subtle">{favoriteCount}</span>}</span> }
+        ]} />
+      </div>
+      {filter === 'favorites' && favoriteCount === 0 && <p className="rounded-xl border border-white/[0.06] px-3 py-4 text-xs text-ink-muted">Bookmark a style to find it here. <button type="button" className="ml-1 text-accent hover:underline" onClick={() => setFilter('all')}>Browse all styles</button></p>}
+      {groups.filter(group => filter === 'all' || group.items.length > 0).map(group => <div key={group.label} className="mt-3 first:mt-0">
         <p className="eyebrow mb-2">{group.label}</p>
         {group.items.length === 0 ? <p className="text-xs text-ink-subtle">Make your first style in the Captions lab.</p> :
           <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2" role="radiogroup" aria-label={group.label === 'Default' ? 'Caption style' : 'Your caption styles'}>
             {group.items.map((preset, index) => <CaptionStyleTile key={preset.id} preset={preset} selected={current.id === preset.id} disabled={disabled}
               tabIndex={current.id === preset.id || index === 0 && !group.items.some(item => item.id === current.id) ? 0 : -1}
+              onBookmark={afterBookmark}
               onClick={() => { const custom = customStyles.find(style => style.id === preset.id); onChange(custom?.baseId ?? preset.id, custom) }} />)}
           </div>}
       </div>)}
@@ -719,14 +745,17 @@ export function CaptionPresetPicker({ value, customCaption, onChange, disabled, 
   )
 }
 
-export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex }: { preset: CaptionPreset; selected: boolean; disabled?: boolean; onClick: () => void; tabIndex?: number }): React.JSX.Element {
-  return <button type="button" role="radio" aria-checked={selected} aria-label={preset.name} aria-description={preset.description}
-    title={preset.description} disabled={disabled} tabIndex={tabIndex ?? (selected ? 0 : -1)} onClick={onClick} onKeyDown={onRadioKeyDown}
-    className={cn('glass-tile glass-tile-hover group relative min-w-0 rounded-xl p-1 text-left hover:-translate-y-0.5', selected && 'glass-selected', disabled && 'opacity-50')}>
+export function CaptionStyleTile({ preset, selected, disabled, onClick, tabIndex, onBookmark }: { preset: CaptionPreset; selected: boolean; disabled?: boolean; onClick: () => void; tabIndex?: number; onBookmark?: () => void }): React.JSX.Element {
+  return <div className="relative min-w-0">
+    <button type="button" role="radio" aria-checked={selected} aria-label={preset.name} aria-description={preset.description}
+    title={`${preset.name} · ${preset.description}`} disabled={disabled} tabIndex={tabIndex ?? (selected ? 0 : -1)} onClick={onClick} onKeyDown={onRadioKeyDown}
+    className={cn('glass-tile glass-tile-hover group relative w-full min-w-0 rounded-xl p-1 text-left hover:-translate-y-0.5', selected && 'glass-selected', disabled && 'opacity-50')}>
     <span className="relative flex h-[60px] items-end justify-center overflow-hidden rounded-lg px-1.5 pb-2.5 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" style={{ background: SCENE }}>
       <CaptionSample preset={preset} />
       {selected && <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-accent-ink animate-pop-in"><Check className="h-2.5 w-2.5" strokeWidth={3.5} /></span>}
     </span>
-    <span className="block truncate px-1.5 pb-0.5 pt-1.5 text-xs font-semibold text-ink">{preset.name}</span>
-  </button>
+    <span className="block truncate pb-0.5 pl-1.5 pr-7 pt-1.5 text-xs font-semibold text-ink">{preset.name}</span>
+    </button>
+    <CaptionFavoriteButton id={preset.id} name={preset.name} disabled={disabled} onToggle={onBookmark} className="absolute bottom-0.5 right-0.5 h-6 w-6" />
+  </div>
 }

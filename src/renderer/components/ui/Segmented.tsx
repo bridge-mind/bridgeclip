@@ -20,7 +20,7 @@ interface SegmentedProps<T extends string> {
 /** Arrow keys, Home and End move between the radios of a group (roving tab stop). */
 export function onRadioKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>): void {
   const radios = Array.from(
-    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ?? []
+    (event.currentTarget.closest('[role="radiogroup"]') ?? event.currentTarget.parentElement)?.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)') ?? []
   )
   const current = radios.indexOf(event.currentTarget)
   if (current < 0) return

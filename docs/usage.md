@@ -60,6 +60,10 @@ Open **Captions** in the sidebar or **Open captions lab** in Create’s Captions
 
 Give it a name and choose **Save preset** to save without leaving the editor. **Back to presets** opens your table with edit, duplicate and delete actions; future visits start there. **New preset** starts the base-selection wizard again. Leaving unsaved caption edits offers **Save & leave**, **Discard**, or **Keep editing**. Reloading or closing the app also asks whether to save. When opened from Create, **Save & use** returns to the same draft with the preset selected, or you can use one directly from the table. Default styles and **Your styles** are separate in caption pickers. Each job and editor clip keeps its own style snapshot, so later library edits and deletions do not change an existing clip. A custom style can also be selected in the editor before baking.
 
+Default presets also appear below your saved table. Select one to preview it, choose **Customize** to start a new preset, or **Use preset** to return it to Create. The initial base-selection wizard remains available when you have no custom presets.
+
+Use the bookmark beside a custom preset or on any default tile to add it to **Favorites**. Bookmarks stay saved on this device across app launches and appear first in each group. In Create and the clip editor, switch from **All** to **Favorites** to show only your bookmarks; default and custom styles remain separate. Bookmarking or filtering never changes the selected caption style. Renaming a preset keeps its bookmark, and deleting it removes the bookmark.
+
 **Clean switch** changes the active word’s color instantly. **Color fade** and **Pop & fade** deliberately blend colors in both the preview and exported captions; short word events switch instantly to match the export.
 
 Saved presets are independent copies of their starting default. Changing or retiring a default does not change your preset’s appearance or prevent you from editing, duplicating or exporting it.

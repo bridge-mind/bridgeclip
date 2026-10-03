@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Copy, Pencil, Plus, Save, Trash2 } from '
 import { CAPTION_FONTS, defaultCaptionStyle, parseCustomCaption, type CaptionStyleSettings, type CustomCaptionPreset } from '../../shared/custom-captions'
 import { DEFAULT_CAPTION_PRESET, isCaptionPresetId, type CaptionPresetId } from '../../shared/caption-presets'
 import { PRESETS, CaptionMotionPreview, CaptionSample, CaptionStyleTile, captionPreviewPreset } from '../components/CaptionPresetPicker'
+import { CaptionFavoriteButton } from '../components/CaptionFavoriteButton'
 import type { Page as PageId } from '../components/Sidebar'
 import { Button } from '../components/ui/Button'
 import { Callout } from '../components/ui/Callout'
@@ -14,6 +15,7 @@ import { Panel } from '../components/ui/Panel'
 import { Select } from '../components/ui/Select'
 import { Switch } from '../components/ui/Switch'
 import { useCaptionStore } from '../store/use-caption-store'
+import { useCaptionFavoritesStore } from '../store/use-caption-favorites-store'
 import { useDraftStore } from '../store/use-draft-store'
 import { errorMessage } from '../lib/utils'
 import { getApi } from '../lib/ipc'
@@ -22,6 +24,8 @@ import './captions.css'
 
 export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => void }): React.JSX.Element {
   const { styles, editing, selectedBaseId: baseId, view, fromWizard, loaded, loading, error: loadError, load, save, remove } = useCaptionStore()
+  const favorites = useCaptionFavoritesStore(state => state.favorites)
+  const orderedStyles = [...styles].sort((a, b) => Number(favorites.includes(b.id)) - Number(favorites.includes(a.id)))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -74,7 +78,7 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
     if (id === baseId) return
     switchStyle(() => {
       setEditing(null)
-      useCaptionStore.setState({ selectedBaseId: id, view: 'base' })
+      useCaptionStore.setState({ selectedBaseId: id, view: stage === 'home' ? 'home' : 'base' })
     })
   }
   const customize = (): void => {
@@ -86,6 +90,12 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
   }
   const apply = (style: CustomCaptionPreset): void => {
     useDraftStore.getState().update({ captionPreset: style.baseId, customCaption: structuredClone(style), includeCaptions: true })
+    useDraftStore.getState().setStep('captions')
+    useCaptionStore.setState({ fromWizard: false, view: 'home', editing: null })
+    onNavigate('clip')
+  }
+  const applyDefault = (): void => {
+    useDraftStore.getState().update({ captionPreset: baseId, customCaption: undefined, includeCaptions: true })
     useDraftStore.getState().setStep('captions')
     useCaptionStore.setState({ fromWizard: false, view: 'home', editing: null })
     onNavigate('clip')
@@ -168,11 +178,11 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
       {stage === 'home' && <Panel padded={false} className="caption-preset-library mt-3 overflow-hidden">
         <table aria-label="Your caption presets" className="caption-preset-table">
           <thead><tr><th scope="col">Preset</th><th scope="col" className="caption-preset-font">Typeface</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>{styles.map(style => <tr key={style.id} aria-label={style.name}>
-            <td><button type="button" className="caption-preset-name" onClick={() => beginEdit(style)} disabled={busy} aria-label={`Open ${style.name}`}>
+          <tbody>{orderedStyles.map(style => <tr key={style.id} aria-label={style.name}>
+            <td><div className="flex min-w-0 items-center gap-2"><CaptionFavoriteButton id={style.id} name={style.name} disabled={busy} /><button type="button" className="caption-preset-name" onClick={() => beginEdit(style)} disabled={busy} aria-label={`Open ${style.name}`}>
               <span className="caption-preset-sample" aria-hidden="true"><CaptionSample preset={captionPreviewPreset(style.baseId, style)} /></span>
               <span className="min-w-0 truncate font-medium text-ink">{style.name}</span>
-            </button></td>
+            </button></div></td>
             <td className="caption-preset-font text-ink-muted">{style.style.font_name}</td>
             <td><div className="caption-preset-actions">
               {fromWizard && <Button size="sm" variant="primary" aria-label={`Use ${style.name}`} disabled={busy} onClick={() => apply(style)}>Use preset</Button>}
@@ -183,15 +193,15 @@ export function CaptionsPage({ onNavigate }: { onNavigate: (page: PageId) => voi
           </tr>)}</tbody>
         </table>
       </Panel>}
-      {stage === 'base' && <div className="caption-base-layout mt-3 animate-fade-in">
+      {(stage === 'base' || stage === 'home') && <div className={`caption-base-layout ${stage === 'home' ? 'mt-5' : 'mt-3'} animate-fade-in`}>
         <Panel>
           <div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Default presets</h3><span className="text-2xs text-ink-subtle">{PRESETS.length} looks</span></div>
-          <div className="caption-base-grid" role="radiogroup" aria-label="Default styles">{PRESETS.map(preset => <CaptionStyleTile key={preset.id} preset={preset} selected={baseId === preset.id} disabled={busy} tabIndex={baseId === preset.id ? 0 : -1} onClick={() => chooseBase(preset.id as CaptionPresetId)} />)}</div>
+          <div className="caption-base-grid" role="radiogroup" aria-label={stage === 'home' ? 'Default caption presets' : 'Default styles'}>{PRESETS.map(preset => <CaptionStyleTile key={preset.id} preset={preset} selected={baseId === preset.id} disabled={busy} tabIndex={baseId === preset.id ? 0 : -1} onClick={() => chooseBase(preset.id as CaptionPresetId)} />)}</div>
         </Panel>
         <Panel className="caption-lab-preview caption-base-preview">
-          <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><p className="eyebrow">Your starting point</p><h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div></div>
+          <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0">{stage === 'base' && <p className="eyebrow">Your starting point</p>}<h3 className="mt-1 truncate text-lg font-semibold">{preview.name}</h3></div></div>
           <CaptionMotionPreview key={baseId} preset={preview} labControls />
-          <div className="mt-3 flex items-center justify-between gap-3"><p className="text-xs text-ink-muted">{preview.description}</p><Button variant="primary" icon={<ArrowRight size={14} />} disabled={busy} onClick={customize}>Customize</Button></div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-ink-muted">{preview.description}</p><div className="flex items-center gap-2"><Button variant={fromWizard ? 'secondary' : 'primary'} icon={<ArrowRight size={14} />} disabled={busy} onClick={customize}>Customize</Button>{fromWizard && <Button variant="primary" disabled={busy} onClick={() => switchStyle(applyDefault)}>Use preset</Button>}</div></div>
         </Panel>
       </div>}
       {stage === 'edit' && editing && <div className="caption-editor-layout mt-3 animate-fade-in">
