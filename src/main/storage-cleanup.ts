@@ -9,7 +9,7 @@ import { editorBusy, freeEditorMedia, readEditorStorage } from './clip-editor'
 import { liveJobIds } from './job-manager'
 import { publishedCleanupClips } from './library-posting'
 import { listAutomations } from './automations'
-import { hasActiveUploads, listPosts } from './zernio/posts'
+import { hasActiveUploads, listPostingHistory } from './zernio/posts'
 
 const MAX_PROJECTS = 5000
 const MAX_AGE = 15 * 60_000
@@ -18,7 +18,7 @@ const pathKey = (value: string): string => {
   const path = resolve(value.replace(/^file:\/\//, ''))
   return process.platform === 'win32' ? path.toLowerCase() : path
 }
-const postingStamp = (): string => digest(loadSettings().zernioApiKey ? [listPosts(), listAutomations()] : [])
+const postingStamp = (): string => digest(loadSettings().zernioApiKey ? [listPostingHistory(), listAutomations()] : [])
 const busy = (run: string): boolean => liveJobIds().has(basename(run)) || editorBusy(run)
 
 /** Root metadata and file identities guard against edits between preview and confirmation. */

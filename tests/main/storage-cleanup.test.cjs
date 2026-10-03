@@ -16,7 +16,7 @@ function fixture(extra = {}) {
     electron: fakeElectron(temp.dir).electron,
     './job-manager': { liveJobIds: () => active, dismissJob: () => {} },
     './automations': { listAutomations: () => automations, automationMediaMatcher: () => () => false },
-    './zernio/posts': { listPosts: () => posts, hasActiveUploads: () => uploading },
+    './zernio/posts': { listPostingHistory: () => posts, hasActiveUploads: () => uploading },
     ...extra
   })
   main.settings.savePublicSettings({ outputDirectory: library, pythonPath: 'python3' })

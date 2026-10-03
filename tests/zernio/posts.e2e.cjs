@@ -133,7 +133,7 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(SHOTS, `${name}.png`) }).catch(() => {})
 }
 
-test('post a Library clip now and on a schedule, then cancel the scheduled one', { timeout: 300_000 }, async (t) => {
+test('post a Library clip now and on a schedule, then cancel and dismiss activity without losing Posted status', { timeout: 300_000 }, async (t) => {
   const { page, mock, posting, accounts, userDataDir, clipPaths: [clipPath], openRun } = await start(t, { tiktokLane: 'business' })
   const { tiktok, youtube, instagram } = accounts
   // Library → the run → Post on the clip.
@@ -261,6 +261,24 @@ test('post a Library clip now and on a schedule, then cancel the scheduled one',
   const history = JSON.parse(fs.readFileSync(historyPath, 'utf8'))
   assert.deepEqual(history.posts.map((p) => p.status).sort(), ['cancelled', 'published'])
   assert.equal(fs.readFileSync(historyPath, 'utf8').includes(KEY), false)
+
+  // Posts is an activity feed. Dismissal keeps both the online publication and
+  // the Library's status, even after leaving the page and reloading the app UI.
+  const publishedRow = recentGroup.getByRole('listitem').filter({ has: page.getByRole('button', { name: /Open on YouTube/ }) })
+  await publishedRow.getByRole('button', { name: `Dismiss activity for “${CLIP_TITLE}”` }).click()
+  await publishedRow.waitFor({ state: 'detached' })
+  await recentGroup.getByRole('button', { name: `Dismiss activity for “${CLIP_TITLE}”` }).click()
+  await page.getByText('No recent activity', { exact: true }).waitFor()
+  assert.equal(posting.state.posts.size, 1, 'dismissal leaves the published social post intact')
+  assert.equal(fs.existsSync(clipPath), true)
+  await shot(page, '08-dismissed-activity')
+  await page.reload()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /Posts/ }).click()
+  await page.getByText('No recent activity', { exact: true }).waitFor()
+  await openRun()
+  await page.getByRole('button', { name: 'Posted 1', exact: true }).click()
+  await page.getByRole('button', { name: `Actions for “${CLIP_TITLE}”` }).waitFor()
+  await shot(page, '09-library-still-posted')
   // No request ever carried a key other than the test one, and storage never saw it.
   assert.ok(mock.state.requests.filter((r) => r.path.startsWith('/api/')).every((r) => r.authorized))
 })

@@ -133,14 +133,14 @@ function PostsList({ onNavigate }: { onNavigate: (page: Page) => void }): React.
           </Panel>
         ) : posts.length === 0 && error ? (
           <Panel padded={false} className="flex items-center justify-between gap-3 py-2 pl-4 pr-2.5">
-            <p className="text-xs text-ink-muted">Your post history is unavailable right now.</p>
+            <p className="text-xs text-ink-muted">Your posting activity is unavailable right now.</p>
             <Button size="sm" onClick={() => void usePostsStore.getState().load()}>Try again</Button>
           </Panel>
         ) : posts.length === 0 ? (
           <EmptyState
             icon={<Send />}
-            title="Nothing posted yet"
-            description="Open a run in the Library and choose Post on a clip. Scheduled posts wait here until they go out."
+            title="No recent activity"
+            description="Publishing updates and scheduled posts appear here. Post a clip from the Library to get started."
             action={
               <Button icon={<Clapperboard className="h-3.5 w-3.5" />} onClick={() => onNavigate('library')}>
                 Open Library
@@ -261,12 +261,12 @@ function PostRow({ post }: { post: PostRecord }): React.JSX.Element {
         <Button size="sm" icon={<RotateCcw className="h-3.5 w-3.5" />} loading={busy === 'retry'} disabled={Boolean(busy) || post.automationRequeued} title={post.automationRequeued ? 'This clip was returned to its automation queue. Run it from Automations.' : undefined} onClick={() => void retry(post.id)}>
           {post.automationRequeued ? 'Returned to queue' : 'Retry'}
         </Button>
-        <Button size="sm" variant="ghost" iconOnly aria-label={`Remove “${post.clipTitle}” from the list`} title="Remove from list" disabled={Boolean(busy)} onClick={() => void dismiss(post.id)} icon={<X className="h-3.5 w-3.5" />} />
+        <Button size="sm" variant="ghost" iconOnly aria-label={`Dismiss activity for “${post.clipTitle}”`} title="Dismiss activity · Library status is kept" disabled={Boolean(busy)} onClick={() => void dismiss(post.id)} icon={<X className="h-3.5 w-3.5" />} />
       </>
     )
   } else if (post.status !== 'publishing') {
     actions = (
-      <Button size="sm" variant="ghost" iconOnly aria-label={`Remove “${post.clipTitle}” from the list`} title="Remove from list" disabled={Boolean(busy)} onClick={() => void dismiss(post.id)} icon={<X className="h-3.5 w-3.5" />} />
+      <Button size="sm" variant="ghost" iconOnly aria-label={`Dismiss activity for “${post.clipTitle}”`} title="Dismiss activity · Library status is kept" disabled={Boolean(busy)} onClick={() => void dismiss(post.id)} icon={<X className="h-3.5 w-3.5" />} />
     )
   }
 

@@ -49,6 +49,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Fixed
 
+- Dismissing Posts activity or trimming older updates keeps the Library’s **Posted** status and published-content cleanup eligibility, including after restarting.
 - Caption previews match export color-fade timing, including an instant switch for short words and styles without a fade.
 
 - Caption drafts survive restarts, and development runs rebuild background code when shared settings change.

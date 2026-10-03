@@ -41,6 +41,14 @@ Saving keeps the editor open. Leaving unsaved changes offers save, discard and c
 
 ![Save caption changes before navigating away](caption-save-prompt.png)
 
+## Dismissed posting activity
+
+Clearing finished updates from Posts keeps the clip in the Library’s Posted group. These two screens show the same synthetic clip after dismissing its activity and reloading; its online post and cleanup eligibility are also preserved.
+
+| Posts after dismissal | Library after dismissal |
+| --- | --- |
+| ![Cleared posting activity](posts-dismissed.png) | ![Clip remains in the Posted group](posts-library-status.png) |
+
 ## Crash reports
 
 Settings → About lets users review and copy the latest local report, then add reproduction steps to a GitHub issue. The report contains safe diagnostics and recent event names; it excludes keys, paths, URLs and raw error messages. This example uses a simulated interface error.

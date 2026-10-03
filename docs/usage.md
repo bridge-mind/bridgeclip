@@ -124,7 +124,11 @@ Connect social accounts with your own Zernio account and API key to post or sche
 
 ### Browse posts
 
+**Posts** is your publishing activity feed. Use **×** to dismiss an update without changing the clip’s **Posted** status in the Library or its eligibility for **Clean published content**. Published posts and local videos stay intact. Dismissed partial or inbox deliveries keep their existing status and cleanup protections; dismissing them does not complete publication. Scheduled and publishing posts stay visible until they finish or are cancelled.
+
 **Posts → Recent** uses numbered pages. Choose 10, 25, 50 or 100 rows per page; the choice is shared with Jobs and remembered after restarting. **Scheduled** and **Needs attention** remain visible above Recent on every page.
+
+Posting records are kept separately when activity is dismissed or older updates leave the feed, including across app restarts. They remain scoped to the connected Zernio workspace. Activity removed before this change cannot be recovered automatically; mark a clip as posted in the Library if its record is already gone.
 
 ### Organize the content bank
 

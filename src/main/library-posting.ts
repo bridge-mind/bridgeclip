@@ -8,7 +8,7 @@ import { loadSettings } from './settings-store'
 import { getJobOutput, isManuallyPosted } from './file-manager'
 import { assertAbsolutePath, assertMediaPath, authorizeMedia, isWithinDirectory, openAuthorizedMedia } from './security'
 import { automationMediaMatcher, listAutomations } from './automations'
-import { listPosts } from './zernio/posts'
+import { listPostingHistory } from './zernio/posts'
 import { completeSourceContext, parseSourceContext, sourceFromOutput } from './automation-source'
 import { generateAutomationMetadata, researchAutomationTopic, transcribeAutomationClip } from './automation-metadata'
 
@@ -65,7 +65,7 @@ type Fingerprint = Awaited<ReturnType<typeof fingerprint>>
 interface PostingContext { library: string; posts: PostRecord[]; origins: Map<string, string>; bankPosts: PostRecord[]; bankFiles: Map<string, Fingerprint> }
 
 async function postingContext(library: string): Promise<PostingContext> {
-  const posts = listPosts()
+  const posts = listPostingHistory()
   const origins = new Map(listAutomations().flatMap((automation) => automation.content.filter((item) => item.postId && item.sourceClipPath).map((item) => [item.postId!, pathKey(item.sourceClipPath!)] as const)))
   const isBankFile = automationMediaMatcher()
   const bankPosts = posts.filter((post) => !origins.has(post.id) && isBankFile(post.clipPath))
