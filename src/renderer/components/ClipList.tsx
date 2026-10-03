@@ -13,6 +13,7 @@ import { EditorialWeights } from './EditorialWeights'
 import { defaultWeights, editorialScore } from '../../shared/editorial'
 import { SourcePreview } from './SourcePicker'
 import { RunDetailsDialog } from './RunDetailsDialog'
+import { RunStats } from './RunStats'
 import { ActionMenu } from './ui/ActionMenu'
 import { AddToAutomationDialog } from './AddToAutomationDialog'
 import { PostDialog, type PostableClip } from './PostDialog'
@@ -352,12 +353,13 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
         </Callout>
       )}
 
-      <div className="mt-4">
-        <SourcePreview key={output.source_video_url} source={output.source_video_url} readOnly saved={{
+      <div className="mt-4 grid gap-4 min-[1100px]:grid-cols-2">
+        <SourcePreview key={output.source_video_url} className="min-w-0" source={output.source_video_url} readOnly saved={{
           title: output.source_video_title || 'Untitled video',
           channel: output.source_video_channel ?? null,
           durationSeconds: output.source_video_duration_seconds
         }} />
+        <RunStats output={output} costs={costs} videoSpeed={typeof videoSpeed === 'number' && videoSpeed > 1 ? videoSpeed : null} />
       </div>
 
       {framingNotice && (
@@ -486,7 +488,7 @@ function GeneratedClipList({ output, outputDir: runDirectory, leading, onNewClip
       {confirm && <ConfirmDialog request={confirm} onClose={closeConfirm} />}
       {posting && <PostDialog clips={posting} onClose={() => setPosting(null)} onNavigate={onNavigate} />}
       {inspectEdits && <EditInspector outputDir={outputDir} onClose={closeInspector} />}
-      {runDetails && <RunDetailsDialog output={output} costs={costs} videoSpeed={typeof videoSpeed === 'number' && videoSpeed > 1 ? videoSpeed : null} onClose={closeRunDetails} />}
+      {runDetails && <RunDetailsDialog output={output} onClose={closeRunDetails} />}
       {bankClips && outputDir && <AddToAutomationDialog
         outputDir={outputDir}
         clipIndices={bankClips}

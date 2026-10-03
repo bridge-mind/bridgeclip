@@ -35,7 +35,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Mai
 
 ### Changed
 
-- Library item details puts the source video and clips first, combines search and sorting in one toolbar, and moves transcript, processing details, folder access and post-status refresh into the **…** menu.
+- Library item details pairs the source video with a compact 2×2 grid of run statistics, combines search and sorting in one toolbar, and moves transcript, stage timings, folder access and post-status refresh into the **…** menu.
 - **Your presets** on the Captions page uses the same cards as Default presets, with three cards per row, preview selection, bookmarks and a compact menu for edit, duplicate and delete.
 
 - Captions previews saved presets directly from their cards and keeps the preview in the same position while editing. Bookmarked styles move smoothly to the front of their list, and bookmark icons move with hovered cards.

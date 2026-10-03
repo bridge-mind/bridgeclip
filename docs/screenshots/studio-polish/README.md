@@ -12,7 +12,7 @@ The **before** images were captured from upstream `main` at `b996820`, except th
 | Create → Captions | ![Original default caption picker](captions-before.png) | ![Caption picker with access to the lab](captions-after.png) |
 | Jobs | ![Unpaginated Previous jobs](jobs-before.png) | ![Previous jobs with a page-size selector](jobs-after.png) |
 | Library | ![Original Library cards](library-before.png) | ![Storage size on Library cards](library-after.png) |
-| Library item details | ![Earlier details with visible advanced tools](library-details-before.png) | ![Source card and compact clip controls](library-details-after.png) |
+| Library item details | ![Earlier details with visible advanced tools](library-details-before.png) | ![Source card beside a 2×2 stats grid and compact clip controls](library-details-after.png) |
 | Delete a Library item | ![Original deletion confirmation](delete-before.png) | ![Space estimate and visual deletion summary](delete-after.png) |
 | Settings → Content storage | ![Original storage total](storage-before.png) | ![Cleanup controls and source storage breakdown](storage-after.png) |
 | Captions editor | ![Earlier draft with repeated preview labels](captions-editor-before.png) | ![Simplified preview and separate padding controls](captions-lab.png) |
@@ -59,9 +59,9 @@ Saving keeps the editor open. Leaving unsaved changes offers save, discard and c
 
 ## Library item details
 
-The source card leads the page, with saved metadata available immediately. Search, sorting and selection share one toolbar; selecting clips reveals the bulk actions. Continue editing remains a primary action. The **…** menu holds transcript inspection, processing details, folder access and post-status refresh. Editorial weights appear only when using Editorial sorting.
+The source card and a compact 2×2 grid of run statistics share the top row equally, with saved metadata available immediately. The panels stack in smaller windows. Search, sorting and selection share one toolbar; selecting clips reveals the bulk actions. Continue editing remains a primary action. The **…** menu holds transcript inspection, processing details, folder access and post-status refresh. Editorial weights appear only when using Editorial sorting.
 
-Processing details keeps costs, run statistics and stage timings accessible without crowding the clips. Keyboard checks cover opening the menu, focus inside the dialog and returning to the menu trigger. Compact-window checks include selection and bulk actions; older runs and unavailable local sources still show their saved title and duration.
+Run statistics stay visible beside the source; the Processing details dialog contains stage timings and model usage. Keyboard checks cover opening the menu, focus inside the dialog and returning to the menu trigger. Compact-window checks include selection and bulk actions; older runs and unavailable local sources still show their saved title and duration.
 
 ![Processing details opened from the menu](library-processing-details.png)
 

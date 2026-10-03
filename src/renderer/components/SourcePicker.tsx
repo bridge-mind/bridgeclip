@@ -206,7 +206,8 @@ export function SourcePreview({
   onReplace,
   disabled,
   readOnly = false,
-  saved
+  saved,
+  className
 }: {
   source: string
   onClear?: () => void
@@ -214,6 +215,7 @@ export function SourcePreview({
   disabled?: boolean
   readOnly?: boolean
   saved?: SavedSourceMetadata
+  className?: string
 }): React.JSX.Element {
   const link = isUrl(source)
   const ytId = link ? youtubeId(source) : null
@@ -223,10 +225,10 @@ export function SourcePreview({
   const [mediaFailed, setMediaFailed] = useState(false)
   const youtubeUrl = youtubeSourceUrl(source)
 
-  if (youtubeUrl) return <YouTubeSourcePreview readOnly={readOnly} url={youtubeUrl} onClear={onClear} onReplace={onReplace} disabled={disabled} saved={saved} />
+  if (youtubeUrl) return <YouTubeSourcePreview readOnly={readOnly} url={youtubeUrl} onClear={onClear} onReplace={onReplace} disabled={disabled} saved={saved} className={className} />
 
   return (
-    <div className="glass flex flex-col gap-3 rounded-2xl p-3 sm:flex-row sm:items-center sm:gap-4 animate-fade-in">
+    <div className={cn('glass flex flex-col gap-3 rounded-2xl p-3 sm:flex-row sm:items-center sm:gap-4 animate-fade-in', className)}>
       <div className="relative aspect-video w-full sm:w-44 xl:w-52 shrink-0 overflow-hidden rounded-xl bg-black/40 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.08)]">
         {!mediaFailed && ytId && (
           <img

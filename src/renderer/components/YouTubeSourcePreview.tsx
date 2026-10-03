@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { Check, ExternalLink, RefreshCw, X, Youtube } from 'lucide-react'
 import type { YouTubePreview } from '../../shared/youtube-preview'
 import { getApi } from '../lib/ipc'
-import { formatTimecode } from '../lib/utils'
+import { cn, formatTimecode } from '../lib/utils'
 import { Button } from './ui/Button'
 import { Skeleton } from './ui/Skeleton'
 
 export type SavedSourceMetadata = Pick<YouTubePreview, 'title' | 'channel' | 'durationSeconds'>
 
-export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOnly = false, saved }: {
+export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOnly = false, saved, className }: {
   /** Canonical YouTube watch URL. */
   url: string
   onClear?: () => void
@@ -17,6 +17,7 @@ export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOn
   readOnly?: boolean
   /** Completed runs already have metadata; show it immediately without refetching. */
   saved?: SavedSourceMetadata
+  className?: string
 }): React.JSX.Element {
   const [summary, setSummary] = useState<YouTubePreview | null>(null)
   const [details, setDetails] = useState<YouTubePreview | null>(null)
@@ -53,8 +54,8 @@ export function YouTubeSourcePreview({ url, onClear, onReplace, disabled, readOn
   }
 
   return (
-    <section aria-label="YouTube video preview" className="glass overflow-hidden rounded-2xl animate-fade-in">
-      <div className="flex flex-col gap-3 p-3 sm:flex-row sm:gap-4">
+    <section aria-label="YouTube video preview" className={cn('glass flex flex-col overflow-hidden rounded-2xl animate-fade-in', className)}>
+      <div className="flex flex-1 flex-col gap-3 p-3 sm:flex-row sm:gap-4">
         <div className="relative aspect-video w-full shrink-0 self-start overflow-hidden rounded-xl bg-black/40 sm:w-44 xl:w-52">
           {!imageFailed ? <img
             src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt="Video thumbnail" draggable={false}

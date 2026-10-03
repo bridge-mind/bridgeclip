@@ -100,7 +100,7 @@ New runs show live model requests, input/output tokens and provider-reported cos
 
 ### Find clips and track posting
 
-Inside a Library run, the source card shows the original video's thumbnail, saved title, channel and duration when available. **View on YouTube** opens the original video. **Continue editing** stays visible for unfinished review projects. The header's **…** menu contains **Transcript & edits**, **Processing details**, **Open folder** and **Refresh post status**. Processing details includes run statistics, API costs and recorded stage timings.
+Inside a Library run, the source card shows the original video's thumbnail, saved title, channel and duration when available. A compact 2×2 grid beside it shows clip count, processing time, API cost and creation date; the two panels share the row equally and stack in smaller windows. **View on YouTube** opens the original video. **Continue editing** stays visible for unfinished review projects. The header's **…** menu contains **Transcript & edits**, **Processing details**, **Open folder** and **Refresh post status**. Processing details includes recorded stage timings and model usage.
 
 The clip toolbar keeps **Search clips**, selection and sorting together. Search filters by title, tag or clip number across both posted and unposted clips; bulk actions appear when clips are selected. **Not Posted** and **Posted** are independently collapsible sections with clip counts. **Not Posted** opens by default and appears first; **Posted** starts collapsed below it. Selection applies only to visible results and expanded sections. Editorial ranking weights appear only when sorting by **Editorial**.
 

@@ -2,17 +2,14 @@ import { useEffect, useRef } from 'react'
 import { Timer, X } from 'lucide-react'
 import { parseStages } from '../../shared/job-progress'
 import { parseRunDiagnostics } from '../../shared/run-diagnostics'
-import type { ApiCosts, JobOutput } from '../store/use-job-store'
+import type { JobOutput } from '../store/use-job-store'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
-import { RunStats } from './RunStats'
 import { StageBreakdown } from './StageBreakdown'
 import { JobDiagnostics } from './JobDiagnostics'
 
-export function RunDetailsDialog({ output, costs, videoSpeed, onClose }: {
+export function RunDetailsDialog({ output, onClose }: {
   output: JobOutput
-  costs: ApiCosts | null
-  videoSpeed: number | null
   onClose: () => void
 }): React.JSX.Element {
   const panel = useRef<HTMLDivElement>(null)
@@ -46,8 +43,7 @@ export function RunDetailsDialog({ output, costs, videoSpeed, onClose }: {
       <Button ref={close} variant="ghost" iconOnly aria-label="Close processing details" icon={<X className="h-4 w-4" />} onClick={onClose} />
     </header>
     <div className="min-h-0 overflow-y-auto overscroll-contain p-5">
-      <RunStats output={output} costs={costs} videoSpeed={videoSpeed} />
-      <section className="mt-5">
+      <section>
         <h3 className="mb-4 text-sm font-medium">Stage timings</h3>
         {stages.length ? <StageBreakdown stages={stages} /> : <p className="text-xs text-ink-muted">Stage timings weren’t recorded for this run.</p>}
       </section>
