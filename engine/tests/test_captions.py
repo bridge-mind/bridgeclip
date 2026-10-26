@@ -64,6 +64,22 @@ def test_group_clears_after_linger(tmp_path):
     assert last_end == WORDS[-1].end_time_ms + MAX_LINGER_MS
 
 
+def test_silence_breaks_group_and_clears_before_next_word(tmp_path):
+    from clip_engine.services.caption_generator import MAX_LINGER_MS
+
+    words = [
+        TranscriptWord(word="Wait", start_time_ms=0, end_time_ms=300),
+        TranscriptWord(word="Hello", start_time_ms=3500, end_time_ms=3900),
+    ]
+    face = [e for e in _events(CaptionStyle(), words, tmp_path=tmp_path) if e.startswith("Dialogue: 4,")]
+    assert len(face) == 2
+    first_end = CaptionGeneratorService._parse_ass_time(face[0].split(",")[2])
+    second_start = CaptionGeneratorService._parse_ass_time(face[1].split(",")[1])
+    assert first_end == 300 + MAX_LINGER_MS
+    assert second_start == 3500
+    assert "HELLO" not in face[0]
+
+
 def test_trailing_punctuation_dropped():
     service = CaptionGeneratorService()
     style = CaptionStyle()

@@ -741,6 +741,15 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
         current: list[TranscriptWord] = []
 
         for word in words:
+            if current and word.start_time_ms - current[-1].end_time_ms > MAX_LINGER_MS:
+                groups.append(WordGroup(
+                    words=list(current),
+                    start_time_ms=current[0].start_time_ms,
+                    end_time_ms=current[-1].end_time_ms,
+                    text=" ".join(w.word for w in current),
+                ))
+                current = []
+
             current.append(word)
 
             at_limit = len(current) >= max_per_group
